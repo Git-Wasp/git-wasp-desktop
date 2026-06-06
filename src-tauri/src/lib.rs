@@ -4,6 +4,8 @@ mod graph;
 mod diff_engine;
 mod file_watcher;
 mod operation_runner;
+mod working_tree;
+mod stash;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -20,6 +22,7 @@ pub fn run() {
             commands::diff::get_file_diff,
             commands::branch::list_branches,
             commands::branch::checkout_branch,
+            commands::status::get_working_tree_status,
         ])
         .setup(|app| {
             repo_manager::restore_last_repo(app)?;
