@@ -11,6 +11,9 @@ interface RepoStore {
   loadRecentRepos: () => Promise<void>;
   loadBranches: () => Promise<void>;
   checkoutBranch: (name: string) => Promise<void>;
+  createBranch: (name: string, startPoint?: string) => Promise<void>;
+  renameBranch: (oldName: string, newName: string) => Promise<void>;
+  deleteBranch: (name: string) => Promise<void>;
 }
 
 export const useRepoStore = create<RepoStore>((set, get) => ({
@@ -43,6 +46,21 @@ export const useRepoStore = create<RepoStore>((set, get) => ({
       branchName: name,
     });
     set({ currentRepo: repo });
+    await get().loadBranches();
+  },
+
+  createBranch: async (name: string, startPoint?: string) => {
+    await invoke("create_branch", { name, startPoint: startPoint ?? null });
+    await get().loadBranches();
+  },
+
+  renameBranch: async (oldName: string, newName: string) => {
+    await invoke("rename_branch", { oldName, newName });
+    await get().loadBranches();
+  },
+
+  deleteBranch: async (name: string) => {
+    await invoke("delete_branch", { name });
     await get().loadBranches();
   },
 }));

@@ -172,64 +172,82 @@ impl RepoManager {
 
 /// Tauri managed state — wraps RepoManager in Arc so it can be cloned into
 /// the async command handlers without holding a lock across await points.
-pub struct AppState(pub Arc<RepoManager>);
+/// Also holds the file watcher so it stays alive for the app's lifetime.
+pub struct AppState {
+    pub manager: Arc<RepoManager>,
+    pub watcher: Mutex<Option<notify::RecommendedWatcher>>,
+}
 
 impl AppState {
     pub fn new() -> Self {
-        Self(Arc::new(RepoManager::new()))
+        Self {
+            manager: Arc::new(RepoManager::new()),
+            watcher: Mutex::new(None),
+        }
     }
 
-    pub fn open_repo(&self, path: &str) -> anyhow::Result<RepoInfo> {
-        self.0.open(path)
+    pub fn open_repo(&self, path: &str, app_handle: Option<tauri::AppHandle>) -> anyhow::Result<RepoInfo> {
+        let info = self.manager.open(path)?;
+        // Start file watcher on the new workdir
+        if let Some(handle) = app_handle {
+            let workdir = std::path::PathBuf::from(path);
+            if let Ok(w) = crate::file_watcher::start(handle, &workdir) {
+                if let Ok(mut lock) = self.watcher.lock() {
+                    *lock = Some(w);
+                }
+            }
+        }
+        Ok(info)
     }
 
     pub fn get_current_repo(&self) -> anyhow::Result<Option<RepoInfo>> {
-        self.0.get_current()
+        self.manager.get_current()
     }
 
     pub fn get_recent_repos(&self) -> anyhow::Result<Vec<RepoEntry>> {
-        self.0.get_recent()
+        self.manager.get_recent()
     }
 
     pub fn with_repo<F, T>(&self, f: F) -> anyhow::Result<T>
     where
         F: FnOnce(&Repository) -> T,
     {
-        self.0.with_repo(f)
+        self.manager.with_repo(f)
     }
 
     pub fn with_repo_mut<F, T>(&self, f: F) -> anyhow::Result<T>
     where
         F: FnOnce(&mut Repository) -> T,
     {
-        self.0.with_repo_mut(f)
+        self.manager.with_repo_mut(f)
     }
 
     pub fn checkout_branch(&self, branch_name: &str) -> anyhow::Result<RepoInfo> {
-        self.0.checkout_branch(branch_name)
+        self.manager.checkout_branch(branch_name)
     }
 
     pub fn create_branch(&self, name: &str, start_oid: Option<&str>) -> anyhow::Result<BranchInfo> {
-        self.0.create_branch(name, start_oid)
+        self.manager.create_branch(name, start_oid)
     }
 
     pub fn rename_branch(&self, old_name: &str, new_name: &str) -> anyhow::Result<()> {
-        self.0.rename_branch(old_name, new_name)
+        self.manager.rename_branch(old_name, new_name)
     }
 
     pub fn delete_branch(&self, name: &str) -> anyhow::Result<()> {
-        self.0.delete_branch(name)
+        self.manager.delete_branch(name)
     }
 }
 
 pub fn restore_last_repo(app: &tauri::App) -> anyhow::Result<()> {
     let state = app.state::<AppState>();
-    let config = state.0.config_lock()?;
+    let config = state.manager.config_lock()?;
     let last = config.last_repo_path.clone();
     drop(config);
     if let Some(path) = last {
         if path.exists() {
-            let _ = state.0.open(path.to_str().unwrap_or(""));
+            let handle = app.app_handle().clone();
+            let _ = state.open_repo(path.to_str().unwrap_or(""), Some(handle));
         }
     }
     Ok(())

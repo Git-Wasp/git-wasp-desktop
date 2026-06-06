@@ -1,5 +1,5 @@
 use crate::repo_manager::{AppState, RepoEntry};
-use tauri::State;
+use tauri::{AppHandle, State};
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -12,9 +12,10 @@ pub struct RepoInfo {
 #[tauri::command]
 pub async fn open_repo(
     path: String,
+    app_handle: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<RepoInfo, String> {
-    state.open_repo(&path).map_err(|e| e.to_string())
+    state.open_repo(&path, Some(app_handle)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
