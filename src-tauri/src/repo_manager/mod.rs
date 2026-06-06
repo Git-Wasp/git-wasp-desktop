@@ -95,6 +95,15 @@ impl RepoManager {
         Ok(f(repo))
     }
 
+    pub fn with_repo_mut<F, T>(&self, f: F) -> anyhow::Result<T>
+    where
+        F: FnOnce(&mut Repository) -> T,
+    {
+        let mut lock = self.repo_lock()?;
+        let repo = lock.as_mut().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        Ok(f(repo))
+    }
+
     pub fn checkout_branch(&self, branch_name: &str) -> anyhow::Result<RepoInfo> {
         // All borrows from lock must be dropped before this block exits so
         // the mutex guard is released before we call get_current() below.
@@ -117,6 +126,47 @@ impl RepoManager {
             // obj, branch, lock all dropped here in reverse declaration order
         }
         self.get_current()?.ok_or_else(|| anyhow::anyhow!("no repo after checkout"))
+    }
+
+    pub fn create_branch(&self, name: &str, start_oid: Option<&str>) -> anyhow::Result<BranchInfo> {
+        let lock = self.repo_lock()?;
+        let repo = lock.as_ref().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        let commit = match start_oid {
+            Some(oid) => repo.find_commit(git2::Oid::from_str(oid)?)?,
+            None => repo.head()?.peel_to_commit()?,
+        };
+        repo.branch(name, &commit, false)
+            .with_context(|| format!("failed to create branch: {name}"))?;
+        let oid = commit.id().to_string();
+        Ok(BranchInfo {
+            name: name.to_string(),
+            is_remote: false,
+            is_head: false,
+            upstream: None,
+            oid,
+        })
+    }
+
+    pub fn rename_branch(&self, old_name: &str, new_name: &str) -> anyhow::Result<()> {
+        let lock = self.repo_lock()?;
+        let repo = lock.as_ref().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        let mut branch = repo.find_branch(old_name, BranchType::Local)
+            .with_context(|| format!("branch not found: {old_name}"))?;
+        branch.rename(new_name, false)
+            .with_context(|| format!("failed to rename branch to: {new_name}"))?;
+        Ok(())
+    }
+
+    pub fn delete_branch(&self, name: &str) -> anyhow::Result<()> {
+        let lock = self.repo_lock()?;
+        let repo = lock.as_ref().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        let mut branch = repo.find_branch(name, BranchType::Local)
+            .with_context(|| format!("branch not found: {name}"))?;
+        if branch.is_head() {
+            anyhow::bail!("Cannot delete the currently checked out branch: {name}");
+        }
+        branch.delete().with_context(|| format!("failed to delete branch: {name}"))?;
+        Ok(())
     }
 }
 
@@ -148,8 +198,27 @@ impl AppState {
         self.0.with_repo(f)
     }
 
+    pub fn with_repo_mut<F, T>(&self, f: F) -> anyhow::Result<T>
+    where
+        F: FnOnce(&mut Repository) -> T,
+    {
+        self.0.with_repo_mut(f)
+    }
+
     pub fn checkout_branch(&self, branch_name: &str) -> anyhow::Result<RepoInfo> {
         self.0.checkout_branch(branch_name)
+    }
+
+    pub fn create_branch(&self, name: &str, start_oid: Option<&str>) -> anyhow::Result<BranchInfo> {
+        self.0.create_branch(name, start_oid)
+    }
+
+    pub fn rename_branch(&self, old_name: &str, new_name: &str) -> anyhow::Result<()> {
+        self.0.rename_branch(old_name, new_name)
+    }
+
+    pub fn delete_branch(&self, name: &str) -> anyhow::Result<()> {
+        self.0.delete_branch(name)
     }
 }
 
@@ -289,5 +358,60 @@ mod tests {
         assert!(!branches.is_empty());
         let head_branch = branches.iter().find(|b| b.is_head);
         assert!(head_branch.is_some());
+    }
+
+    #[test]
+    fn create_branch_succeeds() {
+        let (_dir, _repo) = make_git_repo_with_commit();
+        let manager = RepoManager::new();
+        manager.open(_dir.path().to_str().unwrap()).unwrap();
+        let info = manager.create_branch("feature/new", None).unwrap();
+        assert_eq!(info.name, "feature/new");
+        let branches = manager.with_repo(|r| list_branches(r)).unwrap().unwrap();
+        assert!(branches.iter().any(|b| b.name == "feature/new"));
+    }
+
+    #[test]
+    fn create_branch_duplicate_name_returns_error() {
+        let (_dir, _repo) = make_git_repo_with_commit();
+        let manager = RepoManager::new();
+        manager.open(_dir.path().to_str().unwrap()).unwrap();
+        manager.create_branch("dup", None).unwrap();
+        let result = manager.create_branch("dup", None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn rename_branch_updates_name() {
+        let (_dir, _repo) = make_git_repo_with_commit();
+        let manager = RepoManager::new();
+        manager.open(_dir.path().to_str().unwrap()).unwrap();
+        manager.create_branch("old-name", None).unwrap();
+        manager.rename_branch("old-name", "new-name").unwrap();
+        let branches = manager.with_repo(|r| list_branches(r)).unwrap().unwrap();
+        assert!(branches.iter().any(|b| b.name == "new-name"));
+        assert!(branches.iter().all(|b| b.name != "old-name"));
+    }
+
+    #[test]
+    fn delete_branch_removes_it() {
+        let (_dir, _repo) = make_git_repo_with_commit();
+        let manager = RepoManager::new();
+        manager.open(_dir.path().to_str().unwrap()).unwrap();
+        manager.create_branch("to-delete", None).unwrap();
+        manager.delete_branch("to-delete").unwrap();
+        let branches = manager.with_repo(|r| list_branches(r)).unwrap().unwrap();
+        assert!(branches.iter().all(|b| b.name != "to-delete"));
+    }
+
+    #[test]
+    fn delete_current_branch_returns_error() {
+        let (_dir, _repo) = make_git_repo_with_commit();
+        let manager = RepoManager::new();
+        manager.open(_dir.path().to_str().unwrap()).unwrap();
+        // The HEAD branch (main/master) is the current branch
+        let head_branch = manager.get_current().unwrap().unwrap().head_branch.unwrap();
+        let result = manager.delete_branch(&head_branch);
+        assert!(result.is_err());
     }
 }

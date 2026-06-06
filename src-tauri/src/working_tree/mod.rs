@@ -155,6 +155,62 @@ pub fn discard_file(repo: &Repository, path: &str) -> anyhow::Result<WorkingTree
     get_working_tree_status(repo)
 }
 
+enum DiffKind { Unstaged, Staged }
+
+fn build_hunk_patch(repo: &Repository, path: &str, hunk_index: usize, kind: DiffKind) -> anyhow::Result<String> {
+    let hunks = match kind {
+        DiffKind::Unstaged => crate::diff_engine::get_unstaged_diff(repo, path)?.hunks,
+        DiffKind::Staged => crate::diff_engine::get_staged_diff(repo, path)?.hunks,
+    };
+    let hunk = hunks.into_iter().find(|h| h.index == hunk_index)
+        .ok_or_else(|| anyhow::anyhow!("hunk index {hunk_index} out of range"))?;
+
+    // Build minimal unified diff patch: file header + single hunk
+    let patch = format!(
+        "--- a/{path}\n+++ b/{path}\n{}",
+        hunk.content
+    );
+    Ok(patch)
+}
+
+fn git_apply(workdir: &std::path::Path, patch: &str, flags: &[&str]) -> anyhow::Result<()> {
+    use std::io::Write;
+    let mut child = std::process::Command::new("git")
+        .arg("apply")
+        .args(flags)
+        .current_dir(workdir)
+        .stdin(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .context("failed to spawn git apply")?;
+    child.stdin.take().unwrap().write_all(patch.as_bytes())
+        .context("failed to write patch to git apply stdin")?;
+    let output = child.wait_with_output().context("git apply failed to run")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("git apply failed: {stderr}");
+    }
+    Ok(())
+}
+
+pub fn stage_hunk(repo: &Repository, path: &str, hunk_index: usize) -> anyhow::Result<()> {
+    let workdir = repo.workdir().context("bare repository has no working directory")?;
+    let patch = build_hunk_patch(repo, path, hunk_index, DiffKind::Unstaged)?;
+    git_apply(workdir, &patch, &["--cached"])
+}
+
+pub fn unstage_hunk(repo: &Repository, path: &str, hunk_index: usize) -> anyhow::Result<()> {
+    let workdir = repo.workdir().context("bare repository has no working directory")?;
+    let patch = build_hunk_patch(repo, path, hunk_index, DiffKind::Staged)?;
+    git_apply(workdir, &patch, &["--cached", "--reverse"])
+}
+
+pub fn discard_hunk(repo: &Repository, path: &str, hunk_index: usize) -> anyhow::Result<()> {
+    let workdir = repo.workdir().context("bare repository has no working directory")?;
+    let patch = build_hunk_patch(repo, path, hunk_index, DiffKind::Unstaged)?;
+    git_apply(workdir, &patch, &["--reverse"])
+}
+
 pub fn create_commit(repo: &Repository, message: &str) -> anyhow::Result<String> {
     let sig = repo.signature().context(
         "Git user identity not configured. Set user.name and user.email in your .gitconfig."

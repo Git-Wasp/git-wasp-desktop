@@ -1,5 +1,9 @@
 pub mod branch;
+pub mod commit;
 pub mod diff;
+pub mod discard;
 pub mod graph;
 pub mod repo;
+pub mod staging;
+pub mod stash;
 pub mod status;

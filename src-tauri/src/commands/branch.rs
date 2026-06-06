@@ -30,3 +30,29 @@ pub async fn checkout_branch(
 ) -> Result<RepoInfo, String> {
     state.checkout_branch(&branch_name).map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub async fn create_branch(
+    name: String,
+    start_point: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<BranchInfo, String> {
+    state.create_branch(&name, start_point.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn rename_branch(
+    old_name: String,
+    new_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.rename_branch(&old_name, &new_name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_branch(
+    name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.delete_branch(&name).map_err(|e| e.to_string())
+}

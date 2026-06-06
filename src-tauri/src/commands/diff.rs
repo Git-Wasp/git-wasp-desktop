@@ -1,5 +1,10 @@
-use crate::diff_engine::{CommitDetail};
+use crate::diff_engine::{
+    CommitDetail,
+    get_unstaged_diff as de_get_unstaged_diff,
+    get_staged_diff as de_get_staged_diff,
+};
 use crate::repo_manager::AppState;
+use crate::working_tree::FileDiffHunks;
 use tauri::State;
 
 #[tauri::command]
@@ -25,4 +30,18 @@ pub async fn get_file_diff(
     })
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_unstaged_diff(path: String, state: State<'_, AppState>) -> Result<FileDiffHunks, String> {
+    state.with_repo(|repo| de_get_unstaged_diff(repo, &path))
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_staged_diff(path: String, state: State<'_, AppState>) -> Result<FileDiffHunks, String> {
+    state.with_repo(|repo| de_get_staged_diff(repo, &path))
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
 }
