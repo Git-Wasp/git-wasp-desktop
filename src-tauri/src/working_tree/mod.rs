@@ -241,6 +241,10 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
+    fn normalise(s: &str) -> String {
+        s.replace("\r\n", "\n")
+    }
+
     fn init_repo() -> (TempDir, Repository) {
         let dir = TempDir::new().unwrap();
         let repo = Repository::init(dir.path()).unwrap();
@@ -378,7 +382,7 @@ mod tests {
         fs::write(dir.path().join("file.txt"), "modified\n").unwrap();
         discard_file(&repo, "file.txt").unwrap();
         let content = fs::read_to_string(dir.path().join("file.txt")).unwrap();
-        assert_eq!(content, "original\n");
+        assert_eq!(normalise(&content), "original\n");
     }
 
     #[test]

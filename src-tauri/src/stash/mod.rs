@@ -54,6 +54,10 @@ mod tests {
     use std::{fs, path::Path};
     use tempfile::TempDir;
 
+    fn normalise(s: &str) -> String {
+        s.replace("\r\n", "\n")
+    }
+
     fn init_repo() -> (TempDir, Repository) {
         let dir = TempDir::new().unwrap();
         let repo = Repository::init(dir.path()).unwrap();
@@ -85,7 +89,7 @@ mod tests {
         fs::write(dir.path().join("file.txt"), "modified\n").unwrap();
         stash_save(&mut repo, Some("my stash")).unwrap();
         let content = fs::read_to_string(dir.path().join("file.txt")).unwrap();
-        assert_eq!(content, "original\n");
+        assert_eq!(normalise(&content), "original\n");
     }
 
     #[test]
@@ -106,7 +110,7 @@ mod tests {
         stash_save(&mut repo, Some("stash")).unwrap();
         stash_pop(&mut repo, 0).unwrap();
         let content = fs::read_to_string(dir.path().join("file.txt")).unwrap();
-        assert_eq!(content, "modified\n");
+        assert_eq!(normalise(&content), "modified\n");
         let entries = stash_list(&mut repo).unwrap();
         assert!(entries.is_empty());
     }
