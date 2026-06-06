@@ -1,4 +1,5 @@
 mod commands;
+mod credential_store;
 mod diff_engine;
 mod file_watcher;
 mod graph;
