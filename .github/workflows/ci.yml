@@ -69,6 +69,6 @@ jobs:
       - name: Tauri build check
         uses: tauri-apps/tauri-action@v0
         with:
-          args: --target ${{ matrix.target }} -- --no-bundle
+          args: --target ${{ matrix.target }} --no-bundle
         env:
           TAURI_SIGNING_PRIVATE_KEY: ""

@@ -1,6 +1,7 @@
 use anyhow::Context;
 use git2::{DiffFormat, DiffOptions, Repository};
 use serde::Serialize;
+use crate::working_tree::FileDiffHunks;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -132,6 +133,86 @@ pub fn get_file_diff(repo: &Repository, oid_str: &str, path: &str) -> anyhow::Re
     .context("failed to print diff")?;
 
     Ok(output)
+}
+
+fn collect_hunks(diff: git2::Diff<'_>) -> anyhow::Result<Vec<crate::working_tree::Hunk>> {
+    use std::cell::RefCell;
+    let hunks: RefCell<Vec<crate::working_tree::Hunk>> = RefCell::new(Vec::new());
+    let current_hunk: RefCell<Option<(crate::working_tree::Hunk, String)>> = RefCell::new(None);
+
+    diff.foreach(
+        &mut |_, _| true,
+        None,
+        Some(&mut |_, raw_hunk| {
+            // Flush any in-progress hunk
+            if let Some((mut h, content)) = current_hunk.borrow_mut().take() {
+                h.content = content;
+                hunks.borrow_mut().push(h);
+            }
+            let idx = hunks.borrow().len();
+            let header = std::str::from_utf8(raw_hunk.header()).unwrap_or("").trim_end().to_string();
+            let new_hunk = crate::working_tree::Hunk {
+                index: idx,
+                header: header.clone(),
+                content: String::new(),
+                old_start: raw_hunk.old_start(),
+                new_start: raw_hunk.new_start(),
+            };
+            *current_hunk.borrow_mut() = Some((new_hunk, header + "\n"));
+            true
+        }),
+        Some(&mut |_, _, line| {
+            use git2::DiffLineType::*;
+            let prefix = match line.origin_value() {
+                Addition => "+",
+                Deletion => "-",
+                Context => " ",
+                _ => return true,
+            };
+            let content = std::str::from_utf8(line.content()).unwrap_or("");
+            if let Some((_, ref mut body)) = *current_hunk.borrow_mut() {
+                body.push_str(prefix);
+                body.push_str(content);
+                if !content.ends_with('\n') {
+                    body.push('\n');
+                }
+            }
+            true
+        }),
+    )?;
+
+    // Flush final hunk
+    if let Some((mut h, content)) = current_hunk.into_inner() {
+        h.content = content;
+        hunks.borrow_mut().push(h);
+    }
+
+    Ok(hunks.into_inner())
+}
+
+pub fn get_unstaged_diff(repo: &Repository, path: &str) -> anyhow::Result<FileDiffHunks> {
+    let index = repo.index().context("failed to get index")?;
+    let mut opts = DiffOptions::new();
+    opts.pathspec(path);
+    let diff = repo
+        .diff_index_to_workdir(Some(&index), Some(&mut opts))
+        .context("failed to compute unstaged diff")?;
+    let hunks = collect_hunks(diff)?;
+    Ok(FileDiffHunks { path: path.to_string(), hunks })
+}
+
+pub fn get_staged_diff(repo: &Repository, path: &str) -> anyhow::Result<FileDiffHunks> {
+    let index = repo.index().context("failed to get index")?;
+    let head_tree = repo.head()
+        .ok()
+        .and_then(|h| h.peel_to_tree().ok());
+    let mut opts = DiffOptions::new();
+    opts.pathspec(path);
+    let diff = repo
+        .diff_tree_to_index(head_tree.as_ref(), Some(&index), Some(&mut opts))
+        .context("failed to compute staged diff")?;
+    let hunks = collect_hunks(diff)?;
+    Ok(FileDiffHunks { path: path.to_string(), hunks })
 }
 
 #[cfg(test)]

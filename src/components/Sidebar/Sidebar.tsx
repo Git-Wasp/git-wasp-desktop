@@ -1,14 +1,25 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRepoStore } from "../../stores/repoStore";
 import { useGraphStore } from "../../stores/graphStore";
+import { StashPanel } from "./StashPanel";
 
 const INITIAL_LIMIT = 150;
 
-export function Sidebar() {
-  const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, loadBranches, checkoutBranch } =
+type View = "history" | "working-tree";
+
+export function Sidebar({
+  view,
+  onViewChange,
+}: {
+  view: View;
+  onViewChange: (v: View) => void;
+}) {
+  const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, loadBranches, checkoutBranch, createBranch, deleteBranch } =
     useRepoStore();
   const { fetchViewport } = useGraphStore();
+  const [newBranchName, setNewBranchName] = useState("");
+  const [showNewBranch, setShowNewBranch] = useState(false);
 
   useEffect(() => {
     loadRecentRepos();
@@ -31,6 +42,19 @@ export function Sidebar() {
     await openRepo(path);
     await fetchViewport(0, INITIAL_LIMIT);
     loadBranches();
+  };
+
+  const handleCreateBranch = async () => {
+    if (!newBranchName.trim()) return;
+    await createBranch(newBranchName.trim());
+    setNewBranchName("");
+    setShowNewBranch(false);
+    await fetchViewport(0, INITIAL_LIMIT);
+  };
+
+  const handleDeleteBranch = async (name: string) => {
+    await deleteBranch(name);
+    await fetchViewport(0, INITIAL_LIMIT);
   };
 
   return (
@@ -95,52 +119,185 @@ export function Sidebar() {
         >
           Open Repository…
         </button>
+
+        {/* View toggle */}
+        {currentRepo && (
+          <div
+            style={{
+              marginTop: "var(--space-3)",
+              display: "flex",
+              gap: "var(--space-1)",
+            }}
+          >
+            {(["history", "working-tree"] as View[]).map((v) => (
+              <button
+                key={v}
+                onClick={() => onViewChange(v)}
+                style={{
+                  flex: 1,
+                  padding: "var(--space-1) var(--space-2)",
+                  fontSize: "var(--font-size-xs)",
+                  background:
+                    view === v
+                      ? "var(--color-bg-elevated)"
+                      : "transparent",
+                  color:
+                    view === v
+                      ? "var(--color-text-primary)"
+                      : "var(--color-text-muted)",
+                  border: "1px solid var(--color-border-subtle)",
+                  borderRadius: "var(--radius-sm)",
+                  cursor: "pointer",
+                  fontWeight:
+                    view === v
+                      ? "var(--font-weight-semibold)"
+                      : "var(--font-weight-normal)",
+                }}
+              >
+                {v === "history" ? "History" : "Changes"}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Branch list */}
-      {branches.length > 0 && (
+      {currentRepo && (
         <div
           style={{
             padding: "var(--space-2) 0",
             borderBottom: "1px solid var(--color-border-subtle)",
             overflowY: "auto",
-            maxHeight: 180,
+            maxHeight: 220,
           }}
         >
           <div
             style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
               padding: "0 var(--space-3)",
-              fontSize: "var(--font-size-xs)",
-              fontWeight: "var(--font-weight-semibold)",
-              color: "var(--color-text-muted)",
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
               marginBottom: "var(--space-1)",
             }}
           >
-            Branches
+            <span
+              style={{
+                fontSize: "var(--font-size-xs)",
+                fontWeight: "var(--font-weight-semibold)",
+                color: "var(--color-text-muted)",
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+              }}
+            >
+              Branches
+            </span>
+            <button
+              onClick={() => setShowNewBranch((v) => !v)}
+              style={{
+                fontSize: "var(--font-size-xs)",
+                padding: "1px var(--space-2)",
+                background: "transparent",
+                border: "1px solid var(--color-border-subtle)",
+                borderRadius: "var(--radius-sm)",
+                color: "var(--color-text-muted)",
+                cursor: "pointer",
+              }}
+            >
+              + New
+            </button>
           </div>
+
+          {showNewBranch && (
+            <div style={{ padding: "0 var(--space-3)", marginBottom: "var(--space-1)", display: "flex", gap: "var(--space-1)" }}>
+              <input
+                autoFocus
+                value={newBranchName}
+                onChange={(e) => setNewBranchName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleCreateBranch();
+                  if (e.key === "Escape") { setShowNewBranch(false); setNewBranchName(""); }
+                }}
+                placeholder="branch-name"
+                style={{
+                  flex: 1,
+                  fontSize: "var(--font-size-xs)",
+                  fontFamily: "var(--font-family-mono)",
+                  background: "var(--color-bg-input)",
+                  border: "1px solid var(--color-border-subtle)",
+                  borderRadius: "var(--radius-sm)",
+                  color: "var(--color-text-primary)",
+                  padding: "2px var(--space-2)",
+                  outline: "none",
+                }}
+              />
+              <button
+                onClick={handleCreateBranch}
+                style={{
+                  fontSize: "var(--font-size-xs)",
+                  padding: "2px var(--space-2)",
+                  background: "var(--color-accent-primary)",
+                  border: "none",
+                  borderRadius: "var(--radius-sm)",
+                  color: "#fff",
+                  cursor: "pointer",
+                }}
+              >
+                Create
+              </button>
+            </div>
+          )}
+
           {branches
             .filter((b) => !b.isRemote)
             .map((b) => (
               <div
                 key={b.name}
-                onClick={() => !b.isHead && checkoutBranch(b.name).then(() => fetchViewport(0, INITIAL_LIMIT))}
                 style={{
+                  display: "flex",
+                  alignItems: "center",
                   padding: "var(--space-1) var(--space-3)",
-                  fontSize: "var(--font-size-sm)",
-                  fontFamily: "var(--font-family-mono)",
-                  color: b.isHead
-                    ? "var(--color-accent-primary)"
-                    : "var(--color-text-secondary)",
-                  cursor: b.isHead ? "default" : "pointer",
-                  background: b.isHead ? "var(--color-bg-elevated)" : "transparent",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
+                  gap: "var(--space-1)",
                 }}
               >
-                {b.isHead ? "▸ " : "  "}{b.name}
+                <div
+                  onClick={() => !b.isHead && checkoutBranch(b.name).then(() => fetchViewport(0, INITIAL_LIMIT))}
+                  style={{
+                    flex: 1,
+                    fontSize: "var(--font-size-sm)",
+                    fontFamily: "var(--font-family-mono)",
+                    color: b.isHead
+                      ? "var(--color-accent-primary)"
+                      : "var(--color-text-secondary)",
+                    cursor: b.isHead ? "default" : "pointer",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    background: b.isHead ? "var(--color-bg-elevated)" : "transparent",
+                    borderRadius: "var(--radius-sm)",
+                    padding: "1px var(--space-2)",
+                  }}
+                >
+                  {b.isHead ? "▸ " : ""}{b.name}
+                </div>
+                {!b.isHead && (
+                  <button
+                    onClick={() => handleDeleteBranch(b.name)}
+                    title="Delete branch"
+                    style={{
+                      fontSize: "var(--font-size-xs)",
+                      padding: "1px 4px",
+                      background: "transparent",
+                      border: "none",
+                      borderRadius: "var(--radius-sm)",
+                      color: "var(--color-text-muted)",
+                      cursor: "pointer",
+                      flexShrink: 0,
+                      opacity: 0.6,
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
               </div>
             ))}
         </div>
@@ -182,6 +339,8 @@ export function Sidebar() {
           ))}
         </div>
       )}
+
+      <StashPanel />
     </div>
   );
 }
