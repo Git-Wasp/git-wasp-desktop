@@ -1,0 +1,51 @@
+/* Token layer MUST be imported before Tailwind to ensure custom property
+   definitions are available for the @theme inline mappings below. */
+@import "./tokens.css";
+@import "tailwindcss";
+
+/* Map CSS custom properties into Tailwind v4 theme so utility classes
+   (bg-bg-app, text-text-primary, etc.) resolve at runtime, which is
+   required for the light/dark theme swap via [data-theme="light"]. */
+@theme inline {
+  --color-bg-app:      var(--color-bg-app);
+  --color-bg-panel:    var(--color-bg-panel);
+  --color-bg-surface:  var(--color-bg-surface);
+  --color-bg-elevated: var(--color-bg-elevated);
+
+  --color-text-primary:   var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-muted:     var(--color-text-muted);
+  --color-text-inverse:   var(--color-text-inverse);
+
+  --color-border-subtle:  var(--color-border-subtle);
+  --color-border-default: var(--color-border-default);
+  --color-border-strong:  var(--color-border-strong);
+
+  --color-accent:   var(--color-accent-primary);
+  --color-success:  var(--color-success);
+  --color-warning:  var(--color-warning);
+  --color-danger:   var(--color-danger);
+
+  --font-family-sans: var(--font-family-sans);
+  --font-family-mono: var(--font-family-mono);
+}
+
+/* Base reset */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background-color: var(--color-bg-app);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  -webkit-font-smoothing: antialiased;
+}

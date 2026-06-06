@@ -1,0 +1,129 @@
+:root {
+  /* === COLOUR — Neutral scale === */
+  --color-neutral-0:   #0d0f12;
+  --color-neutral-50:  #13161a;
+  --color-neutral-100: #1a1d23;
+  --color-neutral-200: #22262e;
+  --color-neutral-300: #2d3240;
+  --color-neutral-400: #3d4454;
+  --color-neutral-500: #5a6278;
+  --color-neutral-600: #7c879a;
+  --color-neutral-700: #a3afc2;
+  --color-neutral-800: #ccd5e0;
+  --color-neutral-900: #eef1f5;
+  --color-neutral-950: #ffffff;
+
+  /* === COLOUR — Brand/accent === */
+  --color-accent-primary:   #4d9de0;
+  --color-accent-secondary: #3b82c4;
+  --color-accent-muted:     #1e3a5f;
+
+  /* === COLOUR — Semantic === */
+  --color-success: #34c759;
+  --color-warning: #ff9f0a;
+  --color-danger:  #ff3b30;
+  --color-info:    #4d9de0;
+
+  /* === COLOUR — Graph lane rotation (8 colours) === */
+  --color-lane-0: #4d9de0;
+  --color-lane-1: #a855f7;
+  --color-lane-2: #34c759;
+  --color-lane-3: #ff9f0a;
+  --color-lane-4: #f43f5e;
+  --color-lane-5: #14b8a6;
+  --color-lane-6: #f59e0b;
+  --color-lane-7: #6366f1;
+
+  /* === COLOUR — Surface === */
+  --color-bg-app:      var(--color-neutral-0);
+  --color-bg-panel:    var(--color-neutral-50);
+  --color-bg-surface:  var(--color-neutral-100);
+  --color-bg-elevated: var(--color-neutral-200);
+  --color-bg-overlay:  rgba(0, 0, 0, 0.6);
+
+  /* === COLOUR — Text === */
+  --color-text-primary:   var(--color-neutral-900);
+  --color-text-secondary: var(--color-neutral-700);
+  --color-text-muted:     var(--color-neutral-500);
+  --color-text-inverse:   var(--color-neutral-0);
+
+  /* === COLOUR — Border === */
+  --color-border-subtle:  var(--color-neutral-200);
+  --color-border-default: var(--color-neutral-300);
+  --color-border-strong:  var(--color-neutral-400);
+
+  /* === SPACING === */
+  --space-0:  0px;
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* === TYPOGRAPHY === */
+  --font-family-mono: "JetBrains Mono", "Menlo", "Fira Code", monospace;
+  --font-family-sans: -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+
+  --font-size-xs:   11px;
+  --font-size-sm:   12px;
+  --font-size-base: 13px;
+  --font-size-md:   14px;
+  --font-size-lg:   16px;
+  --font-size-xl:   18px;
+  --font-size-2xl:  22px;
+
+  --font-weight-normal:   400;
+  --font-weight-medium:   500;
+  --font-weight-semibold: 600;
+  --font-weight-bold:     700;
+
+  --line-height-tight:  1.2;
+  --line-height-normal: 1.5;
+  --line-height-loose:  1.75;
+
+  /* === BORDER RADIUS === */
+  --radius-sm:   3px;
+  --radius-md:   6px;
+  --radius-lg:   10px;
+  --radius-xl:   14px;
+  --radius-full: 9999px;
+
+  /* === SHADOW === */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+
+  /* === ANIMATION === */
+  --duration-fast:   100ms;
+  --duration-normal: 200ms;
+  --duration-slow:   350ms;
+  --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* === LAYOUT — Commit graph === */
+  --graph-row-height: 28px;
+  --graph-lane-width: 20px;
+  --graph-dot-radius: 5px;
+  --graph-line-width: 2px;
+}
+
+/* Light theme overrides — surface/text/border only; lane colours are stable */
+[data-theme="light"] {
+  --color-bg-app:      #f5f7fa;
+  --color-bg-panel:    #ffffff;
+  --color-bg-surface:  #f0f2f5;
+  --color-bg-elevated: #e8eaed;
+
+  --color-text-primary:   #1a1d23;
+  --color-text-secondary: #3d4454;
+  --color-text-muted:     #7c879a;
+  --color-text-inverse:   #ffffff;
+
+  --color-border-subtle:  #e0e3e8;
+  --color-border-default: #c8cdd5;
+  --color-border-strong:  #a3afc2;
+}
