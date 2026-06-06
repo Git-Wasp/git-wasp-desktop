@@ -1,5 +1,5 @@
 use anyhow::Context;
-use git2::{DiffFormat, DiffOptions, ObjectType, Repository};
+use git2::{DiffFormat, DiffOptions, Repository};
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -33,7 +33,6 @@ pub enum FileStatus {
     Deleted,
     Renamed,
     Copied,
-    Untracked,
 }
 
 pub fn get_commit_detail(repo: &Repository, oid_str: &str) -> anyhow::Result<CommitDetail> {
@@ -167,7 +166,7 @@ mod tests {
 
     #[test]
     fn get_commit_diff_returns_changed_files() {
-        let (dir, repo, oid) = init_repo_with_file("hello.txt", "hello\n");
+        let (_dir, repo, oid) = init_repo_with_file("hello.txt", "hello\n");
         let detail = get_commit_detail(&repo, &oid.to_string()).unwrap();
         assert_eq!(detail.changed_files.len(), 1);
         assert_eq!(detail.changed_files[0].path, "hello.txt");
@@ -175,14 +174,14 @@ mod tests {
 
     #[test]
     fn get_file_diff_returns_unified_format() {
-        let (dir, repo, oid) = init_repo_with_file("hello.txt", "hello\n");
+        let (_dir, repo, oid) = init_repo_with_file("hello.txt", "hello\n");
         let diff = get_file_diff(&repo, &oid.to_string(), "hello.txt").unwrap();
         assert!(diff.contains("+hello"), "diff output: {diff}");
     }
 
     #[test]
     fn root_commit_diff_against_empty_tree() {
-        let (dir, repo, oid) = init_repo_with_file("file.txt", "content\n");
+        let (_dir, repo, oid) = init_repo_with_file("file.txt", "content\n");
         let detail = get_commit_detail(&repo, &oid.to_string()).unwrap();
         assert!(matches!(detail.changed_files[0].status, FileStatus::Added));
     }

@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn linear_history_all_in_lane_zero() {
-        let (dir, repo) = init_repo();
+        let (_dir, repo) = init_repo();
         let c1 = repo.find_commit(make_commit(&repo, "first", &[])).unwrap();
         let c2 = repo.find_commit(make_commit(&repo, "second", &[&c1])).unwrap();
         make_commit(&repo, "third", &[&c2]);
@@ -303,7 +303,7 @@ mod tests {
 
     #[test]
     fn viewport_offset_returns_correct_slice() {
-        let (dir, repo) = init_repo();
+        let (_dir, repo) = init_repo();
         let c1 = repo.find_commit(make_commit(&repo, "c1", &[])).unwrap();
         let c2 = repo.find_commit(make_commit(&repo, "c2", &[&c1])).unwrap();
         let c3 = repo.find_commit(make_commit(&repo, "c3", &[&c2])).unwrap();
@@ -320,7 +320,7 @@ mod tests {
 
     #[test]
     fn total_count_correct_for_full_walk() {
-        let (dir, repo) = init_repo();
+        let (_dir, repo) = init_repo();
         let c1 = repo.find_commit(make_commit(&repo, "c1", &[])).unwrap();
         let c2 = repo.find_commit(make_commit(&repo, "c2", &[&c1])).unwrap();
         make_commit(&repo, "c3", &[&c2]);

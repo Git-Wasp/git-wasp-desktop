@@ -23,11 +23,11 @@ impl RepoManager {
         }
     }
 
-    fn repo_lock(&self) -> anyhow::Result<MutexGuard<Option<Repository>>> {
+    fn repo_lock(&self) -> anyhow::Result<MutexGuard<'_, Option<Repository>>> {
         self.repo.lock().map_err(|_| anyhow::anyhow!("repo lock poisoned"))
     }
 
-    fn config_lock(&self) -> anyhow::Result<MutexGuard<AppConfig>> {
+    fn config_lock(&self) -> anyhow::Result<MutexGuard<'_, AppConfig>> {
         self.config.lock().map_err(|_| anyhow::anyhow!("config lock poisoned"))
     }
 
@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn list_branches_returns_branches() {
-        let (dir, repo) = make_git_repo_with_commit();
+        let (_dir, repo) = make_git_repo_with_commit();
         let branches = list_branches(&repo).unwrap();
         assert!(!branches.is_empty());
         let head_branch = branches.iter().find(|b| b.is_head);
