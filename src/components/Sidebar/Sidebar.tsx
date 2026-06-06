@@ -5,7 +5,15 @@ import { useGraphStore } from "../../stores/graphStore";
 
 const INITIAL_LIMIT = 150;
 
-export function Sidebar() {
+type View = "history" | "working-tree";
+
+export function Sidebar({
+  view,
+  onViewChange,
+}: {
+  view: View;
+  onViewChange: (v: View) => void;
+}) {
   const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, loadBranches, checkoutBranch } =
     useRepoStore();
   const { fetchViewport } = useGraphStore();
@@ -95,6 +103,46 @@ export function Sidebar() {
         >
           Open Repository…
         </button>
+
+        {/* View toggle */}
+        {currentRepo && (
+          <div
+            style={{
+              marginTop: "var(--space-3)",
+              display: "flex",
+              gap: "var(--space-1)",
+            }}
+          >
+            {(["history", "working-tree"] as View[]).map((v) => (
+              <button
+                key={v}
+                onClick={() => onViewChange(v)}
+                style={{
+                  flex: 1,
+                  padding: "var(--space-1) var(--space-2)",
+                  fontSize: "var(--font-size-xs)",
+                  background:
+                    view === v
+                      ? "var(--color-bg-elevated)"
+                      : "transparent",
+                  color:
+                    view === v
+                      ? "var(--color-text-primary)"
+                      : "var(--color-text-muted)",
+                  border: "1px solid var(--color-border-subtle)",
+                  borderRadius: "var(--radius-sm)",
+                  cursor: "pointer",
+                  fontWeight:
+                    view === v
+                      ? "var(--font-weight-semibold)"
+                      : "var(--font-weight-normal)",
+                }}
+              >
+                {v === "history" ? "History" : "Changes"}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Branch list */}

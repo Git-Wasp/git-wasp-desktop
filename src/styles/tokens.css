@@ -104,6 +104,18 @@
   --duration-slow:   350ms;
   --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
 
+  /* === COLOUR — Working tree diff === */
+  --color-diff-add:    #34c759;
+  --color-diff-del:    #ff3b30;
+  --color-diff-add-bg: rgba(52, 199, 89, 0.10);
+  --color-diff-del-bg: rgba(255, 59, 48, 0.10);
+  --color-bg-hunk-header: var(--color-neutral-100);
+
+  /* === COLOUR — Interactive === */
+  --color-bg-selected:    var(--color-accent-muted);
+  --color-bg-input:       var(--color-neutral-100);
+  --color-text-on-accent: #ffffff;
+
   /* === LAYOUT — Commit graph === */
   --graph-row-height: 28px;
   --graph-lane-width: 20px;
