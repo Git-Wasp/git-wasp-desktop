@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            runner: macos-latest
+            target: aarch64-apple-darwin
+          - name: Linux x64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - name: Windows x64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Linux system deps
+        if: matrix.runner == 'ubuntu-latest'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: npm install
+        run: npm ci
+
+      - name: Frontend tests
+        run: npm run test:unit
+
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test --target ${{ matrix.target }}
+
+      - name: Tauri build check
+        uses: tauri-apps/tauri-action@v0
+        with:
+          args: --target ${{ matrix.target }} -- --no-bundle
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ""
