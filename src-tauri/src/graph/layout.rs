@@ -20,10 +20,10 @@ pub fn compute_layout(
 
     // Walk offset + limit + LOOKAHEAD commits for lane computation accuracy.
     let walk_limit = offset + limit + LOOKAHEAD;
-    let raw = walk_commits(repo, walk_limit)?;
+    let commits = walk_commits(repo, walk_limit)?;
 
     // Compute lane layout over the full walked slice.
-    let laid_out = assign_lanes(&raw, &label_map, head_id);
+    let laid_out = assign_lanes(&commits, &label_map, head_id);
 
     // Slice to the requested viewport.
     let nodes = laid_out
@@ -43,10 +43,16 @@ fn count_commits(repo: &Repository) -> anyhow::Result<usize> {
     Ok(walk.count())
 }
 
-fn walk_commits(
-    repo: &Repository,
-    limit: usize,
-) -> anyhow::Result<Vec<(git2::Oid, Vec<git2::Oid>)>> {
+struct CommitRaw {
+    oid: git2::Oid,
+    parents: Vec<git2::Oid>,
+    summary: String,
+    author_name: String,
+    author_email: String,
+    author_timestamp: i64,
+}
+
+fn walk_commits(repo: &Repository, limit: usize) -> anyhow::Result<Vec<CommitRaw>> {
     let mut walk = repo.revwalk().context("failed to create revwalk")?;
     walk.push_head().context("no HEAD — empty repository?")?;
     walk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME)
@@ -57,7 +63,11 @@ fn walk_commits(
         let oid = oid.context("revwalk error")?;
         let commit = repo.find_commit(oid).context("commit not found")?;
         let parents = commit.parent_ids().collect();
-        result.push((oid, parents));
+        let summary = commit.summary().unwrap_or("").to_string();
+        let author_name = commit.author().name().unwrap_or("").to_string();
+        let author_email = commit.author().email().unwrap_or("").to_string();
+        let author_timestamp = commit.author().when().seconds();
+        result.push(CommitRaw { oid, parents, summary, author_name, author_email, author_timestamp });
     }
     Ok(result)
 }
@@ -87,7 +97,7 @@ fn build_label_map(repo: &Repository) -> HashMap<git2::Oid, Vec<BranchLabel>> {
 }
 
 fn assign_lanes(
-    commits: &[(git2::Oid, Vec<git2::Oid>)],
+    commits: &[CommitRaw],
     label_map: &HashMap<git2::Oid, Vec<BranchLabel>>,
     head_id: Option<git2::Oid>,
 ) -> Vec<GraphNode> {
@@ -104,15 +114,17 @@ fn assign_lanes(
 
     // children map: for each oid, which oids are its children (for GraphNode.children).
     let mut children_map: HashMap<git2::Oid, Vec<git2::Oid>> = HashMap::new();
-    for (oid, parents) in commits {
-        for parent in parents {
-            children_map.entry(*parent).or_default().push(*oid);
+    for c in commits {
+        for parent in &c.parents {
+            children_map.entry(*parent).or_default().push(c.oid);
         }
     }
 
     let mut nodes: Vec<GraphNode> = Vec::new();
 
-    for (row, (oid, parents)) in commits.iter().enumerate() {
+    for (row, c) in commits.iter().enumerate() {
+        let oid = &c.oid;
+        let parents = &c.parents;
         // Determine this commit's lane.
         let (lane, color_index) = if let Some(&reserved) = reserved.get(oid) {
             reserved
@@ -199,22 +211,22 @@ fn assign_lanes(
         }
 
         let branch_labels = label_map.get(oid).cloned().unwrap_or_default();
-        let commit_str = oid.to_string();
+        let oid_str = oid.to_string();
 
         nodes.push(GraphNode {
-            oid: commit_str.clone(),
-            short_oid: commit_str[..8].to_string(),
-            summary: String::new(), // filled below
-            author_name: String::new(),
-            author_email: String::new(),
-            author_timestamp: 0,
+            short_oid: oid_str[..8].to_string(),
+            oid: oid_str,
+            summary: c.summary.clone(),
+            author_name: c.author_name.clone(),
+            author_email: c.author_email.clone(),
+            author_timestamp: c.author_timestamp,
             lane,
             row,
             color_index,
             parents: parents.iter().map(|p| p.to_string()).collect(),
             children: children_map
                 .get(oid)
-                .map(|v| v.iter().map(|c| c.to_string()).collect())
+                .map(|v| v.iter().map(|child| child.to_string()).collect())
                 .unwrap_or_default(),
             edges,
             branch_labels,

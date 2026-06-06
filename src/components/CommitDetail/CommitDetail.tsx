@@ -1,0 +1,116 @@
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import type { CommitDetail as CommitDetailData } from "../../types/repo";
+import { FileList } from "./FileList";
+import { DiffViewer } from "./DiffViewer";
+
+interface CommitDetailProps {
+  oid: string | null;
+}
+
+export function CommitDetail({ oid }: CommitDetailProps) {
+  const [detail, setDetail] = useState<CommitDetailData | null>(null);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [diffContent, setDiffContent] = useState<string>("");
+
+  useEffect(() => {
+    if (!oid) {
+      setDetail(null);
+      setSelectedPath(null);
+      setDiffContent("");
+      return;
+    }
+    invoke<CommitDetailData>("get_commit_diff", { oid }).then((d) => {
+      setDetail(d);
+      setSelectedPath(d.changedFiles[0]?.path ?? null);
+    });
+  }, [oid]);
+
+  useEffect(() => {
+    if (!oid || !selectedPath) {
+      setDiffContent("");
+      return;
+    }
+    invoke<string>("get_file_diff", { oid, path: selectedPath }).then(setDiffContent);
+  }, [oid, selectedPath]);
+
+  if (!oid || !detail) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100%",
+          color: "var(--color-text-muted)",
+          fontSize: "var(--font-size-sm)",
+        }}
+      >
+        Select a commit to view details
+      </div>
+    );
+  }
+
+  const date = new Date(detail.authorTimestamp * 1000).toLocaleString();
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      {/* Commit metadata */}
+      <div
+        style={{
+          padding: "var(--space-4)",
+          borderBottom: "1px solid var(--color-border-subtle)",
+          flexShrink: 0,
+        }}
+      >
+        <div
+          style={{
+            fontFamily: "var(--font-family-sans)",
+            fontSize: "var(--font-size-base)",
+            fontWeight: "var(--font-weight-medium)",
+            color: "var(--color-text-primary)",
+            marginBottom: "var(--space-2)",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+          }}
+        >
+          {detail.message}
+        </div>
+        <div style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>
+          {detail.authorName} &lt;{detail.authorEmail}&gt; · {date}
+        </div>
+        <div
+          style={{
+            fontFamily: "var(--font-family-mono)",
+            fontSize: "var(--font-size-xs)",
+            color: "var(--color-text-muted)",
+            marginTop: "var(--space-1)",
+          }}
+        >
+          {detail.oid.slice(0, 12)}
+        </div>
+      </div>
+
+      {/* File list */}
+      <div
+        style={{
+          flexShrink: 0,
+          maxHeight: 200,
+          overflowY: "auto",
+          borderBottom: "1px solid var(--color-border-subtle)",
+        }}
+      >
+        <FileList
+          files={detail.changedFiles}
+          selectedPath={selectedPath}
+          onSelect={setSelectedPath}
+        />
+      </div>
+
+      {/* Diff viewer */}
+      <div style={{ flex: 1, overflow: "hidden" }}>
+        <DiffViewer content={diffContent} />
+      </div>
+    </div>
+  );
+}
