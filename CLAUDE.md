@@ -123,9 +123,10 @@ All diff viewing and editing uses CodeMirror 6. Do not introduce a second editor
 
 **Three-Panel Merge Editor**
 
-- Ours / base / theirs panels using three CodeMirror 6 instances
+- Two-row layout using three CodeMirror 6 instances: top row split 50/50 between source (theirs) and current (ours), both read-only references; bottom row spans the full width and shows the result — pre-seeded with conflict-marker text, the buffer that becomes the final resolved file (manual editing of the result is supported)
+- Base/ancestor shown contextually (e.g. diff gutter/toggle against source/current) rather than as a dedicated panel
 - Conflict marker parsing and decoration
-- Accept ours / accept theirs / manual edit per conflict block
+- Accept source / accept current / manual edit per conflict block
 - Mark file resolved, complete merge commit
 - Abort merge and return to pre-merge state cleanly
 - Routed through `OperationRunner`
@@ -241,7 +242,7 @@ Interactive rebase is deferred to v2. The following commitments ensure it can be
 **Goal:** Conflict resolution entirely within the app.
 
 - `OperationRunner` state machine implemented and wired to merge
-- Three-panel CodeMirror 6 merge editor: ours / base / theirs
+- Three-panel CodeMirror 6 merge editor: source/current (50/50 top split, read-only) over result (full-width, editable)
 - Conflict marker parsing and decoration
 - Per-conflict accept / manual edit
 - Mark resolved, complete merge commit
