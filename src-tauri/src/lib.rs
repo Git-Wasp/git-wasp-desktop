@@ -4,6 +4,7 @@ mod diff_engine;
 mod file_watcher;
 mod github_client;
 mod graph;
+mod merge_ops;
 mod operation_runner;
 mod remote_ops;
 mod repo_manager;
