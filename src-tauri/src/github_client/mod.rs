@@ -68,7 +68,6 @@ struct DeviceCodeResponse {
 #[derive(Deserialize)]
 struct AccessTokenResponse {
     access_token: Option<String>,
-    #[allow(dead_code)]
     error: Option<String>,
 }
 
@@ -133,7 +132,13 @@ async fn poll_device_flow_at(url: &str, device_code: &str) -> anyhow::Result<Dev
             return Ok(DeviceFlowPollResult { done: true, token: Some(token) });
         }
     }
-    Ok(DeviceFlowPollResult { done: false, token: None })
+
+    match resp.error.as_deref() {
+        None | Some("authorization_pending") | Some("slow_down") => {
+            Ok(DeviceFlowPollResult { done: false, token: None })
+        }
+        Some(other) => Err(anyhow::anyhow!("GitHub device authorization failed: {other}")),
+    }
 }
 
 // ----- Repos -----
@@ -491,6 +496,46 @@ mod tests {
         mock.assert();
         assert!(!result.done);
         assert!(result.token.is_none());
+    }
+
+    #[tokio::test]
+    async fn poll_device_flow_slow_down_is_not_done() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::POST).path("/login/oauth/access_token");
+            then.status(200).json_body(serde_json::json!({
+                "access_token": null,
+                "error": "slow_down"
+            }));
+        });
+
+        let result = poll_device_flow_at(&format!("{}/login/oauth/access_token", server.base_url()), "device-abc")
+            .await
+            .unwrap();
+
+        mock.assert();
+        assert!(!result.done);
+        assert!(result.token.is_none());
+    }
+
+    #[tokio::test]
+    async fn poll_device_flow_terminal_error_surfaces_as_error() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::POST).path("/login/oauth/access_token");
+            then.status(200).json_body(serde_json::json!({
+                "access_token": null,
+                "error": "expired_token"
+            }));
+        });
+
+        let err = poll_device_flow_at(&format!("{}/login/oauth/access_token", server.base_url()), "device-abc")
+            .await
+            .unwrap_err();
+
+        mock.assert();
+        let message = format!("{err:#}");
+        assert!(message.contains("expired_token"), "expected the GitHub error in the message, got: {message}");
     }
 
     #[tokio::test]
