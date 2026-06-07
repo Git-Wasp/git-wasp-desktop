@@ -78,16 +78,21 @@ pub async fn start_device_flow(host: &str) -> anyhow::Result<DeviceFlowInit> {
 
 async fn start_device_flow_at(url: &str) -> anyhow::Result<DeviceFlowInit> {
     let client = http_client()?;
-    let resp: DeviceCodeResponse = client
+    let response = client
         .post(url)
         .header("Accept", "application/json")
         .form(&[("client_id", GITHUB_CLIENT_ID), ("scope", "repo read:user")])
         .send()
         .await
-        .context("device code request failed")?
-        .json()
+        .context("device code request failed")?;
+    let status = response.status();
+    let body = response
+        .text()
         .await
-        .context("failed to parse device code response")?;
+        .context("failed to read device code response body")?;
+    let resp: DeviceCodeResponse = serde_json::from_str(&body).with_context(|| {
+        format!("failed to parse device code response (status {status}): {body}")
+    })?;
     Ok(DeviceFlowInit {
         user_code: resp.user_code,
         verification_uri: resp.verification_uri,
@@ -103,7 +108,7 @@ pub async fn poll_device_flow(host: &str, device_code: &str) -> anyhow::Result<D
 
 async fn poll_device_flow_at(url: &str, device_code: &str) -> anyhow::Result<DeviceFlowPollResult> {
     let client = http_client()?;
-    let resp: AccessTokenResponse = client
+    let response = client
         .post(url)
         .header("Accept", "application/json")
         .form(&[
@@ -113,10 +118,15 @@ async fn poll_device_flow_at(url: &str, device_code: &str) -> anyhow::Result<Dev
         ])
         .send()
         .await
-        .context("poll request failed")?
-        .json()
+        .context("poll request failed")?;
+    let status = response.status();
+    let body = response
+        .text()
         .await
-        .context("failed to parse poll response")?;
+        .context("failed to read poll response body")?;
+    let resp: AccessTokenResponse = serde_json::from_str(&body).with_context(|| {
+        format!("failed to parse poll response (status {status}): {body}")
+    })?;
 
     if let Some(token) = resp.access_token {
         if !token.is_empty() {
@@ -443,6 +453,24 @@ mod tests {
         assert_eq!(init.device_code, "device-abc");
         assert_eq!(init.user_code, "WXYZ-1234");
         assert_eq!(init.interval, 5);
+    }
+
+    #[tokio::test]
+    async fn start_device_flow_surfaces_error_body_on_parse_failure() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::POST).path("/login/device/code");
+            then.status(404).json_body(serde_json::json!({ "error": "Not Found" }));
+        });
+
+        let err = start_device_flow_at(&format!("{}/login/device/code", server.base_url()))
+            .await
+            .unwrap_err();
+
+        mock.assert();
+        let message = format!("{err:#}");
+        assert!(message.contains("404"), "expected status in error, got: {message}");
+        assert!(message.contains("Not Found"), "expected response body in error, got: {message}");
     }
 
     #[tokio::test]
