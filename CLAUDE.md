@@ -271,6 +271,10 @@ Interactive rebase is deferred to v2. The following commitments ensure it can be
 **Goal:** Complete feature set, hardened and distributable.
 
 - Embedded terminal pane
+- **Merge editor UX refinements (per-conflict-block "accept whole side" was the v1 mechanism — these are the v2 follow-ups identified during Phase 4 dogfooding):**
+  - Per-line (sub-block) selection of "source" vs "current" within a conflict block — gutter checkboxes for choosing individual lines rather than only whole-block accept
+  - Current-line highlighting in the source/current/result panes
+  - Red/green highlighting on changed lines, and intra-line (character-level) highlighting of the changed characters within those lines — i.e. word/char-level diff decoration, not just line-level
 - Theme Manager UI, theme loader, theme manifest format
 - Dark and light built-in themes finalised
 - Custom theme import
