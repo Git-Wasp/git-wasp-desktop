@@ -21,15 +21,35 @@ export function DeviceFlowModal({
 
   useEffect(() => {
     if (!deviceFlowInit) return;
-    const timer = setInterval(async () => {
+    let cancelled = false;
+    let delayMs = deviceFlowInit.interval * 1000;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const tick = async () => {
       try {
         const result = await pollDeviceFlow(host);
-        if (result.done) onClose();
+        // Completion clears deviceFlowInit in the store, which re-runs this
+        // effect and marks `cancelled` before we get back here — onClose
+        // must fire regardless, or the success path would never complete.
+        if (result.done) {
+          onClose();
+          return;
+        }
+        if (cancelled) return;
+        // RFC 8628: a slow_down response means we must increase the polling
+        // interval by at least 5 seconds, for this and all subsequent polls.
+        if (result.slowDown) delayMs += 5_000;
+        timer = setTimeout(tick, delayMs);
       } catch (e) {
-        setError(String(e));
+        if (!cancelled) setError(String(e));
       }
-    }, deviceFlowInit.interval * 1000);
-    return () => clearInterval(timer);
+    };
+
+    timer = setTimeout(tick, delayMs);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [deviceFlowInit, host, pollDeviceFlow, onClose]);
 
   const handleCancel = () => {

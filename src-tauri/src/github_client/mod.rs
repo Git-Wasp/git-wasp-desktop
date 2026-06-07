@@ -55,6 +55,9 @@ pub struct DeviceFlowInit {
 pub struct DeviceFlowPollResult {
     pub done: bool,
     pub token: Option<String>,
+    /// GitHub asked us to back off (RFC 8628 `slow_down`). The caller must
+    /// increase its polling interval by at least 5 seconds and keep polling.
+    pub slow_down: bool,
 }
 
 #[derive(Deserialize)]
@@ -145,13 +148,24 @@ async fn poll_device_flow_at(url: &str, device_code: &str) -> anyhow::Result<Dev
     );
 
     if has_token {
-        return Ok(DeviceFlowPollResult { done: true, token: resp.access_token });
+        return Ok(DeviceFlowPollResult {
+            done: true,
+            token: resp.access_token,
+            slow_down: false,
+        });
     }
 
     match resp.error.as_deref() {
-        None | Some("authorization_pending") | Some("slow_down") => {
-            Ok(DeviceFlowPollResult { done: false, token: None })
-        }
+        None | Some("authorization_pending") => Ok(DeviceFlowPollResult {
+            done: false,
+            token: None,
+            slow_down: false,
+        }),
+        Some("slow_down") => Ok(DeviceFlowPollResult {
+            done: false,
+            token: None,
+            slow_down: true,
+        }),
         Some(other) => {
             warn!("device authorization terminated with error: {other}");
             Err(anyhow::anyhow!("GitHub device authorization failed: {other}"))
@@ -514,6 +528,7 @@ mod tests {
         mock.assert();
         assert!(!result.done);
         assert!(result.token.is_none());
+        assert!(!result.slow_down);
     }
 
     #[tokio::test]
@@ -534,6 +549,7 @@ mod tests {
         mock.assert();
         assert!(!result.done);
         assert!(result.token.is_none());
+        assert!(result.slow_down, "slow_down responses must be reported so the caller can back off");
     }
 
     #[tokio::test]
@@ -574,6 +590,7 @@ mod tests {
         mock.assert();
         assert!(result.done);
         assert_eq!(result.token.as_deref(), Some("gho_secrettoken"));
+        assert!(!result.slow_down);
     }
 
     #[tokio::test]

@@ -68,8 +68,8 @@ describe("DeviceFlowModal", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const onClose = vi.fn();
     mockInvoke.mockResolvedValueOnce(fakeInit); // github_start_device_flow
-    mockInvoke.mockResolvedValueOnce({ done: false, token: null }); // first poll
-    mockInvoke.mockResolvedValueOnce({ done: true, token: "gho_secret" }); // second poll
+    mockInvoke.mockResolvedValueOnce({ done: false, token: null, slowDown: false }); // first poll
+    mockInvoke.mockResolvedValueOnce({ done: true, token: "gho_secret", slowDown: false }); // second poll
 
     render(<DeviceFlowModal host="github.com" onClose={onClose} />);
 
@@ -83,6 +83,37 @@ describe("DeviceFlowModal", () => {
     expect(mockInvoke).toHaveBeenCalledWith("github_poll_device_flow", {
       host: "github.com",
       deviceCode: "device-abc",
+    });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("backs off the polling interval when GitHub responds with slow_down", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const onClose = vi.fn();
+    const pollCalls = () =>
+      mockInvoke.mock.calls.filter(([command]) => command === "github_poll_device_flow").length;
+    mockInvoke.mockResolvedValueOnce(fakeInit); // github_start_device_flow
+    mockInvoke.mockResolvedValueOnce({ done: false, token: null, slowDown: true }); // first poll: back off
+    mockInvoke.mockResolvedValueOnce({ done: true, token: "gho_secret", slowDown: false }); // second poll: done
+
+    render(<DeviceFlowModal host="github.com" onClose={onClose} />);
+
+    // First poll fires at the originally configured interval.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(fakeInit.interval * 1000);
+    });
+    expect(pollCalls()).toBe(1);
+
+    // Waiting the *original* interval again is not enough — slow_down must
+    // add at least 5 more seconds before the next poll fires.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(fakeInit.interval * 1000);
+    });
+    expect(pollCalls()).toBe(1);
+
+    // Once the extra backoff has elapsed, polling resumes and completes.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
     });
     expect(onClose).toHaveBeenCalled();
   });

@@ -9,6 +9,7 @@ export interface DeviceFlowInit {
 export interface DeviceFlowPollResult {
   done: boolean;
   token: string | null;
+  slowDown: boolean;
 }
 
 export interface RemoteInfo {
