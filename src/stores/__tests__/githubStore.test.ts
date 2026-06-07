@@ -17,6 +17,17 @@ beforeEach(() => {
 });
 
 describe("githubStore", () => {
+  it("init checks github.com auth status even when no repo is open", async () => {
+    mockInvoke.mockResolvedValueOnce(true); // github_auth_status("github.com")
+    mockInvoke.mockRejectedValueOnce(new Error("no 'origin' remote configured")); // detect_remote_info
+
+    await useGithubStore.getState().init();
+
+    expect(mockInvoke).toHaveBeenCalledWith("github_auth_status", { host: "github.com" });
+    expect(useGithubStore.getState().authStatus["github.com"]).toBe(true);
+    expect(useGithubStore.getState().remoteInfo).toBeNull();
+  });
+
   it("detectRemote populates remoteInfo and checks auth status", async () => {
     const remoteInfo = { host: "github.com", owner: "mike", repo: "gitclient", protocol: "https" as const };
     mockInvoke.mockResolvedValueOnce(remoteInfo); // detect_remote_info

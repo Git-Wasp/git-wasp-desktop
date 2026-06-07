@@ -43,6 +43,11 @@ export const useGithubStore = create<GithubStore>((set, get) => ({
   isAuthenticating: false,
 
   init: async () => {
+    // Check the default host's auth status up front — detectRemote only
+    // checks a host once a repo with a matching remote is open, which would
+    // otherwise leave a freshly-launched app showing "Not connected" even
+    // though a token from a previous session is sitting in the keychain.
+    await get().checkAuthStatus("github.com");
     await get().detectRemote();
   },
 
