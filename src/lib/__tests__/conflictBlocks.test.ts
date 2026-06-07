@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Text } from "@codemirror/state";
-import { blockRange, extractBlockText, isBlockResolved } from "../conflictBlocks";
+import { acceptBlockEdit, blockRange, extractBlockText, isBlockResolved } from "../conflictBlocks";
 import type { ConflictBlock } from "../../types/merge";
 
 const seededResult = [
@@ -72,5 +72,51 @@ describe("isBlockResolved", () => {
     const editedElsewhere = ["line one (edited)", "<<<<<<< HEAD", "current text", "=======", "source text", ">>>>>>> feature", "line seven"].join("\n");
 
     expect(isBlockResolved(editedElsewhere, seededResult, block)).toBe(false);
+  });
+});
+
+describe("acceptBlockEdit", () => {
+  it("computes an edit that replaces the block's markers with the current side's text", () => {
+    const edit = acceptBlockEdit(seededResult, seededResult, block, "ours");
+
+    expect(edit).not.toBeNull();
+    const applied = seededResult.slice(0, edit!.from) + edit!.insert + seededResult.slice(edit!.to);
+    expect(applied).toBe(["line one", "current text", "line seven"].join("\n"));
+  });
+
+  it("computes an edit that replaces the block's markers with the source side's text", () => {
+    const edit = acceptBlockEdit(seededResult, seededResult, block, "theirs");
+
+    expect(edit).not.toBeNull();
+    const applied = seededResult.slice(0, edit!.from) + edit!.insert + seededResult.slice(edit!.to);
+    expect(applied).toBe(["line one", "source text", "line seven"].join("\n"));
+  });
+
+  it("does not leave a blank line behind when the chosen side is empty (full deletion)", () => {
+    const deletionBlock: ConflictBlock = { ...block, oursText: "" };
+
+    const edit = acceptBlockEdit(seededResult, seededResult, deletionBlock, "ours");
+
+    expect(edit).not.toBeNull();
+    const applied = seededResult.slice(0, edit!.from) + edit!.insert + seededResult.slice(edit!.to);
+    expect(applied).toBe(["line one", "line seven"].join("\n"));
+  });
+
+  it("locates the block from its current offset even when earlier content has shifted", () => {
+    const shifted = ["line zero (new)", "line one", "<<<<<<< HEAD", "current text", "=======", "source text", ">>>>>>> feature", "line seven"].join(
+      "\n",
+    );
+
+    const edit = acceptBlockEdit(shifted, seededResult, block, "ours");
+
+    expect(edit).not.toBeNull();
+    const applied = shifted.slice(0, edit!.from) + edit!.insert + shifted.slice(edit!.to);
+    expect(applied).toBe(["line zero (new)", "line one", "current text", "line seven"].join("\n"));
+  });
+
+  it("returns null once the block has already been resolved", () => {
+    const resolved = ["line one", "current text", "line seven"].join("\n");
+
+    expect(acceptBlockEdit(resolved, seededResult, block, "theirs")).toBeNull();
   });
 });
