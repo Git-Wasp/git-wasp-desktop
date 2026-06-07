@@ -83,6 +83,46 @@ describe("mergeStore", () => {
     expect(useMergeStore.getState().isLoading).toBe(false);
   });
 
+  it("resolveWithSide sets isLoading and reloads status on success", async () => {
+    mockInvoke.mockResolvedValueOnce([]); // merge_resolve_with_side
+    mockInvoke.mockResolvedValueOnce(noneStatus); // operation_status
+
+    const promise = useMergeStore.getState().resolveWithSide("src/lib.rs", "theirs");
+    expect(useMergeStore.getState().isLoading).toBe(true);
+    await promise;
+
+    expect(mockInvoke).toHaveBeenCalledWith("merge_resolve_with_side", {
+      path: "src/lib.rs",
+      side: "theirs",
+    });
+    expect(useMergeStore.getState().status).toEqual(noneStatus);
+    expect(useMergeStore.getState().isLoading).toBe(false);
+  });
+
+  it("resolveWithDeletion sets isLoading and reloads status on success", async () => {
+    mockInvoke.mockResolvedValueOnce([]); // merge_resolve_with_deletion
+    mockInvoke.mockResolvedValueOnce(noneStatus); // operation_status
+
+    const promise = useMergeStore.getState().resolveWithDeletion("src/lib.rs");
+    expect(useMergeStore.getState().isLoading).toBe(true);
+    await promise;
+
+    expect(mockInvoke).toHaveBeenCalledWith("merge_resolve_with_deletion", { path: "src/lib.rs" });
+    expect(useMergeStore.getState().status).toEqual(noneStatus);
+    expect(useMergeStore.getState().isLoading).toBe(false);
+  });
+
+  it("resolveWithSide records lastError and resets isLoading on failure", async () => {
+    mockInvoke.mockRejectedValueOnce(new Error("chosen side does not exist"));
+
+    await expect(useMergeStore.getState().resolveWithSide("src/lib.rs", "ours")).rejects.toThrow(
+      "chosen side does not exist",
+    );
+
+    expect(useMergeStore.getState().isLoading).toBe(false);
+    expect(useMergeStore.getState().lastError).toContain("chosen side does not exist");
+  });
+
   it("completeMerge sets isLoading and reloads status on success", async () => {
     mockInvoke.mockResolvedValueOnce("abc123"); // merge_complete
     mockInvoke.mockResolvedValueOnce(noneStatus); // operation_status

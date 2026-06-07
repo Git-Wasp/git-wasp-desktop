@@ -5,6 +5,8 @@ export type ConflictKind =
   | "modifyDelete"
   | "binaryOrUnmergeable";
 
+export type ConflictSide = "ours" | "theirs";
+
 export interface ConflictBlock {
   startLine: number;
   midLine: number;
