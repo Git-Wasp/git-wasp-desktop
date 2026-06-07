@@ -4,9 +4,11 @@ import { CommitGraph } from "./components/CommitGraph/CommitGraph";
 import { CommitDetail } from "./components/CommitDetail/CommitDetail";
 import { WorkingTreePanel } from "./components/WorkingTree/WorkingTreePanel";
 import { PRPanel } from "./components/PRPanel/PRPanel";
+import { MergeEditor } from "./components/Merge/MergeEditor";
 import { useRepoStore } from "./stores/repoStore";
 import { useGraphStore } from "./stores/graphStore";
 import { useGithubStore } from "./stores/githubStore";
+import { useMergeStore } from "./stores/mergeStore";
 
 type View = "history" | "working-tree" | "prs";
 
@@ -14,6 +16,7 @@ export default function App() {
   const { loadCurrentRepo } = useRepoStore();
   const { selectedOid } = useGraphStore();
   const { init } = useGithubStore();
+  const { status: operationStatus, loadStatus } = useMergeStore();
   const [view, setView] = useState<View>("history");
 
   useEffect(() => {
@@ -23,6 +26,26 @@ export default function App() {
   useEffect(() => {
     init();
   }, [init]);
+
+  useEffect(() => {
+    loadStatus();
+  }, [loadStatus]);
+
+  if (operationStatus.kind === "merge") {
+    return (
+      <div
+        style={{
+          display: "flex",
+          height: "100vh",
+          overflow: "hidden",
+          background: "var(--color-bg-app)",
+          color: "var(--color-text-primary)",
+        }}
+      >
+        <MergeEditor />
+      </div>
+    );
+  }
 
   return (
     <div
