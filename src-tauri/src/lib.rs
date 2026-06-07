@@ -64,6 +64,8 @@ pub fn run() {
             commands::merge::operation_abort,
             commands::merge::merge_start,
             commands::merge::merge_resolve_file,
+            commands::merge::merge_resolve_with_side,
+            commands::merge::merge_resolve_with_deletion,
             commands::merge::merge_complete,
             commands::merge::merge_abort,
             // Remote operations

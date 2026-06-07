@@ -1,4 +1,4 @@
-use crate::merge_ops::{ConflictedFile, MergeOutcome};
+use crate::merge_ops::{ConflictSide, ConflictedFile, MergeOutcome};
 use crate::operation_runner::OperationStatus;
 use crate::repo_manager::AppState;
 use tauri::State;
@@ -30,6 +30,23 @@ pub async fn merge_resolve_file(
     state: State<'_, AppState>,
 ) -> Result<Vec<ConflictedFile>, String> {
     state.merge_resolve_file(&path, &content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn merge_resolve_with_side(
+    path: String,
+    side: ConflictSide,
+    state: State<'_, AppState>,
+) -> Result<Vec<ConflictedFile>, String> {
+    state.merge_resolve_with_side(&path, side).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn merge_resolve_with_deletion(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ConflictedFile>, String> {
+    state.merge_resolve_with_deletion(&path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

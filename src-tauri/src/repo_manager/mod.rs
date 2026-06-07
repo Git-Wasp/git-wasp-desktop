@@ -4,7 +4,7 @@ pub use config::{AppConfig, RepoEntry};
 
 use crate::commands::branch::BranchInfo;
 use crate::commands::repo::RepoInfo;
-use crate::merge_ops::{ConflictedFile, MergeOutcome};
+use crate::merge_ops::{ConflictSide, ConflictedFile, MergeOutcome};
 use crate::operation_runner::{OperationKind, OperationState, OperationStatus};
 use anyhow::Context;
 use git2::{BranchType, ObjectType, Repository};
@@ -236,6 +236,20 @@ impl RepoManager {
         crate::merge_ops::collect_conflicts(repo)
     }
 
+    pub fn merge_resolve_with_side(&self, path: &str, side: ConflictSide) -> anyhow::Result<Vec<ConflictedFile>> {
+        let repo_lock = self.repo_lock()?;
+        let repo = repo_lock.as_ref().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        crate::merge_ops::resolve_with_side(repo, path, side)?;
+        crate::merge_ops::collect_conflicts(repo)
+    }
+
+    pub fn merge_resolve_with_deletion(&self, path: &str) -> anyhow::Result<Vec<ConflictedFile>> {
+        let repo_lock = self.repo_lock()?;
+        let repo = repo_lock.as_ref().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        crate::merge_ops::resolve_with_deletion(repo, path)?;
+        crate::merge_ops::collect_conflicts(repo)
+    }
+
     pub fn merge_complete(&self, message: &str) -> anyhow::Result<String> {
         self.with_repo_and_operation_mut(|repo, op| {
             crate::operation_runner::complete_merge(repo, op, message)
@@ -340,6 +354,14 @@ impl AppState {
 
     pub fn merge_resolve_file(&self, path: &str, content: &str) -> anyhow::Result<Vec<ConflictedFile>> {
         self.manager.merge_resolve_file(path, content)
+    }
+
+    pub fn merge_resolve_with_side(&self, path: &str, side: ConflictSide) -> anyhow::Result<Vec<ConflictedFile>> {
+        self.manager.merge_resolve_with_side(path, side)
+    }
+
+    pub fn merge_resolve_with_deletion(&self, path: &str) -> anyhow::Result<Vec<ConflictedFile>> {
+        self.manager.merge_resolve_with_deletion(path)
     }
 
     pub fn merge_complete(&self, message: &str) -> anyhow::Result<String> {

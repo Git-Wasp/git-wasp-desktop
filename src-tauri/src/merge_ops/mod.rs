@@ -1,6 +1,6 @@
 use anyhow::Context;
 use git2::{BranchType, Index, IndexEntry, ObjectType, Repository};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -11,6 +11,16 @@ pub enum ConflictKind {
     DeleteModify,
     ModifyDelete,
     BinaryOrUnmergeable,
+}
+
+/// Which side of a conflict to keep when resolving via `resolve_with_side` —
+/// used for conflicts that can't be resolved by editing text (binary files,
+/// add/add, and the surviving side of a delete/modify or modify/delete).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ConflictSide {
+    Ours,
+    Theirs,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -289,6 +299,86 @@ pub fn write_resolution(repo: &Repository, path: &str, content: &str) -> anyhow:
         .with_context(|| format!("failed to stage resolved file: {path}"))?;
     index.write().context("failed to write index")?;
     Ok(())
+}
+
+/// Resolves a conflict by keeping one side's version of the file verbatim:
+/// copies the chosen side's blob bytes into the working tree and stages the
+/// result. Unlike `write_resolution` (which takes UTF-8 text), this operates
+/// on raw bytes loaded straight from the blob — the only correct way to
+/// resolve binary files, whose content can't be represented in
+/// `ConflictedFile::ours_content`/`theirs_content` (always `None` for binary
+/// blobs). Also covers add/add conflicts and the surviving side of a
+/// delete/modify or modify/delete conflict.
+pub fn resolve_with_side(repo: &Repository, path: &str, side: ConflictSide) -> anyhow::Result<()> {
+    let entry = {
+        let index = repo.index().context("failed to get index")?;
+        let conflict = find_conflict(&index, path)?;
+        let chosen = match side {
+            ConflictSide::Ours => conflict.our,
+            ConflictSide::Theirs => conflict.their,
+        };
+        chosen.with_context(|| {
+            format!("{path}: chosen side does not exist in this conflict (it was deleted) — resolve with deletion instead")
+        })?
+    };
+
+    let blob = repo
+        .find_blob(entry.id)
+        .context("failed to load conflict blob")?;
+
+    let workdir = repo
+        .workdir()
+        .context("repository has no working directory")?;
+    let full_path = workdir.join(path);
+    if let Some(parent) = full_path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    std::fs::write(&full_path, blob.content())
+        .with_context(|| format!("failed to write resolution for {path}"))?;
+
+    let mut index = repo.index().context("failed to get index")?;
+    index
+        .add_path(Path::new(path))
+        .with_context(|| format!("failed to stage resolved file: {path}"))?;
+    index.write().context("failed to write index")?;
+    Ok(())
+}
+
+/// Resolves a conflict by keeping the deletion: removes the file from the
+/// working tree (if present) and the index, then stages the removal.
+pub fn resolve_with_deletion(repo: &Repository, path: &str) -> anyhow::Result<()> {
+    {
+        let index = repo.index().context("failed to get index")?;
+        find_conflict(&index, path)?;
+    }
+
+    let workdir = repo
+        .workdir()
+        .context("repository has no working directory")?;
+    let full_path = workdir.join(path);
+    if full_path.exists() {
+        std::fs::remove_file(&full_path).with_context(|| format!("failed to remove {path}"))?;
+    }
+
+    let mut index = repo.index().context("failed to get index")?;
+    index
+        .remove_path(Path::new(path))
+        .with_context(|| format!("failed to stage deletion of {path}"))?;
+    index.write().context("failed to write index")?;
+    Ok(())
+}
+
+fn find_conflict(index: &Index, path: &str) -> anyhow::Result<git2::IndexConflict> {
+    for conflict in index
+        .conflicts()
+        .context("failed to read index conflicts")?
+    {
+        let conflict = conflict.context("invalid conflict entry")?;
+        if conflict_path(&conflict)? == path {
+            return Ok(conflict);
+        }
+    }
+    anyhow::bail!("no conflict found for path: {path}")
 }
 
 /// Completes an in-progress merge: verifies every conflict is resolved
@@ -836,6 +926,90 @@ mod tests {
         let bytes = fs::read(dir.path().join("file.txt")).unwrap();
         assert_eq!(bytes, b"line1\r\nresolved\r\nline3\r\n");
         assert!(!repo.index().unwrap().has_conflicts());
+    }
+
+    // ---- resolve_with_side / resolve_with_deletion ----
+
+    #[test]
+    fn resolve_with_side_keeps_ours_for_an_add_add_conflict() {
+        let (dir, mut repo) = init_repo();
+        let branch = make_add_add_conflict(&dir, &repo);
+        start_merge(&mut repo, &branch).unwrap();
+        assert!(repo.index().unwrap().has_conflicts());
+
+        resolve_with_side(&repo, "new.txt", ConflictSide::Ours).unwrap();
+
+        assert!(!repo.index().unwrap().has_conflicts());
+        let content = fs::read_to_string(dir.path().join("new.txt")).unwrap();
+        assert_eq!(content, "our version\n");
+    }
+
+    #[test]
+    fn resolve_with_side_keeps_theirs_for_an_add_add_conflict() {
+        let (dir, mut repo) = init_repo();
+        let branch = make_add_add_conflict(&dir, &repo);
+        start_merge(&mut repo, &branch).unwrap();
+
+        resolve_with_side(&repo, "new.txt", ConflictSide::Theirs).unwrap();
+
+        assert!(!repo.index().unwrap().has_conflicts());
+        let content = fs::read_to_string(dir.path().join("new.txt")).unwrap();
+        assert_eq!(content, "their version\n");
+    }
+
+    /// Binary content can't round-trip through `write_resolution` (which takes
+    /// `&str`) — `resolve_with_side` must copy the chosen side's blob bytes
+    /// verbatim instead of relying on `ConflictedFile::*_content` (which is
+    /// `None` for binary blobs).
+    #[test]
+    fn resolve_with_side_writes_raw_bytes_for_a_binary_conflict() {
+        let (dir, mut repo) = init_repo();
+        let branch = make_binary_conflict(&dir, &repo);
+        start_merge(&mut repo, &branch).unwrap();
+
+        resolve_with_side(&repo, "image.bin", ConflictSide::Theirs).unwrap();
+
+        assert!(!repo.index().unwrap().has_conflicts());
+        let bytes = fs::read(dir.path().join("image.bin")).unwrap();
+        assert_eq!(bytes, vec![0u8, 8, 8, 3, 0, 5]);
+    }
+
+    #[test]
+    fn resolve_with_side_fails_when_the_chosen_side_does_not_exist() {
+        let (dir, mut repo) = init_repo();
+        let branch = make_delete_modify_conflict(&dir, &repo);
+        start_merge(&mut repo, &branch).unwrap();
+
+        let result = resolve_with_side(&repo, "file.txt", ConflictSide::Ours);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn resolve_with_deletion_removes_the_file_and_clears_the_conflict() {
+        let (dir, mut repo) = init_repo();
+        let branch = make_modify_delete_conflict(&dir, &repo);
+        start_merge(&mut repo, &branch).unwrap();
+        assert!(repo.index().unwrap().has_conflicts());
+
+        resolve_with_deletion(&repo, "file.txt").unwrap();
+
+        assert!(!repo.index().unwrap().has_conflicts());
+        assert!(!dir.path().join("file.txt").exists());
+        assert!(repo
+            .index()
+            .unwrap()
+            .get_path(Path::new("file.txt"), 0)
+            .is_none());
+    }
+
+    #[test]
+    fn resolve_with_deletion_fails_for_a_path_with_no_conflict() {
+        let (dir, mut repo) = init_repo();
+        let branch = make_modify_delete_conflict(&dir, &repo);
+        start_merge(&mut repo, &branch).unwrap();
+
+        let result = resolve_with_deletion(&repo, "does-not-exist.txt");
+        assert!(result.is_err());
     }
 
     // ---- complete_merge ----
