@@ -2,6 +2,7 @@ use crate::github_client::{
     DeviceFlowInit, DeviceFlowPollResult, GithubRepo, PullRequest,
 };
 use crate::repo_manager::AppState;
+use log::info;
 use tauri::State;
 
 #[tauri::command]
@@ -55,6 +56,7 @@ pub async fn list_github_repos(
     host: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<GithubRepo>, String> {
+    info!("list_github_repos: looking up credentials for host={host:?}");
     let token = state
         .credentials
         .load(&host)

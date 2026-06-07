@@ -1,3 +1,5 @@
+use log::{info, warn};
+
 pub trait CredentialStore: Send + Sync {
     fn store(&self, host: &str, token: &str) -> anyhow::Result<()>;
     fn load(&self, host: &str) -> anyhow::Result<Option<String>>;
@@ -8,19 +10,35 @@ pub struct KeyringStore;
 
 impl CredentialStore for KeyringStore {
     fn store(&self, host: &str, token: &str) -> anyhow::Result<()> {
-        keyring::Entry::new("gitclient", host)
+        info!("credential store: storing token for host={host:?} (service=\"gitclient\", len={})", token.len());
+        let result = keyring::Entry::new("gitclient", host)
             .map_err(|e| anyhow::anyhow!("keyring error: {e}"))?
             .set_password(token)
-            .map_err(|e| anyhow::anyhow!("failed to store credential for {host}: {e}"))
+            .map_err(|e| anyhow::anyhow!("failed to store credential for {host}: {e}"));
+        match &result {
+            Ok(()) => info!("credential store: stored token for host={host:?}"),
+            Err(e) => warn!("credential store: failed to store token for host={host:?}: {e}"),
+        }
+        result
     }
 
     fn load(&self, host: &str) -> anyhow::Result<Option<String>> {
+        info!("credential store: loading token for host={host:?} (service=\"gitclient\")");
         let entry = keyring::Entry::new("gitclient", host)
             .map_err(|e| anyhow::anyhow!("keyring error: {e}"))?;
         match entry.get_password() {
-            Ok(pw) => Ok(Some(pw)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(anyhow::anyhow!("failed to load credential for {host}: {e}")),
+            Ok(pw) => {
+                info!("credential store: found token for host={host:?} (len={})", pw.len());
+                Ok(Some(pw))
+            }
+            Err(keyring::Error::NoEntry) => {
+                info!("credential store: no entry for host={host:?}");
+                Ok(None)
+            }
+            Err(e) => {
+                warn!("credential store: error loading token for host={host:?}: {e}");
+                Err(anyhow::anyhow!("failed to load credential for {host}: {e}"))
+            }
         }
     }
 
