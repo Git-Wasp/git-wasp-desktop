@@ -62,8 +62,15 @@ export const useGithubStore = create<GithubStore>((set, get) => ({
   },
 
   startDeviceFlow: async (host: string) => {
-    const init = await invoke<DeviceFlowInit>("github_start_device_flow", { host });
-    set({ deviceFlowInit: init, isAuthenticating: true });
+    if (get().isAuthenticating) return;
+    set({ isAuthenticating: true });
+    try {
+      const init = await invoke<DeviceFlowInit>("github_start_device_flow", { host });
+      set({ deviceFlowInit: init });
+    } catch (e) {
+      set({ isAuthenticating: false });
+      throw e;
+    }
   },
 
   pollDeviceFlow: async (host: string) => {

@@ -55,6 +55,42 @@ describe("githubStore", () => {
     expect(useGithubStore.getState().isAuthenticating).toBe(true);
   });
 
+  it("startDeviceFlow ignores a concurrent call while one is already starting", async () => {
+    const init = {
+      userCode: "WXYZ-1234",
+      verificationUri: "https://github.com/login/device",
+      deviceCode: "device-abc",
+      expiresIn: 900,
+      interval: 5,
+    };
+    let resolveInvoke: (value: typeof init) => void = () => {};
+    mockInvoke.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveInvoke = resolve;
+        }),
+    );
+
+    const first = useGithubStore.getState().startDeviceFlow("github.com");
+    const second = useGithubStore.getState().startDeviceFlow("github.com");
+    resolveInvoke(init);
+    await Promise.all([first, second]);
+
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
+    expect(useGithubStore.getState().deviceFlowInit).toEqual(init);
+  });
+
+  it("startDeviceFlow resets isAuthenticating on failure so it can be retried", async () => {
+    mockInvoke.mockRejectedValueOnce(new Error("device code request failed"));
+
+    await expect(useGithubStore.getState().startDeviceFlow("github.com")).rejects.toThrow(
+      "device code request failed",
+    );
+
+    expect(useGithubStore.getState().isAuthenticating).toBe(false);
+    expect(useGithubStore.getState().deviceFlowInit).toBeNull();
+  });
+
   it("pollDeviceFlow returns pending result without changing state", async () => {
     useGithubStore.setState({
       deviceFlowInit: {
