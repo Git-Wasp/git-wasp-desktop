@@ -3,19 +3,26 @@ import { Sidebar } from "./components/Sidebar/Sidebar";
 import { CommitGraph } from "./components/CommitGraph/CommitGraph";
 import { CommitDetail } from "./components/CommitDetail/CommitDetail";
 import { WorkingTreePanel } from "./components/WorkingTree/WorkingTreePanel";
+import { PRPanel } from "./components/PRPanel/PRPanel";
 import { useRepoStore } from "./stores/repoStore";
 import { useGraphStore } from "./stores/graphStore";
+import { useGithubStore } from "./stores/githubStore";
 
-type View = "history" | "working-tree";
+type View = "history" | "working-tree" | "prs";
 
 export default function App() {
   const { loadCurrentRepo } = useRepoStore();
   const { selectedOid } = useGraphStore();
+  const { init } = useGithubStore();
   const [view, setView] = useState<View>("history");
 
   useEffect(() => {
     loadCurrentRepo();
   }, [loadCurrentRepo]);
+
+  useEffect(() => {
+    init();
+  }, [init]);
 
   return (
     <div
@@ -46,8 +53,10 @@ export default function App() {
               <CommitDetail oid={selectedOid} />
             </div>
           </>
-        ) : (
+        ) : view === "working-tree" ? (
           <WorkingTreePanel />
+        ) : (
+          <PRPanel />
         )}
       </div>
     </div>

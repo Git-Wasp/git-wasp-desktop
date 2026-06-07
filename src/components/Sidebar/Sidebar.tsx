@@ -2,11 +2,16 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
 import { useRepoStore } from "../../stores/repoStore";
 import { useGraphStore } from "../../stores/graphStore";
+import { useGithubStore } from "../../stores/githubStore";
+import { useRemoteStore } from "../../stores/remoteStore";
 import { StashPanel } from "./StashPanel";
+import { RemoteActions } from "./RemoteActions";
+import { CloneDialog } from "../GitHub/CloneDialog";
+import { DeviceFlowModal } from "../GitHub/DeviceFlowModal";
 
 const INITIAL_LIMIT = 150;
 
-type View = "history" | "working-tree";
+type View = "history" | "working-tree" | "prs";
 
 export function Sidebar({
   view,
@@ -18,16 +23,26 @@ export function Sidebar({
   const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, loadBranches, checkoutBranch, createBranch, deleteBranch } =
     useRepoStore();
   const { fetchViewport } = useGraphStore();
+  const { remoteInfo, authStatus, logout } = useGithubStore();
+  const { aheadBehind, loadAheadBehind } = useRemoteStore();
   const [newBranchName, setNewBranchName] = useState("");
   const [showNewBranch, setShowNewBranch] = useState(false);
+  const [showCloneDialog, setShowCloneDialog] = useState(false);
+  const [showConnectFlow, setShowConnectFlow] = useState(false);
+
+  const githubHost = remoteInfo?.host ?? "github.com";
+  const isConnected = authStatus[githubHost] ?? false;
 
   useEffect(() => {
     loadRecentRepos();
   }, [loadRecentRepos]);
 
   useEffect(() => {
-    if (currentRepo) loadBranches();
-  }, [currentRepo, loadBranches]);
+    if (currentRepo) {
+      loadBranches();
+      loadAheadBehind();
+    }
+  }, [currentRepo, loadBranches, loadAheadBehind]);
 
   const handleOpenFolder = async () => {
     const selected = await open({ directory: true, multiple: false });
@@ -129,7 +144,7 @@ export function Sidebar({
               gap: "var(--space-1)",
             }}
           >
-            {(["history", "working-tree"] as View[]).map((v) => (
+            {(["history", "working-tree", "prs"] as View[]).map((v) => (
               <button
                 key={v}
                 onClick={() => onViewChange(v)}
@@ -154,12 +169,89 @@ export function Sidebar({
                       : "var(--font-weight-normal)",
                 }}
               >
-                {v === "history" ? "History" : "Changes"}
+                {v === "history" ? "History" : v === "working-tree" ? "Changes" : "PRs"}
               </button>
             ))}
           </div>
         )}
+
+        {/* GitHub connection status */}
+        <div
+          style={{
+            marginTop: "var(--space-3)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "var(--space-2)",
+          }}
+        >
+          <span
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--space-1)",
+              fontSize: "var(--font-size-xs)",
+              color: "var(--color-text-muted)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: isConnected ? "var(--color-success)" : "var(--color-text-muted)",
+                flexShrink: 0,
+              }}
+            />
+            {isConnected ? `Connected · ${githubHost}` : `Not connected · ${githubHost}`}
+          </span>
+          {isConnected ? (
+            <button
+              onClick={() => logout(githubHost)}
+              style={{
+                fontSize: "var(--font-size-xs)",
+                padding: "1px var(--space-2)",
+                background: "transparent",
+                border: "1px solid var(--color-border-subtle)",
+                borderRadius: "var(--radius-sm)",
+                color: "var(--color-text-muted)",
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+            >
+              Disconnect
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowConnectFlow(true)}
+              style={{
+                fontSize: "var(--font-size-xs)",
+                padding: "1px var(--space-2)",
+                background: "transparent",
+                border: "1px solid var(--color-border-subtle)",
+                borderRadius: "var(--radius-sm)",
+                color: "var(--color-text-secondary)",
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+            >
+              Connect
+            </button>
+          )}
+        </div>
       </div>
+
+      <RemoteActions onOpenClone={() => setShowCloneDialog(true)} />
+
+      {showConnectFlow && (
+        <DeviceFlowModal host={githubHost} onClose={() => setShowConnectFlow(false)} />
+      )}
+      {showCloneDialog && (
+        <CloneDialog host={githubHost} onClose={() => setShowCloneDialog(false)} />
+      )}
 
       {/* Branch list */}
       {currentRepo && (
@@ -279,6 +371,24 @@ export function Sidebar({
                 >
                   {b.isHead ? "▸ " : ""}{b.name}
                 </div>
+                {(() => {
+                  const ab = aheadBehind.find((x) => x.branch === b.name);
+                  if (!ab || (ab.ahead === 0 && ab.behind === 0)) return null;
+                  return (
+                    <span
+                      style={{
+                        fontSize: "var(--font-size-xs)",
+                        color: "var(--color-text-muted)",
+                        fontFamily: "var(--font-family-mono)",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {ab.ahead > 0 && `↑${ab.ahead}`}
+                      {ab.ahead > 0 && ab.behind > 0 && " "}
+                      {ab.behind > 0 && `↓${ab.behind}`}
+                    </span>
+                  );
+                })()}
                 {!b.isHead && (
                   <button
                     onClick={() => handleDeleteBranch(b.name)}
