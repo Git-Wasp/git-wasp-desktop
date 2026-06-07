@@ -58,6 +58,14 @@ pub fn run() {
             commands::stash::stash_apply_cmd,
             commands::stash::stash_pop_cmd,
             commands::stash::stash_drop_cmd,
+            // Merge / operation runner
+            commands::merge::operation_status,
+            commands::merge::operation_resume,
+            commands::merge::operation_abort,
+            commands::merge::merge_start,
+            commands::merge::merge_resolve_file,
+            commands::merge::merge_complete,
+            commands::merge::merge_abort,
             // Remote operations
             commands::remote::detect_remote_info,
             commands::remote::fetch_remote,

@@ -4,6 +4,8 @@ pub use config::{AppConfig, RepoEntry};
 
 use crate::commands::branch::BranchInfo;
 use crate::commands::repo::RepoInfo;
+use crate::merge_ops::{ConflictedFile, MergeOutcome};
+use crate::operation_runner::{OperationKind, OperationState, OperationStatus};
 use anyhow::Context;
 use git2::{BranchType, ObjectType, Repository};
 use std::path::Path;
@@ -12,6 +14,7 @@ use tauri::Manager;
 
 pub struct RepoManager {
     repo: Mutex<Option<Repository>>,
+    operation: Mutex<Option<OperationState>>,
     config: Mutex<AppConfig>,
 }
 
@@ -19,6 +22,7 @@ impl RepoManager {
     fn new() -> Self {
         Self {
             repo: Mutex::new(None),
+            operation: Mutex::new(None),
             config: Mutex::new(AppConfig::load()),
         }
     }
@@ -27,8 +31,26 @@ impl RepoManager {
         self.repo.lock().map_err(|_| anyhow::anyhow!("repo lock poisoned"))
     }
 
+    fn operation_lock(&self) -> anyhow::Result<MutexGuard<'_, Option<OperationState>>> {
+        self.operation.lock().map_err(|_| anyhow::anyhow!("operation lock poisoned"))
+    }
+
     fn config_lock(&self) -> anyhow::Result<MutexGuard<'_, AppConfig>> {
         self.config.lock().map_err(|_| anyhow::anyhow!("config lock poisoned"))
+    }
+
+    /// Locks the repo and operation state together as a single critical
+    /// section — the only sanctioned way to touch both, so lock order
+    /// (repo, then operation) stays consistent everywhere and there's no new
+    /// ordering hazard alongside the existing `repo_lock`/`config_lock`.
+    fn with_repo_and_operation_mut<F, T>(&self, f: F) -> anyhow::Result<T>
+    where
+        F: FnOnce(&mut Repository, &mut Option<OperationState>) -> anyhow::Result<T>,
+    {
+        let mut repo_lock = self.repo_lock()?;
+        let repo = repo_lock.as_mut().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        let mut op_lock = self.operation_lock()?;
+        f(repo, &mut op_lock)
     }
 
     pub fn open(&self, path: &str) -> anyhow::Result<RepoInfo> {
@@ -170,6 +192,59 @@ impl RepoManager {
         branch.delete().with_context(|| format!("failed to delete branch: {name}"))?;
         Ok(())
     }
+
+    pub fn operation_status(&self) -> anyhow::Result<OperationStatus> {
+        let repo_lock = self.repo_lock()?;
+        let repo = repo_lock.as_ref().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        let mut op_lock = self.operation_lock()?;
+        crate::operation_runner::derive_status(repo, &mut op_lock)
+    }
+
+    /// Re-derives and returns the current status. A distinct command from
+    /// `operation_status` per CLAUDE.md's `resume`/`abort`/`status` contract —
+    /// for merge it's equivalent to a status check, but future pauseable
+    /// operations (e.g. interactive rebase) will use `resume` to pick a
+    /// paused sequence back up rather than just report on it.
+    pub fn operation_resume(&self) -> anyhow::Result<OperationStatus> {
+        self.operation_status()
+    }
+
+    pub fn operation_abort(&self) -> anyhow::Result<()> {
+        let kind = {
+            let op_lock = self.operation_lock()?;
+            op_lock.as_ref().map(|s| s.kind)
+        };
+        match kind {
+            Some(OperationKind::Merge) => self.merge_abort(),
+            None => match self.operation_status()? {
+                OperationStatus::Merge { .. } => self.merge_abort(),
+                OperationStatus::None => anyhow::bail!("no operation in progress to abort"),
+            },
+        }
+    }
+
+    pub fn merge_start(&self, branch_name: &str) -> anyhow::Result<MergeOutcome> {
+        self.with_repo_and_operation_mut(|repo, op| {
+            crate::operation_runner::start_merge(repo, op, branch_name)
+        })
+    }
+
+    pub fn merge_resolve_file(&self, path: &str, content: &str) -> anyhow::Result<Vec<ConflictedFile>> {
+        let repo_lock = self.repo_lock()?;
+        let repo = repo_lock.as_ref().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        crate::merge_ops::write_resolution(repo, path, content)?;
+        crate::merge_ops::collect_conflicts(repo)
+    }
+
+    pub fn merge_complete(&self, message: &str) -> anyhow::Result<String> {
+        self.with_repo_and_operation_mut(|repo, op| {
+            crate::operation_runner::complete_merge(repo, op, message)
+        })
+    }
+
+    pub fn merge_abort(&self) -> anyhow::Result<()> {
+        self.with_repo_and_operation_mut(|repo, op| crate::operation_runner::abort_merge(repo, op))
+    }
 }
 
 /// Tauri managed state — wraps RepoManager in Arc so it can be cloned into
@@ -245,6 +320,34 @@ impl AppState {
 
     pub fn delete_branch(&self, name: &str) -> anyhow::Result<()> {
         self.manager.delete_branch(name)
+    }
+
+    pub fn operation_status(&self) -> anyhow::Result<OperationStatus> {
+        self.manager.operation_status()
+    }
+
+    pub fn operation_resume(&self) -> anyhow::Result<OperationStatus> {
+        self.manager.operation_resume()
+    }
+
+    pub fn operation_abort(&self) -> anyhow::Result<()> {
+        self.manager.operation_abort()
+    }
+
+    pub fn merge_start(&self, branch_name: &str) -> anyhow::Result<MergeOutcome> {
+        self.manager.merge_start(branch_name)
+    }
+
+    pub fn merge_resolve_file(&self, path: &str, content: &str) -> anyhow::Result<Vec<ConflictedFile>> {
+        self.manager.merge_resolve_file(path, content)
+    }
+
+    pub fn merge_complete(&self, message: &str) -> anyhow::Result<String> {
+        self.manager.merge_complete(message)
+    }
+
+    pub fn merge_abort(&self) -> anyhow::Result<()> {
+        self.manager.merge_abort()
     }
 }
 
