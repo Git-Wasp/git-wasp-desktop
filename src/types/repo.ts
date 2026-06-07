@@ -17,6 +17,8 @@ export interface BranchInfo {
   isHead: boolean;
   upstream: string | null;
   oid: string;
+  ahead: number | null;
+  behind: number | null;
 }
 
 export interface ChangedFile {
