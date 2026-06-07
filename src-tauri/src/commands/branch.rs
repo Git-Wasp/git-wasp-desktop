@@ -1,4 +1,5 @@
 use crate::commands::repo::RepoInfo;
+use crate::remote_ops::AheadBehind;
 use crate::repo_manager::AppState;
 use tauri::State;
 
@@ -10,6 +11,8 @@ pub struct BranchInfo {
     pub is_head: bool,
     pub upstream: Option<String>,
     pub oid: String,
+    pub ahead: Option<usize>,
+    pub behind: Option<usize>,
 }
 
 #[tauri::command]
@@ -55,4 +58,14 @@ pub async fn delete_branch(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     state.delete_branch(&name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_ahead_behind(
+    state: State<'_, AppState>,
+) -> Result<Vec<AheadBehind>, String> {
+    state
+        .with_repo(|repo| crate::remote_ops::compute_ahead_behind(repo))
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
 }

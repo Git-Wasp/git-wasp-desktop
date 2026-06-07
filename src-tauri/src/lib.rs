@@ -35,6 +35,7 @@ pub fn run() {
             commands::branch::create_branch,
             commands::branch::rename_branch,
             commands::branch::delete_branch,
+            commands::branch::get_ahead_behind,
             // Working tree status
             commands::status::get_working_tree_status,
             // Staging
@@ -54,6 +55,20 @@ pub fn run() {
             commands::stash::stash_apply_cmd,
             commands::stash::stash_pop_cmd,
             commands::stash::stash_drop_cmd,
+            // Remote operations
+            commands::remote::detect_remote_info,
+            commands::remote::fetch_remote,
+            commands::remote::pull_branch,
+            commands::remote::push_branch,
+            commands::remote::clone_repo,
+            // GitHub auth & API
+            commands::github::github_auth_status,
+            commands::github::github_logout,
+            commands::github::github_start_device_flow,
+            commands::github::github_poll_device_flow,
+            commands::github::list_github_repos,
+            commands::github::list_pull_requests,
+            commands::github::create_pull_request,
         ])
         .setup(|app| {
             repo_manager::restore_last_repo(app)?;
