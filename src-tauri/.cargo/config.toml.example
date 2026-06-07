@@ -1,0 +1,13 @@
+# Local development configuration — copy this file to `config.toml` and fill
+# in your own values. `config.toml` is gitignored; this `.example` is the
+# template that gets committed.
+#
+# Cargo doesn't read `.env` files, but the `[env]` table here is its native
+# equivalent: it injects values into the environment that `rustc` compiles
+# with, which is what `option_env!("GITHUB_OAUTH_CLIENT_ID")` reads in
+# `src/github_client/mod.rs`.
+#
+# To get a client ID: GitHub → Settings → Developer settings → OAuth Apps →
+# New OAuth App, then enable "Device Flow" in the app's settings.
+[env]
+GITHUB_OAUTH_CLIENT_ID = "Iv1.your-client-id-here"

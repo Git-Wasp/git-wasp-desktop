@@ -2,11 +2,17 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
 import { useRepoStore } from "../../stores/repoStore";
 import { useGraphStore } from "../../stores/graphStore";
+import { useGithubStore } from "../../stores/githubStore";
+import { useRemoteStore } from "../../stores/remoteStore";
 import { StashPanel } from "./StashPanel";
+import { RowMenu } from "./RowMenu";
+import { RemoteActions } from "./RemoteActions";
+import { CloneDialog } from "../GitHub/CloneDialog";
+import { DeviceFlowModal } from "../GitHub/DeviceFlowModal";
 
 const INITIAL_LIMIT = 150;
 
-type View = "history" | "working-tree";
+type View = "history" | "working-tree" | "prs";
 
 export function Sidebar({
   view,
@@ -17,17 +23,32 @@ export function Sidebar({
 }) {
   const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, loadBranches, checkoutBranch, createBranch, deleteBranch } =
     useRepoStore();
-  const { fetchViewport } = useGraphStore();
+  const { fetchViewport, selectCommit } = useGraphStore();
+  const { remoteInfo, authStatus, logout, detectRemote } = useGithubStore();
+  const { aheadBehind, loadAheadBehind } = useRemoteStore();
   const [newBranchName, setNewBranchName] = useState("");
   const [showNewBranch, setShowNewBranch] = useState(false);
+  const [showCloneDialog, setShowCloneDialog] = useState(false);
+  const [showConnectFlow, setShowConnectFlow] = useState(false);
+  const [selectedRecentPath, setSelectedRecentPath] = useState<string | null>(null);
+
+  const githubHost = remoteInfo?.host ?? "github.com";
+  const isConnected = authStatus[githubHost] ?? false;
 
   useEffect(() => {
     loadRecentRepos();
   }, [loadRecentRepos]);
 
   useEffect(() => {
-    if (currentRepo) loadBranches();
-  }, [currentRepo, loadBranches]);
+    if (currentRepo) {
+      loadBranches();
+      loadAheadBehind();
+      // remoteInfo is detected once at startup; re-detect whenever the open
+      // repo changes so switching to a repo with a different (or no) GitHub
+      // remote is reflected in the PR panel and clone/connect flows.
+      detectRemote();
+    }
+  }, [currentRepo, loadBranches, loadAheadBehind, detectRemote]);
 
   const handleOpenFolder = async () => {
     const selected = await open({ directory: true, multiple: false });
@@ -54,6 +75,11 @@ export function Sidebar({
 
   const handleDeleteBranch = async (name: string) => {
     await deleteBranch(name);
+    await fetchViewport(0, INITIAL_LIMIT);
+  };
+
+  const handleCheckoutBranch = async (name: string) => {
+    await checkoutBranch(name);
     await fetchViewport(0, INITIAL_LIMIT);
   };
 
@@ -129,7 +155,7 @@ export function Sidebar({
               gap: "var(--space-1)",
             }}
           >
-            {(["history", "working-tree"] as View[]).map((v) => (
+            {(["history", "working-tree", "prs"] as View[]).map((v) => (
               <button
                 key={v}
                 onClick={() => onViewChange(v)}
@@ -154,12 +180,89 @@ export function Sidebar({
                       : "var(--font-weight-normal)",
                 }}
               >
-                {v === "history" ? "History" : "Changes"}
+                {v === "history" ? "History" : v === "working-tree" ? "Changes" : "PRs"}
               </button>
             ))}
           </div>
         )}
+
+        {/* GitHub connection status */}
+        <div
+          style={{
+            marginTop: "var(--space-3)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "var(--space-2)",
+          }}
+        >
+          <span
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--space-1)",
+              fontSize: "var(--font-size-xs)",
+              color: "var(--color-text-muted)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: isConnected ? "var(--color-success)" : "var(--color-text-muted)",
+                flexShrink: 0,
+              }}
+            />
+            {isConnected ? `Connected · ${githubHost}` : `Not connected · ${githubHost}`}
+          </span>
+          {isConnected ? (
+            <button
+              onClick={() => logout(githubHost)}
+              style={{
+                fontSize: "var(--font-size-xs)",
+                padding: "1px var(--space-2)",
+                background: "transparent",
+                border: "1px solid var(--color-border-subtle)",
+                borderRadius: "var(--radius-sm)",
+                color: "var(--color-text-muted)",
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+            >
+              Disconnect
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowConnectFlow(true)}
+              style={{
+                fontSize: "var(--font-size-xs)",
+                padding: "1px var(--space-2)",
+                background: "transparent",
+                border: "1px solid var(--color-border-subtle)",
+                borderRadius: "var(--radius-sm)",
+                color: "var(--color-text-secondary)",
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+            >
+              Connect
+            </button>
+          )}
+        </div>
       </div>
+
+      <RemoteActions onOpenClone={() => setShowCloneDialog(true)} />
+
+      {showConnectFlow && (
+        <DeviceFlowModal host={githubHost} onClose={() => setShowConnectFlow(false)} />
+      )}
+      {showCloneDialog && (
+        <CloneDialog host={githubHost} onClose={() => setShowCloneDialog(false)} />
+      )}
 
       {/* Branch list */}
       {currentRepo && (
@@ -260,7 +363,8 @@ export function Sidebar({
                 }}
               >
                 <div
-                  onClick={() => !b.isHead && checkoutBranch(b.name).then(() => fetchViewport(0, INITIAL_LIMIT))}
+                  onClick={() => selectCommit(b.oid, false)}
+                  title={`Show ${b.name} in the commit graph`}
                   style={{
                     flex: 1,
                     fontSize: "var(--font-size-sm)",
@@ -268,7 +372,7 @@ export function Sidebar({
                     color: b.isHead
                       ? "var(--color-accent-primary)"
                       : "var(--color-text-secondary)",
-                    cursor: b.isHead ? "default" : "pointer",
+                    cursor: "pointer",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
@@ -279,25 +383,35 @@ export function Sidebar({
                 >
                   {b.isHead ? "▸ " : ""}{b.name}
                 </div>
-                {!b.isHead && (
-                  <button
-                    onClick={() => handleDeleteBranch(b.name)}
-                    title="Delete branch"
-                    style={{
-                      fontSize: "var(--font-size-xs)",
-                      padding: "1px 4px",
-                      background: "transparent",
-                      border: "none",
-                      borderRadius: "var(--radius-sm)",
-                      color: "var(--color-text-muted)",
-                      cursor: "pointer",
-                      flexShrink: 0,
-                      opacity: 0.6,
-                    }}
-                  >
-                    ×
-                  </button>
-                )}
+                {(() => {
+                  const ab = aheadBehind.find((x) => x.branch === b.name);
+                  if (!ab || (ab.ahead === 0 && ab.behind === 0)) return null;
+                  return (
+                    <span
+                      style={{
+                        fontSize: "var(--font-size-xs)",
+                        color: "var(--color-text-muted)",
+                        fontFamily: "var(--font-family-mono)",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {ab.ahead > 0 && `↑${ab.ahead}`}
+                      {ab.ahead > 0 && ab.behind > 0 && " "}
+                      {ab.behind > 0 && `↓${ab.behind}`}
+                    </span>
+                  );
+                })()}
+                <RowMenu
+                  label={`${b.name} actions`}
+                  items={[
+                    ...(b.isHead
+                      ? []
+                      : [{ label: "Checkout branch", onSelect: () => handleCheckoutBranch(b.name) }]),
+                    ...(b.isHead
+                      ? []
+                      : [{ label: "Delete branch", destructive: true, onSelect: () => handleDeleteBranch(b.name) }]),
+                  ]}
+                />
               </div>
             ))}
         </div>
@@ -322,19 +436,33 @@ export function Sidebar({
           {recentRepos.map((r) => (
             <div
               key={r.path}
-              onClick={() => handleRecentClick(r.path)}
+              onClick={() => setSelectedRecentPath((current) => (current === r.path ? null : r.path))}
               style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-1)",
                 padding: "var(--space-1) var(--space-3)",
-                fontSize: "var(--font-size-sm)",
-                color: "var(--color-text-secondary)",
+                background: selectedRecentPath === r.path ? "var(--color-bg-elevated)" : "transparent",
                 cursor: "pointer",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
               }}
               title={r.path}
             >
-              {r.name}
+              <span
+                style={{
+                  flex: 1,
+                  fontSize: "var(--font-size-sm)",
+                  color: "var(--color-text-secondary)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {r.name}
+              </span>
+              <RowMenu
+                label={`${r.name} actions`}
+                items={[{ label: "Open repository", onSelect: () => handleRecentClick(r.path) }]}
+              />
             </div>
           ))}
         </div>

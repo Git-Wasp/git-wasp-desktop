@@ -144,6 +144,8 @@ impl RepoManager {
             is_head: false,
             upstream: None,
             oid,
+            ahead: None,
+            behind: None,
         })
     }
 
@@ -172,10 +174,11 @@ impl RepoManager {
 
 /// Tauri managed state — wraps RepoManager in Arc so it can be cloned into
 /// the async command handlers without holding a lock across await points.
-/// Also holds the file watcher so it stays alive for the app's lifetime.
+/// Also holds the file watcher and credential store for the app's lifetime.
 pub struct AppState {
     pub manager: Arc<RepoManager>,
     pub watcher: Mutex<Option<notify::RecommendedWatcher>>,
+    pub credentials: Box<dyn crate::credential_store::CredentialStore>,
 }
 
 impl AppState {
@@ -183,7 +186,13 @@ impl AppState {
         Self {
             manager: Arc::new(RepoManager::new()),
             watcher: Mutex::new(None),
+            credentials: Box::new(crate::credential_store::KeyringStore),
         }
+    }
+
+    pub fn known_github_hosts(&self) -> anyhow::Result<Vec<String>> {
+        let config = self.manager.config_lock()?;
+        Ok(config.github_hosts.iter().map(|h| h.base_url.clone()).collect())
     }
 
     pub fn open_repo(&self, path: &str, app_handle: Option<tauri::AppHandle>) -> anyhow::Result<RepoInfo> {
@@ -254,6 +263,13 @@ pub fn restore_last_repo(app: &tauri::App) -> anyhow::Result<()> {
 }
 
 pub fn list_branches(repo: &Repository) -> anyhow::Result<Vec<BranchInfo>> {
+    let ahead_behind_map: std::collections::HashMap<String, (usize, usize)> =
+        crate::remote_ops::compute_ahead_behind(repo)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|ab| (ab.branch, (ab.ahead, ab.behind)))
+            .collect();
+
     let mut branches = Vec::new();
     for branch in repo.branches(None).context("failed to list branches")? {
         let (branch, branch_type) = branch.context("invalid branch reference")?;
@@ -268,7 +284,11 @@ pub fn list_branches(repo: &Repository) -> anyhow::Result<Vec<BranchInfo>> {
         let upstream = branch.upstream().ok().and_then(|u| {
             u.name().ok().flatten().map(|s| s.to_string())
         });
-        branches.push(BranchInfo { name, is_remote, is_head, upstream, oid });
+        let (ahead, behind) = ahead_behind_map
+            .get(&name)
+            .map(|&(a, b)| (Some(a), Some(b)))
+            .unwrap_or((None, None));
+        branches.push(BranchInfo { name, is_remote, is_head, upstream, oid, ahead, behind });
     }
     Ok(branches)
 }
