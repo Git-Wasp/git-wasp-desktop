@@ -1,4 +1,5 @@
 use anyhow::Context;
+use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 
 const GITHUB_CLIENT_ID: &str = match option_env!("GITHUB_OAUTH_CLIENT_ID") {
@@ -76,6 +77,7 @@ pub async fn start_device_flow(host: &str) -> anyhow::Result<DeviceFlowInit> {
 }
 
 async fn start_device_flow_at(url: &str) -> anyhow::Result<DeviceFlowInit> {
+    info!("starting GitHub device flow: POST {url} (client_id={GITHUB_CLIENT_ID})");
     let client = http_client()?;
     let response = client
         .post(url)
@@ -89,9 +91,14 @@ async fn start_device_flow_at(url: &str) -> anyhow::Result<DeviceFlowInit> {
         .text()
         .await
         .context("failed to read device code response body")?;
+    debug!("device code response: status={status} body={body}");
     let resp: DeviceCodeResponse = serde_json::from_str(&body).with_context(|| {
         format!("failed to parse device code response (status {status}): {body}")
     })?;
+    info!(
+        "device flow ready: user_code={} verification_uri={} interval={}s expires_in={}s",
+        resp.user_code, resp.verification_uri, resp.interval, resp.expires_in
+    );
     Ok(DeviceFlowInit {
         user_code: resp.user_code,
         verification_uri: resp.verification_uri,
@@ -106,6 +113,7 @@ pub async fn poll_device_flow(host: &str, device_code: &str) -> anyhow::Result<D
 }
 
 async fn poll_device_flow_at(url: &str, device_code: &str) -> anyhow::Result<DeviceFlowPollResult> {
+    debug!("polling device flow: POST {url} (client_id={GITHUB_CLIENT_ID})");
     let client = http_client()?;
     let response = client
         .post(url)
@@ -127,17 +135,27 @@ async fn poll_device_flow_at(url: &str, device_code: &str) -> anyhow::Result<Dev
         format!("failed to parse poll response (status {status}): {body}")
     })?;
 
-    if let Some(token) = resp.access_token {
-        if !token.is_empty() {
-            return Ok(DeviceFlowPollResult { done: true, token: Some(token) });
-        }
+    let has_token = resp
+        .access_token
+        .as_deref()
+        .is_some_and(|t| !t.is_empty());
+    info!(
+        "poll response: status={status} has_access_token={has_token} error={:?}",
+        resp.error
+    );
+
+    if has_token {
+        return Ok(DeviceFlowPollResult { done: true, token: resp.access_token });
     }
 
     match resp.error.as_deref() {
         None | Some("authorization_pending") | Some("slow_down") => {
             Ok(DeviceFlowPollResult { done: false, token: None })
         }
-        Some(other) => Err(anyhow::anyhow!("GitHub device authorization failed: {other}")),
+        Some(other) => {
+            warn!("device authorization terminated with error: {other}");
+            Err(anyhow::anyhow!("GitHub device authorization failed: {other}"))
+        }
     }
 }
 
