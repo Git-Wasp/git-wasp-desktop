@@ -81,7 +81,7 @@ export const useGithubStore = create<GithubStore>((set, get) => ({
   pollDeviceFlow: async (host: string) => {
     const init = get().deviceFlowInit;
     if (!init) {
-      return { done: false, token: null };
+      return { done: false, token: null, slowDown: false };
     }
     const result = await invoke<DeviceFlowPollResult>("github_poll_device_flow", {
       host,

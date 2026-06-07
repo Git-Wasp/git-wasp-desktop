@@ -23,7 +23,7 @@ export function Sidebar({
   const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, loadBranches, checkoutBranch, createBranch, deleteBranch } =
     useRepoStore();
   const { fetchViewport } = useGraphStore();
-  const { remoteInfo, authStatus, logout } = useGithubStore();
+  const { remoteInfo, authStatus, logout, detectRemote } = useGithubStore();
   const { aheadBehind, loadAheadBehind } = useRemoteStore();
   const [newBranchName, setNewBranchName] = useState("");
   const [showNewBranch, setShowNewBranch] = useState(false);
@@ -41,8 +41,12 @@ export function Sidebar({
     if (currentRepo) {
       loadBranches();
       loadAheadBehind();
+      // remoteInfo is detected once at startup; re-detect whenever the open
+      // repo changes so switching to a repo with a different (or no) GitHub
+      // remote is reflected in the PR panel and clone/connect flows.
+      detectRemote();
     }
-  }, [currentRepo, loadBranches, loadAheadBehind]);
+  }, [currentRepo, loadBranches, loadAheadBehind, detectRemote]);
 
   const handleOpenFolder = async () => {
     const selected = await open({ directory: true, multiple: false });
