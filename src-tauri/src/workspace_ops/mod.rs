@@ -153,36 +153,74 @@ pub struct RepoOperationResult {
     pub message: String,
 }
 
-pub fn fetch_all(
-    paths: &[PathBuf],
-    _known_hosts: &[String],
-    _credentials: &dyn CredentialStore,
-) -> Vec<RepoOperationResult> {
-    paths
-        .iter()
-        .map(|path| RepoOperationResult {
-            path: path.to_string_lossy().to_string(),
-            name: repo_name(path),
-            success: false,
-            message: String::new(),
-        })
-        .collect()
+fn credential_token(repo: &Repository, known_hosts: &[String], credentials: &dyn CredentialStore) -> Option<String> {
+    remote_ops::detect_remote_info(repo, known_hosts)
+        .ok()
+        .and_then(|info| credentials.load(&info.host).ok().flatten())
 }
 
-pub fn pull_all(
-    paths: &[PathBuf],
-    _known_hosts: &[String],
-    _credentials: &dyn CredentialStore,
-) -> Vec<RepoOperationResult> {
-    paths
-        .iter()
-        .map(|path| RepoOperationResult {
-            path: path.to_string_lossy().to_string(),
-            name: repo_name(path),
-            success: false,
-            message: String::new(),
-        })
-        .collect()
+fn fetch_one(path: &Path, known_hosts: &[String], credentials: &dyn CredentialStore) -> RepoOperationResult {
+    let path_str = path.to_string_lossy().to_string();
+    let name = repo_name(path);
+
+    let repo = match Repository::open(path) {
+        Ok(repo) => repo,
+        Err(e) => return RepoOperationResult { path: path_str, name, success: false, message: e.to_string() },
+    };
+
+    let token = credential_token(&repo, known_hosts, credentials);
+
+    match remote_ops::fetch(&repo, "origin", token.as_deref()) {
+        Ok(result) => RepoOperationResult {
+            path: path_str,
+            name,
+            success: true,
+            message: format!("fetched ({} ref(s) updated)", result.updated_refs.len()),
+        },
+        Err(e) => RepoOperationResult { path: path_str, name, success: false, message: e.to_string() },
+    }
+}
+
+fn pull_one(path: &Path, known_hosts: &[String], credentials: &dyn CredentialStore) -> RepoOperationResult {
+    let path_str = path.to_string_lossy().to_string();
+    let name = repo_name(path);
+
+    let repo = match Repository::open(path) {
+        Ok(repo) => repo,
+        Err(e) => return RepoOperationResult { path: path_str, name, success: false, message: e.to_string() },
+    };
+
+    let branch = match repo.head().ok().and_then(|h| h.shorthand().map(|s| s.to_string())) {
+        Some(b) => b,
+        None => {
+            return RepoOperationResult {
+                path: path_str,
+                name,
+                success: false,
+                message: "no current branch (detached HEAD)".to_string(),
+            }
+        }
+    };
+
+    let token = credential_token(&repo, known_hosts, credentials);
+
+    match remote_ops::pull(&repo, "origin", &branch, token.as_deref()) {
+        Ok(PullResult::FastForwarded) => {
+            RepoOperationResult { path: path_str, name, success: true, message: "fast-forwarded".to_string() }
+        }
+        Ok(PullResult::AlreadyUpToDate) => {
+            RepoOperationResult { path: path_str, name, success: true, message: "already up to date".to_string() }
+        }
+        Err(e) => RepoOperationResult { path: path_str, name, success: false, message: e.to_string() },
+    }
+}
+
+pub fn fetch_all(paths: &[PathBuf], known_hosts: &[String], credentials: &dyn CredentialStore) -> Vec<RepoOperationResult> {
+    paths.iter().map(|path| fetch_one(path, known_hosts, credentials)).collect()
+}
+
+pub fn pull_all(paths: &[PathBuf], known_hosts: &[String], credentials: &dyn CredentialStore) -> Vec<RepoOperationResult> {
+    paths.iter().map(|path| pull_one(path, known_hosts, credentials)).collect()
 }
 
 #[cfg(test)]
