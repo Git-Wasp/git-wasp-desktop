@@ -30,7 +30,44 @@ pub fn repo_status_summary(path: &Path) -> RepoStatusSummary {
     let path_str = path.to_string_lossy().to_string();
     let name = repo_name(path);
 
-    RepoStatusSummary { path: path_str, name, head_branch: None, ahead: 0, behind: 0, uncommitted_count: 0, error: None }
+    let repo = match Repository::open(path) {
+        Ok(repo) => repo,
+        Err(e) => {
+            return RepoStatusSummary {
+                path: path_str,
+                name,
+                head_branch: None,
+                ahead: 0,
+                behind: 0,
+                uncommitted_count: 0,
+                error: Some(e.to_string()),
+            };
+        }
+    };
+
+    let head_branch = repo.head().ok().and_then(|h| h.shorthand().map(|s| s.to_string()));
+
+    let uncommitted_count = match crate::working_tree::get_working_tree_status(&repo) {
+        Ok(status) => {
+            let mut paths = HashSet::new();
+            for entry in status.staged.iter().chain(status.unstaged.iter()).chain(status.untracked.iter()) {
+                paths.insert(entry.path.clone());
+            }
+            paths.len()
+        }
+        Err(_) => 0,
+    };
+
+    let (ahead, behind) = match crate::remote_ops::compute_ahead_behind(&repo) {
+        Ok(entries) => head_branch
+            .as_ref()
+            .and_then(|hb| entries.iter().find(|ab| &ab.branch == hb))
+            .map(|ab| (ab.ahead, ab.behind))
+            .unwrap_or((0, 0)),
+        Err(_) => (0, 0),
+    };
+
+    RepoStatusSummary { path: path_str, name, head_branch, ahead, behind, uncommitted_count, error: None }
 }
 
 #[cfg(test)]
