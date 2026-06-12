@@ -170,10 +170,8 @@ describe("WorkspaceOverview", () => {
 
     render(<WorkspaceOverview />);
 
-    expect(screen.getByText(/repo-a/)).toBeInTheDocument();
-    expect(screen.getByText(/feature\/x/)).toBeInTheDocument();
-    expect(screen.getByText(/repo-b/)).toBeInTheDocument();
-    expect(screen.getByText(/fix: bug/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /repo-a.*Branch.*feature\/x/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /repo-b.*Commit.*fix: bug/i })).toBeInTheDocument();
   });
 
   it("clicking a branch search result switches to that repo", async () => {
