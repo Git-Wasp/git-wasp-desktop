@@ -1,7 +1,9 @@
+use crate::credential_store::CredentialStore;
+use crate::remote_ops::{self, PullResult};
 use git2::{BranchType, Repository, Sort};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// How many of the most recent commits (from HEAD) `search_workspace_repo`
 /// scans for a message match. Bounds the cost of cross-repo search on large
@@ -141,9 +143,52 @@ pub fn search_workspace_repo(path: &Path, query: &str) -> Vec<CrossRepoSearchRes
     results
 }
 
+/// Outcome of a bulk fetch/pull operation against a single workspace repo.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoOperationResult {
+    pub path: String,
+    pub name: String,
+    pub success: bool,
+    pub message: String,
+}
+
+pub fn fetch_all(
+    paths: &[PathBuf],
+    _known_hosts: &[String],
+    _credentials: &dyn CredentialStore,
+) -> Vec<RepoOperationResult> {
+    paths
+        .iter()
+        .map(|path| RepoOperationResult {
+            path: path.to_string_lossy().to_string(),
+            name: repo_name(path),
+            success: false,
+            message: String::new(),
+        })
+        .collect()
+}
+
+pub fn pull_all(
+    paths: &[PathBuf],
+    _known_hosts: &[String],
+    _credentials: &dyn CredentialStore,
+) -> Vec<RepoOperationResult> {
+    paths
+        .iter()
+        .map(|path| RepoOperationResult {
+            path: path.to_string_lossy().to_string(),
+            name: repo_name(path),
+            success: false,
+            message: String::new(),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::credential_store::InMemoryStore;
     use git2::{BranchType, Commit, Signature};
     use std::fs;
     use tempfile::TempDir;
@@ -233,6 +278,21 @@ mod tests {
         }
         drop(tree);
         (dir, repo)
+    }
+
+    /// Advances `refs/heads/{branch}` in a bare repo by one commit (reusing
+    /// the parent's tree), simulating upstream activity for fetch/pull tests.
+    fn advance_bare_remote(remote_dir: &Path, branch: &str) -> git2::Oid {
+        let repo = Repository::open(remote_dir).unwrap();
+        let branch_ref = format!("refs/heads/{branch}");
+        let parent = repo.find_reference(&branch_ref).unwrap().peel_to_commit().unwrap();
+        let tree = parent.tree().unwrap();
+        let sig = Signature::now("Test", "test@test.com").unwrap();
+        repo.commit(Some(&branch_ref), &sig, &sig, "advance", &tree, &[&parent]).unwrap()
+    }
+
+    fn known_hosts() -> Vec<String> {
+        vec!["https://github.com".to_string()]
     }
 
     // ---- repo_status_summary ----
@@ -364,5 +424,79 @@ mod tests {
         let results = search_workspace_repo(&missing, "anything");
 
         assert!(results.is_empty());
+    }
+
+    // ---- fetch_all / pull_all ----
+
+    #[test]
+    fn fetch_all_updates_remote_tracking_refs() {
+        let remote_dir = make_bare_remote_with_commit();
+        let local_dir = TempDir::new().unwrap();
+        let _repo = clone_repo(remote_dir.path(), local_dir.path());
+
+        let new_oid = advance_bare_remote(remote_dir.path(), "main");
+
+        let credentials = InMemoryStore::new();
+        let results = fetch_all(&[local_dir.path().to_path_buf()], &known_hosts(), &credentials);
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0].success, "{}", results[0].message);
+
+        let repo = Repository::open(local_dir.path()).unwrap();
+        let remote_main = repo.refname_to_id("refs/remotes/origin/main").unwrap();
+        assert_eq!(remote_main, new_oid);
+    }
+
+    #[test]
+    fn pull_all_fast_forwards_local_branches() {
+        let remote_dir = make_bare_remote_with_commit();
+        let local_dir = TempDir::new().unwrap();
+        let _repo = clone_repo(remote_dir.path(), local_dir.path());
+
+        let new_oid = advance_bare_remote(remote_dir.path(), "main");
+
+        let credentials = InMemoryStore::new();
+        let results = pull_all(&[local_dir.path().to_path_buf()], &known_hosts(), &credentials);
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0].success, "{}", results[0].message);
+        assert_eq!(results[0].message, "fast-forwarded");
+
+        let repo = Repository::open(local_dir.path()).unwrap();
+        let local_main = repo.refname_to_id("refs/heads/main").unwrap();
+        assert_eq!(local_main, new_oid);
+    }
+
+    #[test]
+    fn fetch_all_continues_after_one_repo_fails() {
+        let remote_dir = make_bare_remote_with_commit();
+        let local_dir = TempDir::new().unwrap();
+        let _repo = clone_repo(remote_dir.path(), local_dir.path());
+
+        let missing_dir = TempDir::new().unwrap();
+        let missing_path = missing_dir.path().join("does-not-exist");
+
+        let credentials = InMemoryStore::new();
+        let paths = vec![local_dir.path().to_path_buf(), missing_path];
+        let results = fetch_all(&paths, &known_hosts(), &credentials);
+
+        assert_eq!(results.len(), 2);
+        assert!(results[0].success, "{}", results[0].message);
+        assert!(!results[1].success);
+        assert!(!results[1].message.is_empty());
+    }
+
+    #[test]
+    fn pull_all_reports_already_up_to_date() {
+        let remote_dir = make_bare_remote_with_commit();
+        let local_dir = TempDir::new().unwrap();
+        let _repo = clone_repo(remote_dir.path(), local_dir.path());
+
+        let credentials = InMemoryStore::new();
+        let results = pull_all(&[local_dir.path().to_path_buf()], &known_hosts(), &credentials);
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0].success, "{}", results[0].message);
+        assert_eq!(results[0].message, "already up to date");
     }
 }
