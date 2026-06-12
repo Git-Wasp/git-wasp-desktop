@@ -28,6 +28,15 @@ impl GithubHostConfig {
     }
 }
 
+/// A named group of repository paths, persisted for cross-repo workflows.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Workspace {
+    pub id: String,
+    pub name: String,
+    pub repo_paths: Vec<PathBuf>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
@@ -35,6 +44,10 @@ pub struct AppConfig {
     pub last_repo_path: Option<PathBuf>,
     #[serde(default = "default_github_hosts")]
     pub github_hosts: Vec<GithubHostConfig>,
+    #[serde(default)]
+    pub workspaces: Vec<Workspace>,
+    #[serde(default)]
+    pub active_workspace_id: Option<String>,
 }
 
 fn default_github_hosts() -> Vec<GithubHostConfig> {
@@ -47,6 +60,8 @@ impl Default for AppConfig {
             recent_repos: Vec::new(),
             last_repo_path: None,
             github_hosts: default_github_hosts(),
+            workspaces: Vec::new(),
+            active_workspace_id: None,
         }
     }
 }
