@@ -5,12 +5,13 @@ import { CommitDetail } from "./components/CommitDetail/CommitDetail";
 import { WorkingTreePanel } from "./components/WorkingTree/WorkingTreePanel";
 import { PRPanel } from "./components/PRPanel/PRPanel";
 import { MergeEditor } from "./components/Merge/MergeEditor";
+import { WorkspaceOverview } from "./components/Workspace/WorkspaceOverview";
 import { useRepoStore } from "./stores/repoStore";
 import { useGraphStore } from "./stores/graphStore";
 import { useGithubStore } from "./stores/githubStore";
 import { useMergeStore } from "./stores/mergeStore";
 
-type View = "history" | "working-tree" | "prs";
+type View = "history" | "working-tree" | "prs" | "workspace";
 
 export default function App() {
   const { loadCurrentRepo } = useRepoStore();
@@ -78,8 +79,10 @@ export default function App() {
           </>
         ) : view === "working-tree" ? (
           <WorkingTreePanel />
-        ) : (
+        ) : view === "prs" ? (
           <PRPanel />
+        ) : (
+          <WorkspaceOverview />
         )}
       </div>
     </div>
