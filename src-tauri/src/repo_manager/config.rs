@@ -120,4 +120,42 @@ mod tests {
         assert_eq!(config.github_hosts.len(), 1);
         assert_eq!(config.github_hosts[0].base_url, "https://github.com");
     }
+
+    #[test]
+    fn default_config_has_no_workspaces() {
+        let config = AppConfig::default();
+        assert!(config.workspaces.is_empty());
+        assert_eq!(config.active_workspace_id, None);
+    }
+
+    #[test]
+    fn workspace_round_trips_json() {
+        let mut config = AppConfig::default();
+        config.workspaces.push(Workspace {
+            id: "ws-1".to_string(),
+            name: "My Workspace".to_string(),
+            repo_paths: vec![PathBuf::from("/repos/a"), PathBuf::from("/repos/b")],
+        });
+        config.active_workspace_id = Some("ws-1".to_string());
+
+        let json = serde_json::to_string(&config).unwrap();
+        let restored: AppConfig = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored.workspaces.len(), 1);
+        assert_eq!(restored.workspaces[0].id, "ws-1");
+        assert_eq!(restored.workspaces[0].name, "My Workspace");
+        assert_eq!(
+            restored.workspaces[0].repo_paths,
+            vec![PathBuf::from("/repos/a"), PathBuf::from("/repos/b")]
+        );
+        assert_eq!(restored.active_workspace_id, Some("ws-1".to_string()));
+    }
+
+    #[test]
+    fn legacy_config_without_workspaces_gets_default() {
+        let json = r#"{"recentRepos":[],"lastRepoPath":null}"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert!(config.workspaces.is_empty());
+        assert_eq!(config.active_workspace_id, None);
+    }
 }
