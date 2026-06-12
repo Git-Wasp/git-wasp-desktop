@@ -577,4 +577,76 @@ mod tests {
         let result = manager.delete_branch(&head_branch);
         assert!(result.is_err());
     }
+
+    // ---- workspace CRUD ----
+
+    #[test]
+    fn create_workspace_adds_to_config_and_returns_it() {
+        let manager = RepoManager::new();
+        let workspace = manager.create_workspace("My Workspace").unwrap();
+        assert_eq!(workspace.name, "My Workspace");
+        assert!(workspace.repo_paths.is_empty());
+        let workspaces = manager.list_workspaces().unwrap();
+        assert!(workspaces.iter().any(|w| w.id == workspace.id));
+    }
+
+    #[test]
+    fn rename_workspace_updates_name() {
+        let manager = RepoManager::new();
+        let workspace = manager.create_workspace("Old Name").unwrap();
+        manager.rename_workspace(&workspace.id, "New Name").unwrap();
+        let workspaces = manager.list_workspaces().unwrap();
+        let updated = workspaces.iter().find(|w| w.id == workspace.id).unwrap();
+        assert_eq!(updated.name, "New Name");
+    }
+
+    #[test]
+    fn delete_workspace_removes_it_and_clears_active_if_matched() {
+        let manager = RepoManager::new();
+        let workspace = manager.create_workspace("To Delete").unwrap();
+        manager.set_active_workspace(Some(&workspace.id)).unwrap();
+        manager.delete_workspace(&workspace.id).unwrap();
+        let workspaces = manager.list_workspaces().unwrap();
+        assert!(workspaces.iter().all(|w| w.id != workspace.id));
+        assert!(manager.get_active_workspace().unwrap().is_none());
+    }
+
+    #[test]
+    fn add_repo_to_workspace_dedupes_paths() {
+        let manager = RepoManager::new();
+        let workspace = manager.create_workspace("Repos").unwrap();
+        let path = Path::new("/repos/a");
+        manager.add_repo_to_workspace(&workspace.id, path).unwrap();
+        let updated = manager.add_repo_to_workspace(&workspace.id, path).unwrap();
+        assert_eq!(updated.repo_paths, vec![path.to_path_buf()]);
+    }
+
+    #[test]
+    fn remove_repo_from_workspace_removes_path() {
+        let manager = RepoManager::new();
+        let workspace = manager.create_workspace("Repos").unwrap();
+        let path = Path::new("/repos/a");
+        manager.add_repo_to_workspace(&workspace.id, path).unwrap();
+        let updated = manager.remove_repo_from_workspace(&workspace.id, path).unwrap();
+        assert!(updated.repo_paths.is_empty());
+    }
+
+    #[test]
+    fn set_active_workspace_persists_and_get_active_workspace_returns_it() {
+        let manager = RepoManager::new();
+        let workspace = manager.create_workspace("Active").unwrap();
+        manager.set_active_workspace(Some(&workspace.id)).unwrap();
+        let active = manager.get_active_workspace().unwrap();
+        assert_eq!(active.unwrap().id, workspace.id);
+    }
+
+    #[test]
+    fn list_workspaces_returns_all() {
+        let manager = RepoManager::new();
+        manager.create_workspace("One").unwrap();
+        manager.create_workspace("Two").unwrap();
+        let workspaces = manager.list_workspaces().unwrap();
+        assert!(workspaces.iter().any(|w| w.name == "One"));
+        assert!(workspaces.iter().any(|w| w.name == "Two"));
+    }
 }
