@@ -123,9 +123,10 @@ All diff viewing and editing uses CodeMirror 6. Do not introduce a second editor
 
 **Three-Panel Merge Editor**
 
-- Ours / base / theirs panels using three CodeMirror 6 instances
+- Two-row layout using three CodeMirror 6 instances: top row split 50/50 between source (theirs) and current (ours), both read-only references; bottom row spans the full width and shows the result — pre-seeded with conflict-marker text, the buffer that becomes the final resolved file (manual editing of the result is supported)
+- Base/ancestor shown contextually (e.g. diff gutter/toggle against source/current) rather than as a dedicated panel
 - Conflict marker parsing and decoration
-- Accept ours / accept theirs / manual edit per conflict block
+- Accept source / accept current / manual edit per conflict block
 - Mark file resolved, complete merge commit
 - Abort merge and return to pre-merge state cleanly
 - Routed through `OperationRunner`
@@ -241,7 +242,7 @@ Interactive rebase is deferred to v2. The following commitments ensure it can be
 **Goal:** Conflict resolution entirely within the app.
 
 - `OperationRunner` state machine implemented and wired to merge
-- Three-panel CodeMirror 6 merge editor: ours / base / theirs
+- Three-panel CodeMirror 6 merge editor: source/current (50/50 top split, read-only) over result (full-width, editable)
 - Conflict marker parsing and decoration
 - Per-conflict accept / manual edit
 - Mark resolved, complete merge commit
@@ -270,6 +271,12 @@ Interactive rebase is deferred to v2. The following commitments ensure it can be
 **Goal:** Complete feature set, hardened and distributable.
 
 - Embedded terminal pane
+- **Merge editor UX refinements (per-conflict-block "accept whole side" was the v1 mechanism — these are the v2 follow-ups identified during Phase 4 dogfooding):**
+  - Per-line (sub-block) selection of "source" vs "current" within a conflict block — gutter checkboxes for choosing individual lines rather than only whole-block accept
+  - Current-line highlighting in the source/current/result panes
+  - Red/green highlighting on changed lines, and intra-line (character-level) highlighting of the changed characters within those lines — i.e. word/char-level diff decoration, not just line-level
+- Commit graph UX improvement and right-click action menu (rename branch, checkout new branch, copy commit hash etc.)
+- Drag and drop from commit on graph to another commit in another branch to show option e.g. merge, start pull request, etc.
 - Theme Manager UI, theme loader, theme manifest format
 - Dark and light built-in themes finalised
 - Custom theme import

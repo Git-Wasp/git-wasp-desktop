@@ -4,6 +4,7 @@ mod diff_engine;
 mod file_watcher;
 mod github_client;
 mod graph;
+mod merge_ops;
 mod operation_runner;
 mod remote_ops;
 mod repo_manager;
@@ -57,6 +58,16 @@ pub fn run() {
             commands::stash::stash_apply_cmd,
             commands::stash::stash_pop_cmd,
             commands::stash::stash_drop_cmd,
+            // Merge / operation runner
+            commands::merge::operation_status,
+            commands::merge::operation_resume,
+            commands::merge::operation_abort,
+            commands::merge::merge_start,
+            commands::merge::merge_resolve_file,
+            commands::merge::merge_resolve_with_side,
+            commands::merge::merge_resolve_with_deletion,
+            commands::merge::merge_complete,
+            commands::merge::merge_abort,
             // Remote operations
             commands::remote::detect_remote_info,
             commands::remote::fetch_remote,

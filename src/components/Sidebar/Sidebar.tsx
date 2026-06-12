@@ -4,6 +4,7 @@ import { useRepoStore } from "../../stores/repoStore";
 import { useGraphStore } from "../../stores/graphStore";
 import { useGithubStore } from "../../stores/githubStore";
 import { useRemoteStore } from "../../stores/remoteStore";
+import { useMergeStore } from "../../stores/mergeStore";
 import { StashPanel } from "./StashPanel";
 import { RowMenu } from "./RowMenu";
 import { RemoteActions } from "./RemoteActions";
@@ -26,6 +27,7 @@ export function Sidebar({
   const { fetchViewport, selectCommit } = useGraphStore();
   const { remoteInfo, authStatus, logout, detectRemote } = useGithubStore();
   const { aheadBehind, loadAheadBehind } = useRemoteStore();
+  const { status: operationStatus, startMerge } = useMergeStore();
   const [newBranchName, setNewBranchName] = useState("");
   const [showNewBranch, setShowNewBranch] = useState(false);
   const [showCloneDialog, setShowCloneDialog] = useState(false);
@@ -81,6 +83,10 @@ export function Sidebar({
   const handleCheckoutBranch = async (name: string) => {
     await checkoutBranch(name);
     await fetchViewport(0, INITIAL_LIMIT);
+  };
+
+  const handleMergeBranch = async (name: string) => {
+    await startMerge(name);
   };
 
   return (
@@ -407,6 +413,9 @@ export function Sidebar({
                     ...(b.isHead
                       ? []
                       : [{ label: "Checkout branch", onSelect: () => handleCheckoutBranch(b.name) }]),
+                    ...(b.isHead || operationStatus.kind === "merge"
+                      ? []
+                      : [{ label: "Merge into current branch", onSelect: () => handleMergeBranch(b.name) }]),
                     ...(b.isHead
                       ? []
                       : [{ label: "Delete branch", destructive: true, onSelect: () => handleDeleteBranch(b.name) }]),
