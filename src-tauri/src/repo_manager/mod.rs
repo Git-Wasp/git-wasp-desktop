@@ -1,6 +1,6 @@
 mod config;
 
-pub use config::{AppConfig, RepoEntry};
+pub use config::{AppConfig, RepoEntry, Workspace};
 
 use crate::commands::branch::BranchInfo;
 use crate::commands::repo::RepoInfo;
@@ -10,6 +10,7 @@ use anyhow::Context;
 use git2::{BranchType, ObjectType, Repository};
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 
 pub struct RepoManager {
@@ -259,6 +260,94 @@ impl RepoManager {
     pub fn merge_abort(&self) -> anyhow::Result<()> {
         self.with_repo_and_operation_mut(|repo, op| crate::operation_runner::abort_merge(repo, op))
     }
+
+    pub fn list_workspaces(&self) -> anyhow::Result<Vec<Workspace>> {
+        Ok(self.config_lock()?.workspaces.clone())
+    }
+
+    pub fn create_workspace(&self, name: &str) -> anyhow::Result<Workspace> {
+        let id = format!(
+            "ws-{}",
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis()
+        );
+        let workspace = Workspace { id, name: name.to_string(), repo_paths: Vec::new() };
+        let mut config = self.config_lock()?;
+        config.workspaces.push(workspace.clone());
+        let _ = config.save();
+        Ok(workspace)
+    }
+
+    pub fn rename_workspace(&self, id: &str, name: &str) -> anyhow::Result<()> {
+        let mut config = self.config_lock()?;
+        let workspace = config
+            .workspaces
+            .iter_mut()
+            .find(|w| w.id == id)
+            .ok_or_else(|| anyhow::anyhow!("workspace not found: {id}"))?;
+        workspace.name = name.to_string();
+        let _ = config.save();
+        Ok(())
+    }
+
+    pub fn delete_workspace(&self, id: &str) -> anyhow::Result<()> {
+        let mut config = self.config_lock()?;
+        config.workspaces.retain(|w| w.id != id);
+        if config.active_workspace_id.as_deref() == Some(id) {
+            config.active_workspace_id = None;
+        }
+        let _ = config.save();
+        Ok(())
+    }
+
+    pub fn add_repo_to_workspace(&self, workspace_id: &str, path: &Path) -> anyhow::Result<Workspace> {
+        let mut config = self.config_lock()?;
+        let workspace = config
+            .workspaces
+            .iter_mut()
+            .find(|w| w.id == workspace_id)
+            .ok_or_else(|| anyhow::anyhow!("workspace not found: {workspace_id}"))?;
+        let path_buf = path.to_path_buf();
+        if !workspace.repo_paths.contains(&path_buf) {
+            workspace.repo_paths.push(path_buf);
+        }
+        let result = workspace.clone();
+        let _ = config.save();
+        Ok(result)
+    }
+
+    pub fn remove_repo_from_workspace(&self, workspace_id: &str, path: &Path) -> anyhow::Result<Workspace> {
+        let mut config = self.config_lock()?;
+        let workspace = config
+            .workspaces
+            .iter_mut()
+            .find(|w| w.id == workspace_id)
+            .ok_or_else(|| anyhow::anyhow!("workspace not found: {workspace_id}"))?;
+        workspace.repo_paths.retain(|p| p != path);
+        let result = workspace.clone();
+        let _ = config.save();
+        Ok(result)
+    }
+
+    pub fn set_active_workspace(&self, id: Option<&str>) -> anyhow::Result<()> {
+        let mut config = self.config_lock()?;
+        if let Some(id) = id {
+            if !config.workspaces.iter().any(|w| w.id == id) {
+                anyhow::bail!("workspace not found: {id}");
+            }
+        }
+        config.active_workspace_id = id.map(|s| s.to_string());
+        let _ = config.save();
+        Ok(())
+    }
+
+    pub fn get_active_workspace(&self) -> anyhow::Result<Option<Workspace>> {
+        let config = self.config_lock()?;
+        Ok(config
+            .active_workspace_id
+            .as_ref()
+            .and_then(|id| config.workspaces.iter().find(|w| &w.id == id))
+            .cloned())
+    }
 }
 
 /// Tauri managed state — wraps RepoManager in Arc so it can be cloned into
@@ -370,6 +459,38 @@ impl AppState {
 
     pub fn merge_abort(&self) -> anyhow::Result<()> {
         self.manager.merge_abort()
+    }
+
+    pub fn list_workspaces(&self) -> anyhow::Result<Vec<Workspace>> {
+        self.manager.list_workspaces()
+    }
+
+    pub fn create_workspace(&self, name: &str) -> anyhow::Result<Workspace> {
+        self.manager.create_workspace(name)
+    }
+
+    pub fn rename_workspace(&self, id: &str, name: &str) -> anyhow::Result<()> {
+        self.manager.rename_workspace(id, name)
+    }
+
+    pub fn delete_workspace(&self, id: &str) -> anyhow::Result<()> {
+        self.manager.delete_workspace(id)
+    }
+
+    pub fn add_repo_to_workspace(&self, workspace_id: &str, path: &Path) -> anyhow::Result<Workspace> {
+        self.manager.add_repo_to_workspace(workspace_id, path)
+    }
+
+    pub fn remove_repo_from_workspace(&self, workspace_id: &str, path: &Path) -> anyhow::Result<Workspace> {
+        self.manager.remove_repo_from_workspace(workspace_id, path)
+    }
+
+    pub fn set_active_workspace(&self, id: Option<&str>) -> anyhow::Result<()> {
+        self.manager.set_active_workspace(id)
+    }
+
+    pub fn get_active_workspace(&self) -> anyhow::Result<Option<Workspace>> {
+        self.manager.get_active_workspace()
     }
 }
 
