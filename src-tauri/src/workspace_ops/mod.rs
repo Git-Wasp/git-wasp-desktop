@@ -93,8 +93,52 @@ pub struct CrossRepoSearchResult {
     pub oid: Option<String>,
 }
 
-pub fn search_workspace_repo(_path: &Path, _query: &str) -> Vec<CrossRepoSearchResult> {
-    Vec::new()
+pub fn search_workspace_repo(path: &Path, query: &str) -> Vec<CrossRepoSearchResult> {
+    let repo = match Repository::open(path) {
+        Ok(repo) => repo,
+        Err(_) => return Vec::new(),
+    };
+    let path_str = path.to_string_lossy().to_string();
+    let name = repo_name(path);
+    let query_lower = query.to_lowercase();
+    let mut results = Vec::new();
+
+    if let Ok(branches) = repo.branches(Some(BranchType::Local)) {
+        for (branch, _) in branches.flatten() {
+            if let Ok(Some(branch_name)) = branch.name() {
+                if branch_name.to_lowercase().contains(&query_lower) {
+                    results.push(CrossRepoSearchResult {
+                        repo_path: path_str.clone(),
+                        repo_name: name.clone(),
+                        kind: SearchResultKind::Branch,
+                        label: branch_name.to_string(),
+                        oid: None,
+                    });
+                }
+            }
+        }
+    }
+
+    if let Ok(mut walk) = repo.revwalk() {
+        if walk.push_head().is_ok() && walk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME).is_ok() {
+            for oid in walk.take(SEARCH_COMMIT_DEPTH).flatten() {
+                if let Ok(commit) = repo.find_commit(oid) {
+                    let message = commit.message().unwrap_or("");
+                    if message.to_lowercase().contains(&query_lower) {
+                        results.push(CrossRepoSearchResult {
+                            repo_path: path_str.clone(),
+                            repo_name: name.clone(),
+                            kind: SearchResultKind::Commit,
+                            label: commit.summary().unwrap_or("").to_string(),
+                            oid: Some(oid.to_string()),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    results
 }
 
 #[cfg(test)]
