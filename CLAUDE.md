@@ -275,6 +275,8 @@ Interactive rebase is deferred to v2. The following commitments ensure it can be
   - Per-line (sub-block) selection of "source" vs "current" within a conflict block — gutter checkboxes for choosing individual lines rather than only whole-block accept
   - Current-line highlighting in the source/current/result panes
   - Red/green highlighting on changed lines, and intra-line (character-level) highlighting of the changed characters within those lines — i.e. word/char-level diff decoration, not just line-level
+- Commit graph UX improvement and right-click action menu (rename branch, checkout new branch, copy commit hash etc.)
+- Drag and drop from commit on graph to another commit in another branch to show option e.g. merge, start pull request, etc.
 - Theme Manager UI, theme loader, theme manifest format
 - Dark and light built-in themes finalised
 - Custom theme import
