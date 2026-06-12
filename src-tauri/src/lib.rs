@@ -10,6 +10,7 @@ mod remote_ops;
 mod repo_manager;
 mod stash;
 mod working_tree;
+mod workspace_ops;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
