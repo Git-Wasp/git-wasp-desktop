@@ -1,7 +1,12 @@
-use git2::Repository;
+use git2::{BranchType, Repository, Sort};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
+
+/// How many of the most recent commits (from HEAD) `search_workspace_repo`
+/// scans for a message match. Bounds the cost of cross-repo search on large
+/// histories — a deliberate trade-off, not an oversight.
+const SEARCH_COMMIT_DEPTH: usize = 200;
 
 /// At-a-glance status for a single repository in a workspace, computed via a
 /// transiently-opened `Repository` handle (opened, used, dropped). Never
@@ -68,6 +73,28 @@ pub fn repo_status_summary(path: &Path) -> RepoStatusSummary {
     };
 
     RepoStatusSummary { path: path_str, name, head_branch, ahead, behind, uncommitted_count, error: None }
+}
+
+/// A branch or commit in a workspace repository matching a cross-repo search
+/// query.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum SearchResultKind {
+    Branch,
+    Commit,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CrossRepoSearchResult {
+    pub repo_path: String,
+    pub repo_name: String,
+    pub kind: SearchResultKind,
+    pub label: String,
+    pub oid: Option<String>,
+}
+
+pub fn search_workspace_repo(_path: &Path, _query: &str) -> Vec<CrossRepoSearchResult> {
+    Vec::new()
 }
 
 #[cfg(test)]
@@ -138,6 +165,30 @@ mod tests {
     fn checkout_branch(repo: &Repository, name: &str) {
         repo.set_head(&format!("refs/heads/{name}")).unwrap();
         repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force())).unwrap();
+    }
+
+    /// Builds a repo with `n` empty-tree commits on HEAD, with `oldest_message`
+    /// as the very first (oldest) commit — used to test the search depth bound.
+    fn make_repo_with_n_commits(n: usize, oldest_message: &str) -> (TempDir, Repository) {
+        let dir = TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let mut config = repo.config().unwrap();
+        config.set_str("user.name", "Test User").unwrap();
+        config.set_str("user.email", "test@test.com").unwrap();
+
+        let tree_id = repo.treebuilder(None).unwrap().write().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let sig = Signature::now("Test", "test@test.com").unwrap();
+
+        let mut parent_oid: Option<git2::Oid> = None;
+        for i in 0..n {
+            let message = if i == 0 { oldest_message.to_string() } else { format!("commit {i}") };
+            let parent = parent_oid.map(|oid| repo.find_commit(oid).unwrap());
+            let parents: Vec<&Commit> = parent.iter().collect();
+            parent_oid = Some(repo.commit(Some("HEAD"), &sig, &sig, &message, &tree, &parents).unwrap());
+        }
+        drop(tree);
+        (dir, repo)
     }
 
     // ---- repo_status_summary ----
@@ -212,5 +263,62 @@ mod tests {
         assert_eq!(summary.head_branch.as_deref(), Some("main"));
         assert_eq!(summary.ahead, 0);
         assert_eq!(summary.behind, 0);
+    }
+
+    // ---- search_workspace_repo ----
+
+    #[test]
+    fn search_finds_matching_branch_case_insensitive() {
+        let (dir, repo) = make_git_repo_with_commit();
+        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("Feature-Login", &head_commit, false).unwrap();
+
+        let results = search_workspace_repo(dir.path(), "feature");
+
+        assert!(results
+            .iter()
+            .any(|r| matches!(r.kind, SearchResultKind::Branch) && r.label == "Feature-Login"));
+    }
+
+    #[test]
+    fn search_finds_matching_commit_message() {
+        let (dir, repo) = make_git_repo_with_commit();
+        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+        let oid = commit_file(&repo, dir.path(), "f.txt", "content\n", "fix: resolve important bug", &[&head_commit]);
+
+        let results = search_workspace_repo(dir.path(), "important");
+
+        let found = results.iter().find(|r| matches!(r.kind, SearchResultKind::Commit));
+        let found = found.expect("expected a commit match");
+        assert!(found.label.contains("important"));
+        assert_eq!(found.oid.as_deref(), Some(oid.to_string().as_str()));
+    }
+
+    #[test]
+    fn search_bounded_to_recent_commits() {
+        let (dir, _repo) = make_repo_with_n_commits(SEARCH_COMMIT_DEPTH + 1, "very-unique-old-marker");
+
+        let results = search_workspace_repo(dir.path(), "very-unique-old-marker");
+
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn search_returns_empty_for_no_matches() {
+        let (dir, _repo) = make_git_repo_with_commit();
+
+        let results = search_workspace_repo(dir.path(), "nonexistent-query-xyz");
+
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn search_nonexistent_repo_returns_empty_not_error() {
+        let dir = TempDir::new().unwrap();
+        let missing = dir.path().join("does-not-exist");
+
+        let results = search_workspace_repo(&missing, "anything");
+
+        assert!(results.is_empty());
     }
 }
