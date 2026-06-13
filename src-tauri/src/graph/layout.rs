@@ -15,8 +15,14 @@ pub fn compute_layout(
     // Build branch/tag label map keyed by OID.
     let label_map = build_label_map(repo);
 
+    // A dirty working tree adds a synthetic node at row 0 (above HEAD). It is
+    // always counted in total_count so the scroll height is offset-independent,
+    // but only emitted when row 0 is in view (offset == 0).
+    let change_count = if head_id.is_some() { changed_file_count(repo) } else { 0 };
+    let wip_offset = if change_count > 0 { 1 } else { 0 };
+
     // Walk the full graph to count total commits (needed for scroll height).
-    let total_count = count_commits(repo)?;
+    let total_count = count_commits(repo)? + wip_offset;
 
     // Walk offset + limit + LOOKAHEAD commits for lane computation accuracy.
     let walk_limit = offset + limit + LOOKAHEAD;
@@ -25,12 +31,25 @@ pub fn compute_layout(
     // Compute lane layout over the full walked slice.
     let laid_out = assign_lanes(&commits, &label_map, head_id);
 
-    // Slice to the requested viewport.
-    let nodes = laid_out
+    // Commit rows are shifted down by the working-tree node when present.
+    let commit_start = offset.saturating_sub(wip_offset);
+    let commit_end = (offset + limit).saturating_sub(wip_offset);
+    let mut commit_nodes: Vec<GraphNode> = laid_out
         .into_iter()
-        .skip(offset)
-        .take(limit)
-        .collect::<Vec<_>>();
+        .skip(commit_start)
+        .take(commit_end - commit_start)
+        .collect();
+    for node in &mut commit_nodes {
+        node.row += wip_offset;
+    }
+
+    let mut nodes: Vec<GraphNode> = Vec::new();
+    if wip_offset == 1 && offset == 0 {
+        if let Some(head_node) = commit_nodes.first() {
+            nodes.push(working_tree_node(head_node, change_count));
+        }
+    }
+    nodes.append(&mut commit_nodes);
 
     Ok(GraphViewport { nodes, total_count, offset })
 }
@@ -231,10 +250,50 @@ fn assign_lanes(
             edges,
             branch_labels,
             is_head: head_id == Some(*oid),
+            is_working_tree: false,
+            change_count: None,
         });
     }
 
     nodes
+}
+
+/// Counts changed files in the working tree (modified/staged/untracked,
+/// excluding ignored) — the badge count for the working-tree graph node.
+fn changed_file_count(repo: &Repository) -> u32 {
+    let mut opts = git2::StatusOptions::new();
+    opts.include_untracked(true).include_ignored(false);
+    repo.statuses(Some(&mut opts))
+        .map(|s| s.len() as u32)
+        .unwrap_or(0)
+}
+
+/// The synthetic node representing uncommitted changes, sitting one row above
+/// HEAD on HEAD's lane with a straight edge down to it.
+fn working_tree_node(head: &GraphNode, change_count: u32) -> GraphNode {
+    GraphNode {
+        oid: "WORKING_TREE".to_string(),
+        short_oid: "WORKING_TREE".to_string(),
+        summary: format!("{change_count} uncommitted changes"),
+        author_name: String::new(),
+        author_email: String::new(),
+        author_timestamp: 0,
+        lane: head.lane,
+        row: 0,
+        color_index: head.color_index,
+        parents: vec![head.oid.clone()],
+        children: Vec::new(),
+        edges: vec![GraphEdge {
+            src_lane: head.lane,
+            dst_lane: head.lane,
+            color_index: head.color_index,
+            kind: EdgeKind::Straight,
+        }],
+        branch_labels: Vec::new(),
+        is_head: false,
+        is_working_tree: true,
+        change_count: Some(change_count),
+    }
 }
 
 #[cfg(test)]
@@ -277,6 +336,52 @@ mod tests {
         for node in &viewport.nodes {
             assert_eq!(node.lane, 0, "node {} not in lane 0", node.short_oid);
         }
+    }
+
+    #[test]
+    fn working_tree_node_prepended_when_dirty() {
+        let (dir, repo) = init_repo();
+        let c1 = repo.find_commit(make_commit(&repo, "first", &[])).unwrap();
+        make_commit(&repo, "second", &[&c1]);
+        std::fs::write(dir.path().join("new.txt"), "hi").unwrap(); // uncommitted
+
+        let viewport = compute_layout(&repo, 0, 10).unwrap();
+
+        assert_eq!(viewport.total_count, 3); // 2 commits + working-tree node
+        assert!(viewport.nodes[0].is_working_tree);
+        assert_eq!(viewport.nodes[0].change_count, Some(1));
+        assert_eq!(viewport.nodes[0].row, 0);
+        // HEAD is pushed down one row, on the same lane the WIP node sits on.
+        assert!(viewport.nodes[1].is_head);
+        assert_eq!(viewport.nodes[1].row, 1);
+        assert_eq!(viewport.nodes[0].lane, viewport.nodes[1].lane);
+    }
+
+    #[test]
+    fn no_working_tree_node_when_clean() {
+        let (_dir, repo) = init_repo();
+        make_commit(&repo, "first", &[]);
+
+        let viewport = compute_layout(&repo, 0, 10).unwrap();
+
+        assert!(viewport.nodes.iter().all(|n| !n.is_working_tree));
+        assert_eq!(viewport.total_count, 1);
+    }
+
+    #[test]
+    fn working_tree_node_omitted_when_scrolled_but_still_counted() {
+        let (dir, repo) = init_repo();
+        let mut parent = repo.find_commit(make_commit(&repo, "c0", &[])).unwrap();
+        for i in 1..6 {
+            parent = repo.find_commit(make_commit(&repo, &format!("c{i}"), &[&parent])).unwrap();
+        }
+        std::fs::write(dir.path().join("x.txt"), "y").unwrap(); // uncommitted
+
+        let viewport = compute_layout(&repo, 2, 3).unwrap();
+
+        assert_eq!(viewport.total_count, 7); // 6 commits + working-tree node
+        assert!(viewport.nodes.iter().all(|n| !n.is_working_tree));
+        assert_eq!(viewport.nodes[0].row, 2); // rows stay shifted by the WIP node
     }
 
     #[test]
