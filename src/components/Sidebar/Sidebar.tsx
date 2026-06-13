@@ -10,10 +10,12 @@ import { RowMenu } from "./RowMenu";
 import { RemoteActions } from "./RemoteActions";
 import { CloneDialog } from "../GitHub/CloneDialog";
 import { DeviceFlowModal } from "../GitHub/DeviceFlowModal";
+import { WorkspaceSwitcher } from "../Workspace/WorkspaceSwitcher";
+import { WorkspaceSidebarSection } from "../Workspace/WorkspaceSidebarSection";
 
 const INITIAL_LIMIT = 150;
 
-type View = "history" | "working-tree" | "prs";
+type View = "history" | "working-tree" | "prs" | "workspace";
 
 export function Sidebar({
   view,
@@ -161,7 +163,7 @@ export function Sidebar({
               gap: "var(--space-1)",
             }}
           >
-            {(["history", "working-tree", "prs"] as View[]).map((v) => (
+            {(["history", "working-tree", "prs", "workspace"] as View[]).map((v) => (
               <button
                 key={v}
                 onClick={() => onViewChange(v)}
@@ -186,7 +188,7 @@ export function Sidebar({
                       : "var(--font-weight-normal)",
                 }}
               >
-                {v === "history" ? "History" : v === "working-tree" ? "Changes" : "PRs"}
+                {v === "history" ? "History" : v === "working-tree" ? "Changes" : v === "prs" ? "PRs" : "Workspace"}
               </button>
             ))}
           </div>
@@ -260,6 +262,8 @@ export function Sidebar({
           )}
         </div>
       </div>
+
+      <WorkspaceSwitcher />
 
       <RemoteActions onOpenClone={() => setShowCloneDialog(true)} />
 
@@ -425,6 +429,8 @@ export function Sidebar({
             ))}
         </div>
       )}
+
+      <WorkspaceSidebarSection />
 
       {/* Recent repos */}
       {recentRepos.length > 0 && (
