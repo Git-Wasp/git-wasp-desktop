@@ -6,6 +6,7 @@ import { useGithubStore } from "../../stores/githubStore";
 import { useRemoteStore } from "../../stores/remoteStore";
 import { useMergeStore } from "../../stores/mergeStore";
 import { StashPanel } from "./StashPanel";
+import { CollapsibleSection } from "./CollapsibleSection";
 import { RowMenu } from "./RowMenu";
 import { RemoteActions } from "./RemoteActions";
 import { CloneDialog } from "../GitHub/CloneDialog";
@@ -281,34 +282,11 @@ export function Sidebar({
 
       {/* Branch list */}
       {currentRepo && (
-        <div
-          style={{
-            padding: "var(--space-2) 0",
-            borderBottom: "1px solid var(--color-border-subtle)",
-            overflowY: "auto",
-            maxHeight: 220,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "0 var(--space-3)",
-              marginBottom: "var(--space-1)",
-            }}
-          >
-            <span
-              style={{
-                fontSize: "var(--font-size-xs)",
-                fontWeight: "var(--font-weight-semibold)",
-                color: "var(--color-text-muted)",
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-              }}
-            >
-              Branches
-            </span>
+        <CollapsibleSection
+          id="branches"
+          title="Branches"
+          bodyStyle={{ overflowY: "auto", maxHeight: 220 }}
+          action={
             <button
               onClick={() => setShowNewBranch((v) => !v)}
               style={{
@@ -323,8 +301,8 @@ export function Sidebar({
             >
               + New
             </button>
-          </div>
-
+          }
+        >
           {showNewBranch && (
             <div style={{ padding: "0 var(--space-3)", marginBottom: "var(--space-1)", display: "flex", gap: "var(--space-1)" }}>
               <input
@@ -432,27 +410,14 @@ export function Sidebar({
                 />
               </div>
             ))}
-        </div>
+        </CollapsibleSection>
       )}
 
       <WorkspaceSidebarSection />
 
       {/* Recent repos */}
       {recentRepos.length > 0 && (
-        <div style={{ padding: "var(--space-2) 0", overflowY: "auto", flex: 1 }}>
-          <div
-            style={{
-              padding: "0 var(--space-3)",
-              fontSize: "var(--font-size-xs)",
-              fontWeight: "var(--font-weight-semibold)",
-              color: "var(--color-text-muted)",
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              marginBottom: "var(--space-1)",
-            }}
-          >
-            Recent
-          </div>
+        <CollapsibleSection id="recent" title="Recent" bodyStyle={{ overflowY: "auto" }}>
           {recentRepos.map((r) => (
             <div
               key={r.path}
@@ -485,7 +450,7 @@ export function Sidebar({
               />
             </div>
           ))}
-        </div>
+        </CollapsibleSection>
       )}
 
       <StashPanel />

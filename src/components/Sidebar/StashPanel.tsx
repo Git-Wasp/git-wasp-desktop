@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { StashEntry, WorkingTreeStatus } from "../../types/workingTree";
 import { useWorkingTreeStore } from "../../stores/workingTreeStore";
+import { CollapsibleSection } from "./CollapsibleSection";
 
 export function StashPanel() {
   const [stashes, setStashes] = useState<StashEntry[]>([]);
@@ -60,32 +61,10 @@ export function StashPanel() {
   if (stashes.length === 0) return null;
 
   return (
-    <div
-      style={{
-        borderTop: "1px solid var(--color-border-subtle)",
-        padding: "var(--space-2) 0",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 var(--space-3)",
-          marginBottom: "var(--space-1)",
-        }}
-      >
-        <span
-          style={{
-            fontSize: "var(--font-size-xs)",
-            fontWeight: "var(--font-weight-semibold)",
-            color: "var(--color-text-muted)",
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-          }}
-        >
-          Stashes
-        </span>
+    <CollapsibleSection
+      id="stashes"
+      title="Stashes"
+      action={
         <button
           onClick={handleStash}
           disabled={loading}
@@ -101,8 +80,8 @@ export function StashPanel() {
         >
           Stash
         </button>
-      </div>
-
+      }
+    >
       {stashes.map((s) => (
         <div
           key={s.index}
@@ -149,6 +128,6 @@ export function StashPanel() {
           </div>
         </div>
       ))}
-    </div>
+    </CollapsibleSection>
   );
 }

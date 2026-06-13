@@ -3,6 +3,7 @@ import { useWorkspaceStore } from "../../stores/workspaceStore";
 import { useRepoStore } from "../../stores/repoStore";
 import { useGraphStore } from "../../stores/graphStore";
 import { RowMenu } from "../Sidebar/RowMenu";
+import { CollapsibleSection } from "../Sidebar/CollapsibleSection";
 
 const INITIAL_LIMIT = 150;
 
@@ -32,35 +33,12 @@ export function WorkspaceSidebarSection() {
     currentRepo && !activeWorkspace.repoPaths.includes(currentRepo.path);
 
   return (
-    <div
-      style={{
-        padding: "var(--space-2) 0",
-        borderBottom: "1px solid var(--color-border-subtle)",
-        overflowY: "auto",
-        maxHeight: 220,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 var(--space-3)",
-          marginBottom: "var(--space-1)",
-        }}
-      >
-        <span
-          style={{
-            fontSize: "var(--font-size-xs)",
-            fontWeight: "var(--font-weight-semibold)",
-            color: "var(--color-text-muted)",
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-          }}
-        >
-          Workspace Repos
-        </span>
-        {showAddCurrentRepo && (
+    <CollapsibleSection
+      id="workspace-repos"
+      title="Workspace Repos"
+      bodyStyle={{ overflowY: "auto", maxHeight: 220 }}
+      action={
+        showAddCurrentRepo ? (
           <button
             onClick={() => addRepoToWorkspace(activeWorkspace.id, currentRepo.path)}
             style={{
@@ -75,9 +53,9 @@ export function WorkspaceSidebarSection() {
           >
             + Add current repo
           </button>
-        )}
-      </div>
-
+        ) : undefined
+      }
+    >
       {repoStatuses.map((status) => (
         <div
           key={status.path}
@@ -177,6 +155,6 @@ export function WorkspaceSidebarSection() {
           />
         </div>
       ))}
-    </div>
+    </CollapsibleSection>
   );
 }
