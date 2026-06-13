@@ -15,7 +15,7 @@ import { WorkspaceSidebarSection } from "../Workspace/WorkspaceSidebarSection";
 
 const INITIAL_LIMIT = 150;
 
-type View = "history" | "working-tree" | "prs" | "workspace";
+type View = "history" | "working-tree" | "prs" | "workspace" | "settings";
 
 export function Sidebar({
   view,
@@ -484,6 +484,24 @@ export function Sidebar({
       )}
 
       <StashPanel />
+
+      {/* Settings (always available) */}
+      <button
+        onClick={() => onViewChange("settings")}
+        style={{
+          marginTop: "auto",
+          padding: "var(--space-2) var(--space-4)",
+          textAlign: "left",
+          fontSize: "var(--font-size-sm)",
+          background: view === "settings" ? "var(--color-bg-elevated)" : "transparent",
+          color: view === "settings" ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+          border: "none",
+          borderTop: "1px solid var(--color-border-subtle)",
+          cursor: "pointer",
+        }}
+      >
+        ⚙ Settings
+      </button>
     </div>
   );
 }
