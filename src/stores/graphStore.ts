@@ -12,7 +12,10 @@ interface GraphStore {
   viewport: GraphViewport | null;
   selection: Selection;
   selectedOid: string | null;
+  lastOffset: number | null;
+  lastLimit: number | null;
   fetchViewport: (offset: number, limit: number) => Promise<void>;
+  refresh: () => Promise<void>;
   selectCommit: (oid: string, extend: boolean) => void;
   clearSelection: () => void;
 }
@@ -27,13 +30,21 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   viewport: null,
   selection: emptySelection(),
   selectedOid: null,
+  lastOffset: null,
+  lastLimit: null,
 
   fetchViewport: async (offset: number, limit: number) => {
     const viewport = await invoke<GraphViewport>("get_graph_viewport", {
       offset,
       limit,
     });
-    set({ viewport });
+    set({ viewport, lastOffset: offset, lastLimit: limit });
+  },
+
+  refresh: async () => {
+    const { lastOffset, lastLimit, fetchViewport } = get();
+    if (lastOffset === null || lastLimit === null) return;
+    await fetchViewport(lastOffset, lastLimit);
   },
 
   selectCommit: (oid: string, extend: boolean) => {

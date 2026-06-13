@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import "@testing-library/jest-dom";
 import { PRPanel } from "./PRPanel";
 import { useGithubStore } from "../../stores/githubStore";
+import { useRepoStore } from "../../stores/repoStore";
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -39,6 +40,7 @@ beforeEach(() => {
     githubRepos: [],
     deviceFlowInit: null,
     isAuthenticating: false,
+    prDraft: null,
   });
 });
 
@@ -72,6 +74,24 @@ describe("PRPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /new pull request/i }));
 
     expect(screen.getByPlaceholderText(/title/i)).toBeTruthy();
+  });
+
+  it("auto-opens the New PR form pre-seeded from a pr draft and clears it on cancel", async () => {
+    mockInvoke.mockResolvedValueOnce([]);
+    useGithubStore.setState({ prDraft: { head: "feat/x", base: "develop" } });
+    useRepoStore.setState({
+      currentRepo: { name: "gitclient", path: "/repo", headBranch: "feat/x" },
+      recentRepos: [],
+      branches: [],
+    });
+
+    render(<PRPanel />);
+
+    expect(await screen.findByDisplayValue("feat/x")).toBeTruthy();
+    expect(screen.getByDisplayValue("develop")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    expect(useGithubStore.getState().prDraft).toBeNull();
   });
 
   it("shows a message when no GitHub remote is detected", () => {

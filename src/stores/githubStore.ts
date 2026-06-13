@@ -15,6 +15,7 @@ interface GithubStore {
   githubRepos: GithubRepo[];
   deviceFlowInit: DeviceFlowInit | null;
   isAuthenticating: boolean;
+  prDraft: { head: string; base: string } | null;
 
   init: () => Promise<void>;
   detectRemote: () => Promise<void>;
@@ -32,6 +33,7 @@ interface GithubStore {
     head: string,
     base: string,
   ) => Promise<PullRequest>;
+  setPrDraft: (draft: { head: string; base: string } | null) => void;
 }
 
 export const useGithubStore = create<GithubStore>((set, get) => ({
@@ -41,6 +43,7 @@ export const useGithubStore = create<GithubStore>((set, get) => ({
   githubRepos: [],
   deviceFlowInit: null,
   isAuthenticating: false,
+  prDraft: null,
 
   init: async () => {
     // Check the default host's auth status up front — detectRemote only
@@ -127,4 +130,6 @@ export const useGithubStore = create<GithubStore>((set, get) => ({
     set((state) => ({ pullRequests: [pr, ...state.pullRequests] }));
     return pr;
   },
+
+  setPrDraft: (draft) => set({ prDraft: draft }),
 }));

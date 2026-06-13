@@ -17,7 +17,7 @@ const makeViewport = (): GraphViewport => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useGraphStore.setState({ viewport: null, selection: { anchor: null, focus: null, range: new Set() }, selectedOid: null });
+  useGraphStore.setState({ viewport: null, selection: { anchor: null, focus: null, range: new Set() }, selectedOid: null, lastOffset: null, lastLimit: null });
 });
 
 describe("graphStore", () => {
@@ -56,6 +56,23 @@ describe("graphStore", () => {
     expect(selection.range.has("bbb")).toBe(true);
     expect(selection.range.has("ccc")).toBe(true);
     expect(selection.range.size).toBe(3);
+  });
+
+  it("refresh re-fetches the last requested range", async () => {
+    const vp = makeViewport();
+    mockInvoke.mockResolvedValue(vp);
+
+    await useGraphStore.getState().fetchViewport(5, 30);
+    mockInvoke.mockClear();
+
+    await useGraphStore.getState().refresh();
+
+    expect(mockInvoke).toHaveBeenCalledWith("get_graph_viewport", { offset: 5, limit: 30 });
+  });
+
+  it("refresh is a no-op before any fetch", async () => {
+    await useGraphStore.getState().refresh();
+    expect(mockInvoke).not.toHaveBeenCalled();
   });
 
   it("clearSelection resets to empty", () => {

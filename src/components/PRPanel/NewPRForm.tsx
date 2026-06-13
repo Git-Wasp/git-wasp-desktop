@@ -19,9 +19,13 @@ const inputStyle: React.CSSProperties = {
 export function NewPRForm({
   onCreated,
   onCancel,
+  initialHead,
+  initialBase,
 }: {
   onCreated: (pr: PullRequest) => void;
   onCancel: () => void;
+  initialHead?: string;
+  initialBase?: string;
 }) {
   const { remoteInfo, createPullRequest } = useGithubStore();
   const { currentRepo, branches } = useRepoStore();
@@ -30,8 +34,8 @@ export function NewPRForm({
 
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [head, setHead] = useState(currentRepo?.headBranch ?? "");
-  const [base, setBase] = useState(defaultBase);
+  const [head, setHead] = useState(initialHead ?? currentRepo?.headBranch ?? "");
+  const [base, setBase] = useState(initialBase ?? defaultBase);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

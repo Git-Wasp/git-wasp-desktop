@@ -68,6 +68,20 @@ describe("NewPRForm", () => {
     expect(onCreated).toHaveBeenCalledWith(createdPr);
   });
 
+  it("pre-fills head and base from initial props when provided", () => {
+    render(
+      <NewPRForm
+        initialHead="feat/x"
+        initialBase="develop"
+        onCreated={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByDisplayValue("feat/x")).toBeTruthy();
+    expect(screen.getByDisplayValue("develop")).toBeTruthy();
+  });
+
   it("calls onCancel when the cancel button is clicked", () => {
     const onCancel = vi.fn();
     render(<NewPRForm onCreated={vi.fn()} onCancel={onCancel} />);

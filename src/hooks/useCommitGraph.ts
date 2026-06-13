@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { GraphViewport } from "../types/graph";
+import type { BranchLabelHit } from "../components/CommitGraph/dragDrop";
 
 interface Selection {
   anchor: string | null;
@@ -39,7 +40,8 @@ function resolveConfig(): GraphConfig {
 export function useCommitGraph(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   viewport: GraphViewport | null,
-  selection: Selection
+  selection: Selection,
+  labelHitsRef?: React.RefObject<BranchLabelHit[]>
 ): void {
   const configRef = useRef<GraphConfig | null>(null);
   const laneColorsRef = useRef<string[]>([]);
@@ -71,6 +73,9 @@ export function useCommitGraph(
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
+
+    // Reset the branch-pill hit-boxes; repopulated as labels are drawn below.
+    if (labelHitsRef) labelHitsRef.current = [];
 
     // The canvas renders only the viewport slice; row 0 here corresponds to
     // viewport.offset in the full graph. We map to y by local row index.
@@ -142,6 +147,18 @@ export function useCommitGraph(
           ctx.fillStyle = "#ffffff";
           ctx.fillText(text, labelX + padX, badgeY + badgeH - padY - 2);
 
+          if (labelHitsRef) {
+            labelHitsRef.current.push({
+              name: label.name,
+              isRemote: label.isRemote,
+              isTag: label.isTag,
+              x: labelX,
+              y: badgeY,
+              w: badgeW,
+              h: badgeH,
+            });
+          }
+
           labelX += badgeW + 4;
         });
       }
@@ -156,5 +173,5 @@ export function useCommitGraph(
         : resolveCssVar("--color-text-secondary") || "#a3afc2";
       ctx.fillText(node.summary, textX, y + 4);
     });
-  }, [viewport, selection, canvasRef]);
+  }, [viewport, selection, canvasRef, labelHitsRef]);
 }
