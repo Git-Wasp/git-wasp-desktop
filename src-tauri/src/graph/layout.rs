@@ -66,6 +66,7 @@ struct CommitRaw {
     oid: git2::Oid,
     parents: Vec<git2::Oid>,
     summary: String,
+    body: String,
     author_name: String,
     author_email: String,
     author_timestamp: i64,
@@ -83,10 +84,11 @@ fn walk_commits(repo: &Repository, limit: usize) -> anyhow::Result<Vec<CommitRaw
         let commit = repo.find_commit(oid).context("commit not found")?;
         let parents = commit.parent_ids().collect();
         let summary = commit.summary().unwrap_or("").to_string();
+        let body = commit.body().unwrap_or("").trim().to_string();
         let author_name = commit.author().name().unwrap_or("").to_string();
         let author_email = commit.author().email().unwrap_or("").to_string();
         let author_timestamp = commit.author().when().seconds();
-        result.push(CommitRaw { oid, parents, summary, author_name, author_email, author_timestamp });
+        result.push(CommitRaw { oid, parents, summary, body, author_name, author_email, author_timestamp });
     }
     Ok(result)
 }
@@ -236,6 +238,7 @@ fn assign_lanes(
             short_oid: oid_str[..8].to_string(),
             oid: oid_str,
             summary: c.summary.clone(),
+            body: c.body.clone(),
             author_name: c.author_name.clone(),
             author_email: c.author_email.clone(),
             author_timestamp: c.author_timestamp,
@@ -275,6 +278,7 @@ fn working_tree_node(head: &GraphNode, change_count: u32) -> GraphNode {
         oid: "WORKING_TREE".to_string(),
         short_oid: "WORKING_TREE".to_string(),
         summary: format!("{change_count} uncommitted changes"),
+        body: String::new(),
         author_name: String::new(),
         author_email: String::new(),
         author_timestamp: 0,
@@ -355,6 +359,26 @@ mod tests {
         assert!(viewport.nodes[1].is_head);
         assert_eq!(viewport.nodes[1].row, 1);
         assert_eq!(viewport.nodes[0].lane, viewport.nodes[1].lane);
+    }
+
+    #[test]
+    fn nodes_carry_the_commit_body() {
+        let (_dir, repo) = init_repo();
+        make_commit(&repo, "summary line\n\nthe detailed body", &[]);
+
+        let viewport = compute_layout(&repo, 0, 10).unwrap();
+
+        assert_eq!(viewport.nodes[0].summary, "summary line");
+        assert_eq!(viewport.nodes[0].body, "the detailed body");
+    }
+
+    #[test]
+    fn nodes_without_a_body_get_empty_string() {
+        let (_dir, repo) = init_repo();
+        make_commit(&repo, "just a summary", &[]);
+
+        let viewport = compute_layout(&repo, 0, 10).unwrap();
+        assert_eq!(viewport.nodes[0].body, "");
     }
 
     #[test]

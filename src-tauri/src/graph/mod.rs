@@ -10,6 +10,9 @@ pub struct GraphNode {
     pub oid: String,
     pub short_oid: String,
     pub summary: String,
+    /// The commit message body (everything after the summary line).
+    #[serde(default)]
+    pub body: String,
     pub author_name: String,
     pub author_email: String,
     pub author_timestamp: i64,

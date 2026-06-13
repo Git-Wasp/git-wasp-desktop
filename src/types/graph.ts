@@ -2,6 +2,7 @@ export interface GraphNode {
   oid: string;
   shortOid: string;
   summary: string;
+  body?: string;
   authorName: string;
   authorEmail: string;
   authorTimestamp: number;
