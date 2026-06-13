@@ -458,6 +458,11 @@ mod tests {
         let mut config = repo.config().unwrap();
         config.set_str("user.name", "Test User").unwrap();
         config.set_str("user.email", "test@test.com").unwrap();
+        // Pin line-ending handling regardless of the host's global git config —
+        // on Windows, a global `core.autocrlf=true` (Git for Windows' default)
+        // would have libgit2 rewrite CRLF<->LF on add/checkout, corrupting the
+        // exact-byte assertions these tests make.
+        config.set_str("core.autocrlf", "false").unwrap();
         (dir, repo)
     }
 
