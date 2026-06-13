@@ -32,6 +32,22 @@ pub struct FetchResult {
 pub enum PullResult {
     FastForwarded,
     AlreadyUpToDate,
+    /// Divergent histories were merged into a new merge commit.
+    Merged,
+    /// A merge was started but produced conflicts; the merge editor takes over.
+    Conflicts,
+}
+
+/// Result of a fetch + fast-forward attempt. `Diverged` is returned without
+/// modifying the repository so the caller can decide how to reconcile.
+#[derive(Debug)]
+pub enum PullFfOutcome {
+    AlreadyUpToDate,
+    FastForwarded,
+    Diverged {
+        /// "remote/branch" shorthand to merge or rebase.
+        remote_branch: String,
+    },
 }
 
 pub fn is_ssh_remote(url: &str) -> bool {
@@ -186,12 +202,15 @@ fn fetch_cli(repo: &Repository, remote_name: &str) -> anyhow::Result<FetchResult
     Ok(FetchResult { updated_refs: Vec::new() })
 }
 
-pub fn pull(
+/// Fetches and fast-forwards `branch` to its upstream when possible. Returns
+/// `Diverged` (leaving the repository untouched) when a fast-forward is not
+/// possible, so the caller can choose to merge or rebase.
+pub fn pull_ff(
     repo: &Repository,
     remote_name: &str,
     branch: &str,
     token: Option<&str>,
-) -> anyhow::Result<PullResult> {
+) -> anyhow::Result<PullFfOutcome> {
     fetch(repo, remote_name, token)?;
 
     // Resolve the upstream ref
@@ -206,13 +225,16 @@ pub fn pull(
         .with_context(|| format!("local branch ref '{local_ref}' not found"))?;
 
     if local_oid == upstream_oid {
-        return Ok(PullResult::AlreadyUpToDate);
+        return Ok(PullFfOutcome::AlreadyUpToDate);
     }
 
-    // Verify fast-forward is possible
+    // A fast-forward is only possible when the local branch has no commits the
+    // upstream lacks.
     let (ahead, _behind) = repo.graph_ahead_behind(local_oid, upstream_oid)?;
     if ahead > 0 {
-        anyhow::bail!("cannot fast-forward: local branch has diverged from upstream");
+        return Ok(PullFfOutcome::Diverged {
+            remote_branch: format!("{remote_name}/{branch}"),
+        });
     }
 
     // Fast-forward: update the local ref
@@ -234,7 +256,24 @@ pub fn pull(
         }
     }
 
-    Ok(PullResult::FastForwarded)
+    Ok(PullFfOutcome::FastForwarded)
+}
+
+/// Fetch + fast-forward only; errors when the branch has diverged. Used by the
+/// bulk workspace pull, which doesn't offer a merge path.
+pub fn pull(
+    repo: &Repository,
+    remote_name: &str,
+    branch: &str,
+    token: Option<&str>,
+) -> anyhow::Result<PullResult> {
+    match pull_ff(repo, remote_name, branch, token)? {
+        PullFfOutcome::AlreadyUpToDate => Ok(PullResult::AlreadyUpToDate),
+        PullFfOutcome::FastForwarded => Ok(PullResult::FastForwarded),
+        PullFfOutcome::Diverged { .. } => {
+            anyhow::bail!("cannot fast-forward: local branch has diverged from upstream")
+        }
+    }
 }
 
 pub fn push(
@@ -376,5 +415,93 @@ mod tests {
     #[test]
     fn https_is_not_ssh() {
         assert!(!is_ssh_remote("https://github.com/owner/repo.git"));
+    }
+
+    // ----- pull_ff (fetch + fast-forward analysis) -----
+
+    use git2::Signature;
+    use std::fs;
+    use std::path::Path;
+    use tempfile::TempDir;
+
+    fn bare_remote() -> TempDir {
+        let dir = TempDir::new().unwrap();
+        let repo = Repository::init_bare(dir.path()).unwrap();
+        let sig = Signature::now("Test", "test@test.com").unwrap();
+        let tree = repo.find_tree(repo.treebuilder(None).unwrap().write().unwrap()).unwrap();
+        repo.commit(Some("refs/heads/main"), &sig, &sig, "initial", &tree, &[]).unwrap();
+        repo.set_head("refs/heads/main").unwrap();
+        dir
+    }
+
+    fn clone(remote: &Path, dest: &Path) -> Repository {
+        let repo = git2::build::RepoBuilder::new()
+            .clone(remote.to_str().unwrap(), dest)
+            .unwrap();
+        let mut config = repo.config().unwrap();
+        config.set_str("user.name", "Test").unwrap();
+        config.set_str("user.email", "test@test.com").unwrap();
+        repo
+    }
+
+    /// Adds a commit to `branch` reusing the parent tree (works for bare repos).
+    fn advance(repo_path: &Path, branch: &str) -> git2::Oid {
+        let repo = Repository::open(repo_path).unwrap();
+        let branch_ref = format!("refs/heads/{branch}");
+        let parent = repo.find_reference(&branch_ref).unwrap().peel_to_commit().unwrap();
+        let tree = parent.tree().unwrap();
+        let sig = Signature::now("Test", "test@test.com").unwrap();
+        repo.commit(Some(&branch_ref), &sig, &sig, "advance", &tree, &[&parent]).unwrap()
+    }
+
+    /// Commits a working-tree file onto the local clone's current HEAD.
+    fn commit_local(repo: &Repository, work_dir: &Path, name: &str, content: &str) -> git2::Oid {
+        fs::write(work_dir.join(name), content).unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new(name)).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let sig = Signature::now("Test", "test@test.com").unwrap();
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "local change", &tree, &[&parent]).unwrap()
+    }
+
+    #[test]
+    fn pull_ff_reports_already_up_to_date() {
+        let remote = bare_remote();
+        let local = TempDir::new().unwrap();
+        let repo = clone(remote.path(), local.path());
+
+        let outcome = pull_ff(&repo, "origin", "main", None).unwrap();
+        assert!(matches!(outcome, PullFfOutcome::AlreadyUpToDate));
+    }
+
+    #[test]
+    fn pull_ff_fast_forwards_when_behind() {
+        let remote = bare_remote();
+        let local = TempDir::new().unwrap();
+        let repo = clone(remote.path(), local.path());
+
+        let new_oid = advance(remote.path(), "main");
+
+        let outcome = pull_ff(&repo, "origin", "main", None).unwrap();
+        assert!(matches!(outcome, PullFfOutcome::FastForwarded));
+        assert_eq!(repo.refname_to_id("refs/heads/main").unwrap(), new_oid);
+    }
+
+    #[test]
+    fn pull_ff_reports_diverged() {
+        let remote = bare_remote();
+        let local = TempDir::new().unwrap();
+        let repo = clone(remote.path(), local.path());
+
+        advance(remote.path(), "main"); // upstream moves ahead
+        commit_local(&repo, local.path(), "local.txt", "local work"); // local moves ahead too
+
+        let outcome = pull_ff(&repo, "origin", "main", None).unwrap();
+        match outcome {
+            PullFfOutcome::Diverged { remote_branch } => assert_eq!(remote_branch, "origin/main"),
+            other => panic!("expected Diverged, got {other:?}"),
+        }
     }
 }

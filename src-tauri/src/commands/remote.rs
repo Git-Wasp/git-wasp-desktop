@@ -1,4 +1,5 @@
-use crate::remote_ops::{self, FetchResult, PullResult, RemoteInfo};
+use crate::merge_ops::MergeOutcome;
+use crate::remote_ops::{self, FetchResult, PullFfOutcome, PullResult, RemoteInfo};
 use crate::repo_manager::AppState;
 use tauri::State;
 
@@ -45,6 +46,7 @@ pub async fn fetch_remote(
 pub async fn pull_branch(
     remote_name: Option<String>,
     branch: Option<String>,
+    mode: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<PullResult, String> {
     let remote = remote_name.as_deref().unwrap_or("origin");
@@ -67,10 +69,36 @@ pub async fn pull_branch(
         .as_deref()
         .and_then(|h| state.credentials.load(h).ok().flatten());
 
-    state
-        .with_repo(|repo| remote_ops::pull(repo, remote, &branch_name, token.as_deref()))
+    let outcome = state
+        .with_repo(|repo| remote_ops::pull_ff(repo, remote, &branch_name, token.as_deref()))
         .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    match outcome {
+        PullFfOutcome::AlreadyUpToDate => Ok(PullResult::AlreadyUpToDate),
+        PullFfOutcome::FastForwarded => Ok(PullResult::FastForwarded),
+        PullFfOutcome::Diverged { remote_branch } => {
+            // ffOnly (default) refuses a divergent pull; ffOrMerge reconciles by
+            // merging the upstream through the OperationRunner, so any conflicts
+            // surface in the existing merge editor.
+            if mode.as_deref().unwrap_or("ffOnly") != "ffOrMerge" {
+                return Err(
+                    "cannot fast-forward: local branch has diverged from upstream".to_string(),
+                );
+            }
+            match state.merge_start(&remote_branch).map_err(|e| e.to_string())? {
+                MergeOutcome::Clean => {
+                    state
+                        .merge_complete(&format!(
+                            "Merge remote-tracking branch '{remote_branch}'"
+                        ))
+                        .map_err(|e| e.to_string())?;
+                    Ok(PullResult::Merged)
+                }
+                MergeOutcome::Conflicts { .. } => Ok(PullResult::Conflicts),
+            }
+        }
+    }
 }
 
 #[tauri::command]

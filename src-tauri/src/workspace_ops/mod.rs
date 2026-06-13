@@ -211,6 +211,13 @@ fn pull_one(path: &Path, known_hosts: &[String], credentials: &dyn CredentialSto
         Ok(PullResult::AlreadyUpToDate) => {
             RepoOperationResult { path: path_str, name, success: true, message: "already up to date".to_string() }
         }
+        // The bulk pull is fast-forward-only, so merge outcomes can't occur here.
+        Ok(PullResult::Merged) => {
+            RepoOperationResult { path: path_str, name, success: true, message: "merged".to_string() }
+        }
+        Ok(PullResult::Conflicts) => {
+            RepoOperationResult { path: path_str, name, success: false, message: "merge conflicts".to_string() }
+        }
         Err(e) => RepoOperationResult { path: path_str, name, success: false, message: e.to_string() },
     }
 }
