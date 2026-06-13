@@ -117,7 +117,7 @@
   --color-text-on-accent: #ffffff;
 
   /* === LAYOUT — Commit graph === */
-  --graph-row-height: 28px;
+  --graph-row-height: 34px;
   --graph-lane-width: 20px;
   --graph-dot-radius: 5px;
   --graph-line-width: 2px;

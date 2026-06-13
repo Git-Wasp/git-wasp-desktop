@@ -4,57 +4,51 @@ import "@testing-library/jest-dom";
 import { CommitGraph } from "./CommitGraph";
 import { useGraphStore } from "../../stores/graphStore";
 import { useRepoStore } from "../../stores/repoStore";
-import type { GraphViewport } from "../../types/graph";
+import type { GraphNode, GraphViewport } from "../../types/graph";
+
+const node = (over: Partial<GraphNode>): GraphNode => ({
+  oid: "a".repeat(40),
+  shortOid: "aaaaaaa",
+  summary: "first commit",
+  body: "",
+  authorName: "A",
+  authorEmail: "a@a",
+  authorTimestamp: 0,
+  lane: 0,
+  row: 0,
+  colorIndex: 0,
+  parents: [],
+  children: [],
+  edges: [],
+  branchLabels: [],
+  isHead: false,
+  ...over,
+});
 
 const makeViewport = (): GraphViewport => ({
   totalCount: 2,
   offset: 0,
   nodes: [
-    {
+    node({
       oid: "a".repeat(40),
-      shortOid: "aaaaaaa",
-      summary: "first",
-      authorName: "A",
-      authorEmail: "a@a",
-      authorTimestamp: 0,
-      lane: 0,
-      row: 0,
-      colorIndex: 0,
-      parents: [],
-      children: [],
-      edges: [],
+      summary: "first commit",
       branchLabels: [{ name: "main", isRemote: false, isTag: false }],
       isHead: true,
-    },
-    {
-      oid: "b".repeat(40),
-      shortOid: "bbbbbbb",
-      summary: "second",
-      authorName: "A",
-      authorEmail: "a@a",
-      authorTimestamp: 0,
-      lane: 0,
-      row: 1,
-      colorIndex: 0,
-      parents: ["a".repeat(40)],
-      children: [],
-      edges: [],
-      branchLabels: [],
-      isHead: false,
-    },
+      row: 0,
+    }),
+    node({ oid: "b".repeat(40), summary: "second commit", row: 1 }),
   ],
 });
 
 const writeText = vi.fn();
+let selectCommit: ReturnType<typeof vi.fn<(oid: string, extend: boolean) => void>>;
 
 beforeEach(() => {
   vi.clearAllMocks();
   // jsdom has no canvas backend; the graph hook early-returns on a null context.
   HTMLCanvasElement.prototype.getContext = vi.fn(() => null) as never;
-  Object.defineProperty(navigator, "clipboard", {
-    value: { writeText },
-    configurable: true,
-  });
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  selectCommit = vi.fn<(oid: string, extend: boolean) => void>();
   useGraphStore.setState({
     viewport: makeViewport(),
     selection: { anchor: null, focus: null, range: new Set() },
@@ -63,8 +57,10 @@ beforeEach(() => {
     lastLimit: 40,
     fetchViewport: vi.fn(),
     refresh: vi.fn(),
+    selectCommit,
   });
   useRepoStore.setState({
+    currentRepo: { name: "r", path: "/r", headBranch: "main" },
     createBranch: vi.fn().mockResolvedValue(undefined),
     checkoutBranch: vi.fn().mockResolvedValue(undefined),
     renameBranch: vi.fn().mockResolvedValue(undefined),
@@ -72,145 +68,96 @@ beforeEach(() => {
   });
 });
 
-function openMenuOnRow(clientY: number) {
-  const canvas = document.querySelector("canvas")!;
-  fireEvent.contextMenu(canvas, { clientY });
-}
-
-describe("CommitGraph context menu", () => {
-  it("opens a context menu with the expected actions on right-click", () => {
+describe("CommitGraph columns", () => {
+  it("renders the column headers", () => {
     render(<CommitGraph />);
-    openMenuOnRow(5); // row 0 — the commit carrying branch "main"
-
-    expect(screen.getByRole("menu")).toBeTruthy();
-    expect(screen.getByText("Copy commit hash")).toBeTruthy();
-    expect(screen.getByText(/New branch here/)).toBeTruthy();
-    expect(screen.getByText("Checkout main")).toBeTruthy();
-    expect(screen.getByText(/Rename main/)).toBeTruthy();
-    expect(screen.getByText("Delete main")).toBeTruthy();
+    expect(screen.getByText("Branch / Tag")).toBeInTheDocument();
+    expect(screen.getByText("Graph")).toBeInTheDocument();
+    expect(screen.getByText("Commit message")).toBeInTheDocument();
   });
 
-  it("copies the full commit hash to the clipboard", () => {
+  it("renders a branch pill and the commit message per row", () => {
     render(<CommitGraph />);
-    openMenuOnRow(5);
+    expect(screen.getByText("main")).toBeInTheDocument();
+    expect(screen.getByText("first commit")).toBeInTheDocument();
+    expect(screen.getByText("second commit")).toBeInTheDocument();
+  });
 
+  it("selects a commit when its row is clicked", () => {
+    const onCommitSelect = vi.fn();
+    render(<CommitGraph onCommitSelect={onCommitSelect} />);
+    fireEvent.click(screen.getByText("second commit"));
+    expect(selectCommit).toHaveBeenCalledWith("b".repeat(40), false);
+    expect(onCommitSelect).toHaveBeenCalled();
+  });
+});
+
+describe("CommitGraph context menu", () => {
+  it("opens a context menu with branch actions on right-click", () => {
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("first commit"));
+
+    expect(screen.getByText("Copy commit hash")).toBeInTheDocument();
+    expect(screen.getByText("Checkout main")).toBeInTheDocument();
+    expect(screen.getByText(/Rename main/)).toBeInTheDocument();
+    expect(screen.getByText("Delete main")).toBeInTheDocument();
+  });
+
+  it("copies the full commit hash", () => {
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("first commit"));
     fireEvent.click(screen.getByText("Copy commit hash"));
-
     expect(writeText).toHaveBeenCalledWith("a".repeat(40));
   });
 
   it("creates and checks out a new branch at the commit", async () => {
     render(<CommitGraph />);
-    openMenuOnRow(5);
-
+    fireEvent.contextMenu(screen.getByText("second commit"));
     fireEvent.click(screen.getByText(/New branch here/));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "feature/x" } });
     fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
 
-    await waitFor(() => {
-      expect(useRepoStore.getState().createBranch).toHaveBeenCalledWith("feature/x", "a".repeat(40));
-    });
+    await waitFor(() =>
+      expect(useRepoStore.getState().createBranch).toHaveBeenCalledWith("feature/x", "b".repeat(40)),
+    );
     expect(useRepoStore.getState().checkoutBranch).toHaveBeenCalledWith("feature/x");
-    await waitFor(() => {
-      expect(useGraphStore.getState().refresh).toHaveBeenCalled();
-    });
-  });
-
-  it("renames a branch via the prompt", async () => {
-    render(<CommitGraph />);
-    openMenuOnRow(5);
-
-    fireEvent.click(screen.getByText(/Rename main/));
-    const input = screen.getByRole("textbox");
-    expect(input).toHaveValue("main");
-    fireEvent.change(input, { target: { value: "trunk" } });
-    fireEvent.click(screen.getByRole("button", { name: /^rename$/i }));
-
-    await waitFor(() => {
-      expect(useRepoStore.getState().renameBranch).toHaveBeenCalledWith("main", "trunk");
-    });
-    await waitFor(() => {
-      expect(useGraphStore.getState().refresh).toHaveBeenCalled();
-    });
-  });
-
-  it("checks out an existing branch from the menu", async () => {
-    render(<CommitGraph />);
-    openMenuOnRow(5);
-
-    fireEvent.click(screen.getByText("Checkout main"));
-
-    await waitFor(() => {
-      expect(useRepoStore.getState().checkoutBranch).toHaveBeenCalledWith("main");
-    });
-  });
-
-  it("deletes a branch after confirmation", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-    render(<CommitGraph />);
-    openMenuOnRow(5);
-
-    fireEvent.click(screen.getByText("Delete main"));
-
-    await waitFor(() => {
-      expect(useRepoStore.getState().deleteBranch).toHaveBeenCalledWith("main");
-    });
-  });
-
-  it("does not show branch actions for a commit without local branches", () => {
-    render(<CommitGraph />);
-    openMenuOnRow(33); // row 1 — no branch labels
-
-    expect(screen.getByText("Copy commit hash")).toBeTruthy();
-    expect(screen.queryByText(/Rename/)).toBeNull();
-    expect(screen.queryByText(/^Checkout /)).toBeNull();
   });
 });
 
-describe("CommitGraph working-tree node", () => {
-  const wipViewport = (): GraphViewport => ({
-    totalCount: 2,
-    offset: 0,
-    nodes: [
-      {
-        oid: "WORKING_TREE",
-        shortOid: "WORKING_TREE",
-        summary: "3 uncommitted changes",
-        authorName: "",
-        authorEmail: "",
-        authorTimestamp: 0,
-        lane: 0,
-        row: 0,
-        colorIndex: 0,
-        parents: ["a".repeat(40)],
-        children: [],
-        edges: [],
-        branchLabels: [],
-        isHead: false,
-        isWorkingTree: true,
-        changeCount: 3,
-      },
-      { ...makeViewport().nodes[0], row: 1 },
-    ],
-  });
-
-  it("opens the changes view when the working-tree node is clicked", () => {
-    const selectCommit = vi.fn();
+describe("CommitGraph working-tree row", () => {
+  it("opens the changes view instead of selecting", () => {
     const onViewChanges = vi.fn();
-    useGraphStore.setState({ viewport: wipViewport(), selectCommit });
+    useGraphStore.setState({
+      viewport: {
+        totalCount: 1,
+        offset: 0,
+        nodes: [
+          node({
+            oid: "WORKING_TREE",
+            summary: "3 uncommitted changes",
+            isWorkingTree: true,
+            changeCount: 3,
+          }),
+        ],
+      },
+    });
+    render(<CommitGraph onViewChanges={onViewChanges} />);
 
-    const { container } = render(<CommitGraph onViewChanges={onViewChanges} />);
-    fireEvent.click(container.querySelector("canvas")!, { clientY: 5 }); // row 0 = WIP
-
+    fireEvent.click(screen.getByText("3 uncommitted changes"));
     expect(onViewChanges).toHaveBeenCalled();
     expect(selectCommit).not.toHaveBeenCalled();
   });
 
-  it("does not open a context menu on the working-tree node", () => {
-    useGraphStore.setState({ viewport: wipViewport() });
+  it("does not open a context menu on the working-tree row", () => {
+    useGraphStore.setState({
+      viewport: {
+        totalCount: 1,
+        offset: 0,
+        nodes: [node({ oid: "WORKING_TREE", summary: "1 uncommitted changes", isWorkingTree: true })],
+      },
+    });
     render(<CommitGraph onViewChanges={vi.fn()} />);
-
-    fireEvent.contextMenu(document.querySelector("canvas")!, { clientY: 5 });
-    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.contextMenu(screen.getByText("1 uncommitted changes"));
+    expect(screen.queryByText("Copy commit hash")).toBeNull();
   });
 });

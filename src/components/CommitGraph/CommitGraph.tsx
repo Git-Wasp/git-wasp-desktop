@@ -5,11 +5,19 @@ import { useMergeStore } from "../../stores/mergeStore";
 import { useCommitGraph } from "../../hooks/useCommitGraph";
 import { ContextMenu, type MenuItem } from "../common/ContextMenu";
 import { PromptDialog } from "../common/PromptDialog";
-import { runMerge, type BranchLabelHit } from "./dragDrop";
+import { runMerge } from "./dragDrop";
 import { useGraphDragDrop } from "./useGraphDragDrop";
+import { BranchCell, MessageCell } from "./columns";
+import {
+  COLUMNS,
+  columnStyle,
+  ROW_HEIGHT,
+  BRANCH_COL_WIDTH,
+  GRAPH_COL_WIDTH,
+  type PillHandlers,
+} from "./columnModel";
 import type { GraphNode } from "../../types/graph";
 
-const ROW_HEIGHT = 28;
 const BUFFER_ROWS = 20;
 
 interface MenuState {
@@ -22,6 +30,18 @@ type PromptState =
   | { kind: "new-branch"; oid: string }
   | { kind: "rename-branch"; branch: string };
 
+const headerCellStyle: React.CSSProperties = {
+  padding: "0 var(--space-3)",
+  fontSize: "var(--font-size-xs)",
+  fontWeight: "var(--font-weight-semibold)",
+  color: "var(--color-text-muted)",
+  textTransform: "uppercase",
+  letterSpacing: "0.06em",
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
 export function CommitGraph({
   onStartPullRequest,
   onViewChanges,
@@ -33,11 +53,8 @@ export function CommitGraph({
 } = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const labelHitsRef = useRef<BranchLabelHit[]>([]);
-  const { viewport, selection, fetchViewport, selectCommit, refresh } =
-    useGraphStore();
-  const { currentRepo, createBranch, checkoutBranch, renameBranch, deleteBranch } =
-    useRepoStore();
+  const { viewport, selection, fetchViewport, selectCommit, refresh } = useGraphStore();
+  const { currentRepo, createBranch, checkoutBranch, renameBranch, deleteBranch } = useRepoStore();
   const startMerge = useMergeStore((s) => s.startMerge);
 
   const [menu, setMenu] = useState<MenuState | null>(null);
@@ -51,43 +68,14 @@ export function CommitGraph({
     fetchViewport(0, limit);
   }, [fetchViewport]);
 
-  // Sync canvas CSS size to container width and the drawn-row count, then
-  // redraw. The canvas is positioned at `canvasTop` (BUFFER_ROWS above the
-  // scroll position) and draws every node in the slice, so its height must
-  // span all those rows — not just the visible viewport — or the lower part of
-  // the viewport is left uncovered when scrolled.
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const container = containerRef.current;
-    if (!canvas || !container) return;
-    canvas.style.width = container.clientWidth + "px";
-    canvas.style.height = (viewport?.nodes.length ?? 0) * ROW_HEIGHT + "px";
-  }, [viewport]);
-
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
       const container = e.currentTarget;
-      const scrollTop = container.scrollTop;
-      const offset = Math.max(
-        0,
-        Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_ROWS
-      );
-      const limit =
-        Math.ceil(container.clientHeight / ROW_HEIGHT) + BUFFER_ROWS * 2;
+      const offset = Math.max(0, Math.floor(container.scrollTop / ROW_HEIGHT) - BUFFER_ROWS);
+      const limit = Math.ceil(container.clientHeight / ROW_HEIGHT) + BUFFER_ROWS * 2;
       fetchViewport(offset, limit);
     },
-    [fetchViewport]
-  );
-
-  // Map a click/right-click Y to the node under it within the rendered slice.
-  const nodeAtClientY = useCallback(
-    (canvas: HTMLCanvasElement, clientY: number): GraphNode | undefined => {
-      if (!viewport) return undefined;
-      const rect = canvas.getBoundingClientRect();
-      const localRow = Math.floor((clientY - rect.top) / ROW_HEIGHT);
-      return viewport.nodes[localRow];
-    },
-    [viewport]
+    [fetchViewport],
   );
 
   // Merge source into target (auto-checking-out target first), then refresh.
@@ -104,58 +92,63 @@ export function CommitGraph({
         await refresh();
       })();
     },
-    [currentRepo, checkoutBranch, startMerge, refresh]
+    [currentRepo, checkoutBranch, startMerge, refresh],
   );
 
   const drag = useGraphDragDrop({
-    canvasRef,
-    labelHitsRef,
     onMerge: handleMerge,
     onStartPullRequest: onStartPullRequest ?? (() => {}),
   });
 
-  const handleCanvasClick = useCallback(
-    (e: React.MouseEvent<HTMLCanvasElement>) => {
-      // Swallow the click that follows a drag so it doesn't also select.
+  const pillHandlers: PillHandlers = {
+    onPointerDown: drag.onPillPointerDown,
+    onPointerEnter: drag.onPillPointerEnter,
+    onPointerLeave: drag.onPillPointerLeave,
+    isDropTarget: (name) => drag.dropTarget === name,
+  };
+
+  const handleRowClick = useCallback(
+    (node: GraphNode, shiftKey: boolean) => {
+      // Swallow the click that ends a drag so it doesn't also select.
       if (drag.consumeClick()) return;
-      const node = nodeAtClientY(e.currentTarget, e.clientY);
-      if (!node) return;
-      // The working-tree node opens the changes view instead of selecting.
       if (node.isWorkingTree) {
         onViewChanges?.();
         return;
       }
-      selectCommit(node.oid, e.shiftKey);
+      selectCommit(node.oid, shiftKey);
       onCommitSelect?.();
     },
-    [drag, nodeAtClientY, selectCommit, onViewChanges, onCommitSelect]
+    [drag, selectCommit, onViewChanges, onCommitSelect],
   );
 
-  const handleContextMenu = useCallback(
-    (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleRowContextMenu = useCallback(
+    (e: React.MouseEvent, node: GraphNode) => {
       e.preventDefault();
-      const node = nodeAtClientY(e.currentTarget, e.clientY);
-      if (!node || node.isWorkingTree) return; // no menu for the working-tree node
+      if (node.isWorkingTree) return;
       selectCommit(node.oid, false);
       setMenu({ x: e.clientX, y: e.clientY, node });
     },
-    [nodeAtClientY, selectCommit]
+    [selectCommit],
   );
+
+  const copy = (text: string) => {
+    void navigator.clipboard?.writeText(text);
+  };
+
+  const runBranchOp = async (op: () => Promise<void>) => {
+    await op();
+    await refresh();
+  };
 
   const buildMenuItems = useCallback(
     (node: GraphNode): MenuItem[] => {
       const items: MenuItem[] = [
         { label: "Copy commit hash", onSelect: () => copy(node.oid) },
         { label: "Copy short hash", onSelect: () => copy(node.shortOid) },
-        {
-          label: "New branch here…",
-          onSelect: () => setPrompt({ kind: "new-branch", oid: node.oid }),
-        },
+        { label: "New branch here…", onSelect: () => setPrompt({ kind: "new-branch", oid: node.oid }) },
       ];
 
-      const localBranches = node.branchLabels.filter(
-        (l) => !l.isRemote && !l.isTag
-      );
+      const localBranches = node.branchLabels.filter((l) => !l.isRemote && !l.isTag);
       if (localBranches.length > 0) {
         items.push({ separator: true });
         for (const branch of localBranches) {
@@ -165,8 +158,7 @@ export function CommitGraph({
           });
           items.push({
             label: `Rename ${branch.name}…`,
-            onSelect: () =>
-              setPrompt({ kind: "rename-branch", branch: branch.name }),
+            onSelect: () => setPrompt({ kind: "rename-branch", branch: branch.name }),
           });
           items.push({
             label: `Delete ${branch.name}`,
@@ -182,18 +174,8 @@ export function CommitGraph({
       return items;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [checkoutBranch, deleteBranch]
+    [checkoutBranch, deleteBranch],
   );
-
-  const copy = (text: string) => {
-    void navigator.clipboard?.writeText(text);
-  };
-
-  // Run a branch mutation then refresh the graph so labels update.
-  const runBranchOp = async (op: () => Promise<void>) => {
-    await op();
-    await refresh();
-  };
 
   const handlePromptConfirm = async (value: string) => {
     const current = prompt;
@@ -209,29 +191,16 @@ export function CommitGraph({
     }
   };
 
-  useCommitGraph(canvasRef, viewport, selection, labelHitsRef);
+  useCommitGraph(canvasRef, viewport, selection);
 
+  const offset = viewport?.offset ?? 0;
   const totalHeight = (viewport?.totalCount ?? 0) * ROW_HEIGHT;
-  const canvasTop = (viewport?.offset ?? 0) * ROW_HEIGHT;
-
-  // Page-space rect of the highlighted drop target pill.
-  const canvasRect = canvasRef.current?.getBoundingClientRect();
-  const targetRect =
-    drag.dropTarget && canvasRect
-      ? {
-          left: canvasRect.left + drag.dropTarget.x,
-          top: canvasRect.top + drag.dropTarget.y,
-          width: drag.dropTarget.w,
-          height: drag.dropTarget.h,
-        }
-      : null;
+  const canvasTop = offset * ROW_HEIGHT;
+  const sliceHeight = (viewport?.nodes.length ?? 0) * ROW_HEIGHT;
 
   const dropMenuItems: MenuItem[] = drag.menu
     ? [
-        {
-          label: `Merge ${drag.menu.source} into ${drag.menu.target}`,
-          onSelect: drag.confirmMerge,
-        },
+        { label: `Merge ${drag.menu.source} into ${drag.menu.target}`, onSelect: drag.confirmMerge },
         {
           label: `Start pull request ${drag.menu.source} → ${drag.menu.target}`,
           onSelect: drag.confirmStartPullRequest,
@@ -240,49 +209,95 @@ export function CommitGraph({
     : [];
 
   return (
-    <div
-      ref={containerRef}
-      className="relative overflow-y-auto h-full"
-      style={{ background: "var(--color-bg-app)" }}
-      onScroll={handleScroll}
-    >
-      {/* Spacer div provides the full scroll height */}
-      <div style={{ height: totalHeight, position: "relative" }}>
-        {/* Canvas is positioned at the current viewport offset */}
-        <canvas
-          ref={canvasRef}
-          style={{
-            position: "absolute",
-            top: canvasTop,
-            left: 0,
-            cursor: drag.dragging ? "grabbing" : drag.hovering ? "grab" : "default",
-            touchAction: "none",
-          }}
-          onClick={handleCanvasClick}
-          onContextMenu={handleContextMenu}
-          onPointerDown={drag.onPointerDown}
-          onPointerMove={drag.onPointerMove}
-          onPointerUp={drag.onPointerUp}
-          onPointerLeave={drag.onPointerLeave}
-        />
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--color-bg-app)" }}>
+      {/* Column header */}
+      <div
+        role="row"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          height: 28,
+          flexShrink: 0,
+          borderBottom: "1px solid var(--color-border-subtle)",
+          background: "var(--color-bg-panel)",
+        }}
+      >
+        {COLUMNS.map((col) => (
+          <div key={col.id} style={{ ...columnStyle(col), ...headerCellStyle }}>
+            {col.header}
+          </div>
+        ))}
       </div>
 
-      {/* Drop-target pill highlight */}
-      {targetRect && (
-        <div
-          style={{
-            position: "fixed",
-            left: targetRect.left,
-            top: targetRect.top,
-            width: targetRect.width,
-            height: targetRect.height,
-            border: "2px solid var(--color-accent-primary)",
-            borderRadius: "var(--radius-sm)",
-            pointerEvents: "none",
-            zIndex: 150,
-          }}
-        />
-      )}
+      {/* Scrollable rows */}
+      <div ref={containerRef} style={{ flex: 1, minHeight: 0, overflowY: "auto" }} onScroll={handleScroll}>
+        <div style={{ height: totalHeight, position: "relative" }}>
+          {/* Canvas draws the graph column only */}
+          <canvas
+            ref={canvasRef}
+            style={{
+              position: "absolute",
+              left: BRANCH_COL_WIDTH,
+              top: canvasTop,
+              width: GRAPH_COL_WIDTH,
+              height: sliceHeight,
+              pointerEvents: "none",
+            }}
+          />
+
+          {viewport?.nodes.map((node, i) => {
+            const rowIndex = offset + i;
+            const selected = selection.range.has(node.oid);
+            const cellBg = selected ? "var(--color-bg-selected)" : "transparent";
+            return (
+              <div
+                key={`${node.oid}-${rowIndex}`}
+                onClick={(e) => handleRowClick(node, e.shiftKey)}
+                onContextMenu={(e) => handleRowContextMenu(e, node)}
+                style={{
+                  position: "absolute",
+                  top: rowIndex * ROW_HEIGHT,
+                  left: 0,
+                  right: 0,
+                  height: ROW_HEIGHT,
+                  display: "flex",
+                  alignItems: "center",
+                  cursor: "pointer",
+                }}
+              >
+                <div
+                  style={{
+                    ...columnStyle(COLUMNS[0]),
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "flex-end",
+                    padding: "0 var(--space-2)",
+                    background: cellBg,
+                  }}
+                >
+                  <BranchCell node={node} handlers={pillHandlers} />
+                </div>
+                {/* graph gap — canvas shows through */}
+                <div style={{ width: GRAPH_COL_WIDTH, flexShrink: 0, height: "100%" }} />
+                <div
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "0 var(--space-3)",
+                    background: cellBg,
+                  }}
+                >
+                  <MessageCell node={node} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Drag ghost following the cursor */}
       {drag.dragging && drag.dragSource && drag.ghostPos && (
@@ -306,21 +321,11 @@ export function CommitGraph({
       )}
 
       {drag.menu && (
-        <ContextMenu
-          x={drag.menu.x}
-          y={drag.menu.y}
-          items={dropMenuItems}
-          onClose={drag.closeMenu}
-        />
+        <ContextMenu x={drag.menu.x} y={drag.menu.y} items={dropMenuItems} onClose={drag.closeMenu} />
       )}
 
       {menu && (
-        <ContextMenu
-          x={menu.x}
-          y={menu.y}
-          items={buildMenuItems(menu.node)}
-          onClose={() => setMenu(null)}
-        />
+        <ContextMenu x={menu.x} y={menu.y} items={buildMenuItems(menu.node)} onClose={() => setMenu(null)} />
       )}
 
       {prompt && (

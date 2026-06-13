@@ -3,67 +3,42 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { CommitGraph } from "./CommitGraph";
 import { useGraphStore } from "../../stores/graphStore";
-import type { GraphViewport } from "../../types/graph";
-import type { BranchLabelHit } from "./dragDrop";
+import { useRepoStore } from "../../stores/repoStore";
+import type { GraphNode, GraphViewport } from "../../types/graph";
 
-// Pill rects the (mocked) render hook will expose for hit-testing. jsdom's
-// canvas has no context, so we inject geometry instead of measuring it.
-let testHits: BranchLabelHit[] = [];
-
-vi.mock("../../hooks/useCommitGraph", () => ({
-  useCommitGraph: (
-    _canvasRef: unknown,
-    _viewport: unknown,
-    _selection: unknown,
-    labelHitsRef?: { current: BranchLabelHit[] },
-  ) => {
-    if (labelHitsRef) labelHitsRef.current = testHits;
-  },
-}));
-
-const node = (oid: string, row: number) => ({
+const node = (oid: string, summary: string, branch: string): GraphNode => ({
   oid,
   shortOid: oid.slice(0, 7),
-  summary: oid,
+  summary,
+  body: "",
   authorName: "A",
   authorEmail: "a@a",
   authorTimestamp: 0,
   lane: 0,
-  row,
+  row: 0,
   colorIndex: 0,
   parents: [],
   children: [],
   edges: [],
-  branchLabels: [],
-  isHead: row === 0,
+  branchLabels: [{ name: branch, isRemote: false, isTag: false }],
+  isHead: false,
 });
 
 const viewport: GraphViewport = {
   totalCount: 2,
   offset: 0,
-  nodes: [node("a".repeat(40), 0), node("b".repeat(40), 1)],
+  nodes: [
+    { ...node("a".repeat(40), "first", "main"), row: 0 },
+    { ...node("b".repeat(40), "second", "feat"), row: 1 },
+  ],
 };
-
-const pill = (over: Partial<BranchLabelHit>): BranchLabelHit => ({
-  name: "main",
-  isRemote: false,
-  isTag: false,
-  x: 0,
-  y: 0,
-  w: 60,
-  h: 16,
-  ...over,
-});
 
 let selectCommit: ReturnType<typeof vi.fn<(oid: string, extend: boolean) => void>>;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  HTMLCanvasElement.prototype.getContext = vi.fn(() => null) as never;
   selectCommit = vi.fn<(oid: string, extend: boolean) => void>();
-  testHits = [
-    pill({ name: "main", x: 0, y: 0, w: 60, h: 16 }),
-    pill({ name: "feat", x: 0, y: 30, w: 60, h: 16 }),
-  ];
   useGraphStore.setState({
     viewport,
     selection: { anchor: null, focus: null, range: new Set() },
@@ -74,76 +49,57 @@ beforeEach(() => {
     refresh: vi.fn(),
     selectCommit,
   });
+  useRepoStore.setState({
+    currentRepo: { name: "r", path: "/r", headBranch: "main" },
+    createBranch: vi.fn().mockResolvedValue(undefined),
+    checkoutBranch: vi.fn().mockResolvedValue(undefined),
+    renameBranch: vi.fn().mockResolvedValue(undefined),
+    deleteBranch: vi.fn().mockResolvedValue(undefined),
+  });
 });
 
-function canvas() {
-  return document.querySelector("canvas")!;
-}
-
-// jsdom's PointerEvent ignores clientX/clientY; MouseEvent honors them and
-// React dispatches by event-type name, so this drives the pointer handlers.
-function firePointer(type: string, clientX: number, clientY: number) {
+// Window pointer events carry coordinates via MouseEvent (jsdom PointerEvent drops them).
+function fireWindow(type: string, clientX: number, clientY: number) {
   act(() => {
-    canvas().dispatchEvent(
-      new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY }),
-    );
+    window.dispatchEvent(new MouseEvent(type, { clientX, clientY, bubbles: true }));
   });
 }
 
-describe("CommitGraph drag-and-drop", () => {
-  it("opens a drop menu when a branch pill is dragged onto another branch", () => {
+describe("CommitGraph drag-and-drop (DOM pills)", () => {
+  it("opens the drop menu when a branch pill is dragged onto another", () => {
     render(<CommitGraph onStartPullRequest={vi.fn()} />);
 
-    firePointer("pointerdown", 10, 8);
-    firePointer("pointermove", 10, 38);
-    firePointer("pointerup", 10, 38);
+    fireEvent.pointerDown(screen.getByText("main"), { clientX: 10, clientY: 8 });
+    fireWindow("pointermove", 10, 30); // start drag (past threshold)
+    fireEvent.pointerEnter(screen.getByText("feat"));
+    fireWindow("pointerup", 10, 30);
 
-    expect(screen.getByText("Merge main into feat")).toBeTruthy();
-    expect(screen.getByText(/Start pull request main → feat/)).toBeTruthy();
+    expect(screen.getByText("Merge main into feat")).toBeInTheDocument();
+    expect(screen.getByText(/Start pull request main → feat/)).toBeInTheDocument();
   });
 
   it("invokes onStartPullRequest from the drop menu", () => {
     const onStartPullRequest = vi.fn();
     render(<CommitGraph onStartPullRequest={onStartPullRequest} />);
 
-    firePointer("pointerdown", 10, 8);
-    firePointer("pointermove", 10, 38);
-    firePointer("pointerup", 10, 38);
+    fireEvent.pointerDown(screen.getByText("main"), { clientX: 10, clientY: 8 });
+    fireWindow("pointermove", 10, 30);
+    fireEvent.pointerEnter(screen.getByText("feat"));
+    fireWindow("pointerup", 10, 30);
     fireEvent.click(screen.getByText(/Start pull request main → feat/));
 
     expect(onStartPullRequest).toHaveBeenCalledWith("main", "feat");
   });
 
-  it("does not select a commit on the click that follows a drag", () => {
+  it("does not select a commit on the click that ends a drag", () => {
     render(<CommitGraph onStartPullRequest={vi.fn()} />);
 
-    firePointer("pointerdown", 10, 8);
-    firePointer("pointermove", 10, 38);
-    firePointer("pointerup", 10, 38);
-    firePointer("click", 10, 38);
+    fireEvent.pointerDown(screen.getByText("main"), { clientX: 10, clientY: 8 });
+    fireWindow("pointermove", 10, 30);
+    fireEvent.pointerEnter(screen.getByText("feat"));
+    fireWindow("pointerup", 10, 30);
+    fireEvent.click(screen.getByText("first")); // the row that owned the source pill
 
     expect(selectCommit).not.toHaveBeenCalled();
-  });
-
-  it("shows a grab cursor when hovering a branch pill", () => {
-    render(<CommitGraph onStartPullRequest={vi.fn()} />);
-
-    expect(canvas().style.cursor).toBe("default");
-
-    firePointer("pointermove", 10, 8); // over the 'main' pill
-    expect(canvas().style.cursor).toBe("grab");
-
-    firePointer("pointermove", 300, 300); // off any pill
-    expect(canvas().style.cursor).toBe("default");
-  });
-
-  it("still selects a commit on a plain click (no drag)", () => {
-    render(<CommitGraph onStartPullRequest={vi.fn()} />);
-
-    firePointer("pointerdown", 200, 8); // not on a pill
-    firePointer("pointerup", 200, 8);
-    firePointer("click", 200, 8);
-
-    expect(selectCommit).toHaveBeenCalledWith("a".repeat(40), false);
   });
 });
