@@ -125,6 +125,18 @@ describe("CommitGraph drag-and-drop", () => {
     expect(selectCommit).not.toHaveBeenCalled();
   });
 
+  it("shows a grab cursor when hovering a branch pill", () => {
+    render(<CommitGraph onStartPullRequest={vi.fn()} />);
+
+    expect(canvas().style.cursor).toBe("default");
+
+    firePointer("pointermove", 10, 8); // over the 'main' pill
+    expect(canvas().style.cursor).toBe("grab");
+
+    firePointer("pointermove", 300, 300); // off any pill
+    expect(canvas().style.cursor).toBe("default");
+  });
+
   it("still selects a commit on a plain click (no drag)", () => {
     render(<CommitGraph onStartPullRequest={vi.fn()} />);
 

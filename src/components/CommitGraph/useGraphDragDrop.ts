@@ -38,6 +38,7 @@ export function useGraphDragDrop({
   const didDragRef = useRef(false);
 
   const [dragging, setDragging] = useState(false);
+  const [hovering, setHovering] = useState(false);
   const [ghostPos, setGhostPos] = useState<{ x: number; y: number } | null>(null);
   const [dragSource, setDragSource] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<BranchLabelHit | null>(null);
@@ -76,6 +77,12 @@ export function useGraphDragDrop({
 
   const onPointerMove = useCallback(
     (e: PointerLike) => {
+      // Hover feedback (independent of an active drag): a local pill under the
+      // pointer means it can be grabbed.
+      const { x, y } = toLocal(e);
+      const over = hitTestLabel(labelHitsRef.current ?? [], x, y);
+      setHovering(!!(over && isLocalBranch(over)));
+
       const c = candidateRef.current;
       if (!c) return;
       if (!didDragRef.current) {
@@ -89,7 +96,7 @@ export function useGraphDragDrop({
       setDropTarget(localTargetAt(e, c.source) ?? null);
       e.preventDefault?.();
     },
-    [localTargetAt],
+    [localTargetAt, toLocal, labelHitsRef],
   );
 
   const onPointerUp = useCallback(
@@ -109,6 +116,8 @@ export function useGraphDragDrop({
     },
     [localTargetAt],
   );
+
+  const onPointerLeave = useCallback(() => setHovering(false), []);
 
   const closeMenu = useCallback(() => setMenu(null), []);
 
@@ -134,7 +143,9 @@ export function useGraphDragDrop({
     onPointerDown,
     onPointerMove,
     onPointerUp,
+    onPointerLeave,
     dragging,
+    hovering,
     ghostPos,
     dragSource,
     dropTarget,

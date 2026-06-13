@@ -240,7 +240,7 @@ export function CommitGraph({
             position: "absolute",
             top: canvasTop,
             left: 0,
-            cursor: drag.dragging ? "grabbing" : "default",
+            cursor: drag.dragging ? "grabbing" : drag.hovering ? "grab" : "default",
             touchAction: "none",
           }}
           onClick={handleCanvasClick}
@@ -248,6 +248,7 @@ export function CommitGraph({
           onPointerDown={drag.onPointerDown}
           onPointerMove={drag.onPointerMove}
           onPointerUp={drag.onPointerUp}
+          onPointerLeave={drag.onPointerLeave}
         />
       </div>
 

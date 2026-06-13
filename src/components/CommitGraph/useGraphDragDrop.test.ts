@@ -130,6 +130,42 @@ describe("useGraphDragDrop", () => {
     expect(result.current.consumeClick()).toBe(false);
   });
 
+  it("reports hovering while the pointer is over a local pill", () => {
+    const { result } = setup(localHits());
+
+    act(() => result.current.onPointerMove(evt(10, 8)));
+
+    expect(result.current.hovering).toBe(true);
+  });
+
+  it("clears hovering when the pointer leaves the pills", () => {
+    const { result } = setup(localHits());
+
+    act(() => result.current.onPointerMove(evt(10, 8)));
+    act(() => result.current.onPointerMove(evt(200, 200)));
+
+    expect(result.current.hovering).toBe(false);
+  });
+
+  it("does not report hovering over a remote pill", () => {
+    const { result } = setup([
+      pill({ name: "origin/main", isRemote: true, x: 0, y: 0, w: 80, h: 16 }),
+    ]);
+
+    act(() => result.current.onPointerMove(evt(10, 8)));
+
+    expect(result.current.hovering).toBe(false);
+  });
+
+  it("onPointerLeave clears hovering", () => {
+    const { result } = setup(localHits());
+
+    act(() => result.current.onPointerMove(evt(10, 8)));
+    act(() => result.current.onPointerLeave());
+
+    expect(result.current.hovering).toBe(false);
+  });
+
   it("consumeClick is false for a plain press without movement", () => {
     const { result } = setup(localHits());
 
