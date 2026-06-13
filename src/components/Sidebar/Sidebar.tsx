@@ -20,9 +20,11 @@ type View = "history" | "working-tree" | "prs" | "workspace" | "settings";
 export function Sidebar({
   view,
   onViewChange,
+  width = 220,
 }: {
   view: View;
   onViewChange: (v: View) => void;
+  width?: number;
 }) {
   const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, loadBranches, checkoutBranch, createBranch, deleteBranch } =
     useRepoStore();
@@ -94,7 +96,7 @@ export function Sidebar({
   return (
     <div
       style={{
-        width: 220,
+        width,
         flexShrink: 0,
         display: "flex",
         flexDirection: "column",
@@ -106,6 +108,7 @@ export function Sidebar({
       {/* Repo name / open button */}
       <div
         style={{
+          flexShrink: 0,
           padding: "var(--space-4)",
           borderBottom: "1px solid var(--color-border-subtle)",
         }}
@@ -263,6 +266,8 @@ export function Sidebar({
         </div>
       </div>
 
+      {/* Scrollable middle region */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
       <WorkspaceSwitcher />
 
       <RemoteActions onOpenClone={() => setShowCloneDialog(true)} />
@@ -484,12 +489,13 @@ export function Sidebar({
       )}
 
       <StashPanel />
+      </div>
 
-      {/* Settings (always available) */}
+      {/* Settings (always available, pinned to the bottom) */}
       <button
         onClick={() => onViewChange("settings")}
         style={{
-          marginTop: "auto",
+          flexShrink: 0,
           padding: "var(--space-2) var(--space-4)",
           textAlign: "left",
           fontSize: "var(--font-size-sm)",
