@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Sidebar } from "./components/Sidebar/Sidebar";
 import { CommitGraph } from "./components/CommitGraph/CommitGraph";
+import { HistoryToolbar } from "./components/CommitGraph/HistoryToolbar";
 import { CommitDetail } from "./components/CommitDetail/CommitDetail";
 import { WorkingTreePanel } from "./components/WorkingTree/WorkingTreePanel";
 import { PRPanel } from "./components/PRPanel/PRPanel";
@@ -83,8 +84,22 @@ export default function App() {
       <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
         {view === "history" ? (
           <>
-            <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-              <CommitGraph onStartPullRequest={handleStartPullRequest} />
+            <div
+              style={{
+                flex: 1,
+                minWidth: 0,
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <HistoryToolbar />
+              <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+                <CommitGraph
+                  onStartPullRequest={handleStartPullRequest}
+                  onViewChanges={() => setView("working-tree")}
+                />
+              </div>
             </div>
             <ResizeHandle
               ariaLabel="Resize detail panel"

@@ -48,16 +48,20 @@ describe("remoteStore", () => {
     expect(useRemoteStore.getState().lastError).toContain("network unreachable");
   });
 
-  it("pull sets isPulling and reloads ahead/behind on success", async () => {
-    mockInvoke.mockResolvedValueOnce({ status: "FastForwarded" }); // pull_branch
+  it("pull sets isPulling, forwards the mode, and reloads ahead/behind on success", async () => {
+    mockInvoke.mockResolvedValueOnce({ status: "fastForwarded" }); // pull_branch
     mockInvoke.mockResolvedValueOnce([]); // get_ahead_behind
 
-    const promise = useRemoteStore.getState().pull("origin", "main");
+    const promise = useRemoteStore.getState().pull("ffOrMerge", "origin", "main");
     expect(useRemoteStore.getState().isPulling).toBe(true);
     const result = await promise;
 
-    expect(mockInvoke).toHaveBeenCalledWith("pull_branch", { remoteName: "origin", branch: "main" });
-    expect(result).toEqual({ status: "FastForwarded" });
+    expect(mockInvoke).toHaveBeenCalledWith("pull_branch", {
+      remoteName: "origin",
+      branch: "main",
+      mode: "ffOrMerge",
+    });
+    expect(result).toEqual({ status: "fastForwarded" });
     expect(useRemoteStore.getState().isPulling).toBe(false);
   });
 

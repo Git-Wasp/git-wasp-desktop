@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import type { AheadBehind, FetchResult, PullResult } from "../types/github";
 
+export type PullMode = "ffOnly" | "ffOrMerge";
+
 interface RemoteStore {
   aheadBehind: AheadBehind[];
   isFetching: boolean;
@@ -11,7 +13,7 @@ interface RemoteStore {
 
   loadAheadBehind: () => Promise<void>;
   fetch: (remoteName?: string) => Promise<FetchResult>;
-  pull: (remoteName?: string, branch?: string) => Promise<PullResult>;
+  pull: (mode?: PullMode, remoteName?: string, branch?: string) => Promise<PullResult>;
   push: (remoteName?: string, branch?: string) => Promise<void>;
 }
 
@@ -41,12 +43,13 @@ export const useRemoteStore = create<RemoteStore>((set, get) => ({
     }
   },
 
-  pull: async (remoteName?: string, branch?: string) => {
+  pull: async (mode?: PullMode, remoteName?: string, branch?: string) => {
     set({ isPulling: true, lastError: null });
     try {
       const result = await invoke<PullResult>("pull_branch", {
         remoteName: remoteName ?? null,
         branch: branch ?? null,
+        mode: mode ?? null,
       });
       await get().loadAheadBehind();
       return result;
