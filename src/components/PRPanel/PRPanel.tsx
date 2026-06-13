@@ -4,7 +4,8 @@ import { PRRow } from "./PRRow";
 import { NewPRForm } from "./NewPRForm";
 
 export function PRPanel() {
-  const { remoteInfo, pullRequests, loadPullRequests } = useGithubStore();
+  const { remoteInfo, pullRequests, loadPullRequests, prDraft, setPrDraft } =
+    useGithubStore();
   const [showNewForm, setShowNewForm] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -14,6 +15,16 @@ export function PRPanel() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remoteInfo?.host]);
+
+  // A pr draft (e.g. dropped from the commit graph) opens the form pre-seeded.
+  useEffect(() => {
+    if (prDraft) setShowNewForm(true);
+  }, [prDraft]);
+
+  const closeNewForm = () => {
+    setShowNewForm(false);
+    setPrDraft(null);
+  };
 
   if (!remoteInfo) {
     return (
@@ -61,8 +72,10 @@ export function PRPanel() {
 
       {showNewForm && (
         <NewPRForm
-          onCreated={() => setShowNewForm(false)}
-          onCancel={() => setShowNewForm(false)}
+          initialHead={prDraft?.head}
+          initialBase={prDraft?.base}
+          onCreated={closeNewForm}
+          onCancel={closeNewForm}
         />
       )}
 

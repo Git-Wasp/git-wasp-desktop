@@ -16,9 +16,14 @@ type View = "history" | "working-tree" | "prs" | "workspace";
 export default function App() {
   const { loadCurrentRepo } = useRepoStore();
   const { selectedOid } = useGraphStore();
-  const { init } = useGithubStore();
+  const { init, setPrDraft } = useGithubStore();
   const { status: operationStatus, loadStatus } = useMergeStore();
   const [view, setView] = useState<View>("history");
+
+  const handleStartPullRequest = (head: string, base: string) => {
+    setPrDraft({ head, base });
+    setView("prs");
+  };
 
   useEffect(() => {
     loadCurrentRepo();
@@ -64,7 +69,7 @@ export default function App() {
         {view === "history" ? (
           <>
             <div style={{ flex: 1, overflow: "hidden" }}>
-              <CommitGraph />
+              <CommitGraph onStartPullRequest={handleStartPullRequest} />
             </div>
             <div
               style={{
