@@ -1,21 +1,7 @@
-import { useCallback, useRef, useState } from "react";
-import type { RefObject } from "react";
-import { hitTestLabel, isLocalBranch, type BranchLabelHit } from "./dragDrop";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { BranchLabel } from "../../types/graph";
 
 const DRAG_THRESHOLD = 4;
-
-interface PointerLike {
-  clientX: number;
-  clientY: number;
-  preventDefault?: () => void;
-}
-
-interface UseGraphDragDropArgs {
-  canvasRef: RefObject<HTMLCanvasElement | null>;
-  labelHitsRef: RefObject<BranchLabelHit[]>;
-  onMerge: (source: string, target: string) => void;
-  onStartPullRequest: (head: string, base: string) => void;
-}
 
 interface DropMenu {
   x: number;
@@ -24,105 +10,88 @@ interface DropMenu {
   target: string;
 }
 
-export function useGraphDragDrop({
-  canvasRef,
-  labelHitsRef,
-  onMerge,
-  onStartPullRequest,
-}: UseGraphDragDropArgs) {
-  const candidateRef = useRef<{
-    source: string;
-    startX: number;
-    startY: number;
-  } | null>(null);
+interface UseGraphDragDropArgs {
+  onMerge: (source: string, target: string) => void;
+  onStartPullRequest: (head: string, base: string) => void;
+}
+
+/**
+ * Branch-pill drag-and-drop over DOM pills. A pill's `onPointerDown` records the
+ * source; while dragging, `onPointerEnter`/`onPointerLeave` on other pills set
+ * the drop target; a window `pointerup` over a target opens the merge / start-PR
+ * menu. (Uses pointer enter/leave rather than `elementFromPoint`, which jsdom
+ * doesn't implement — keeping it testable.)
+ */
+export function useGraphDragDrop({ onMerge, onStartPullRequest }: UseGraphDragDropArgs) {
+  const candidateRef = useRef<{ source: string; startX: number; startY: number } | null>(null);
+  const draggingRef = useRef(false);
   const didDragRef = useRef(false);
+  const dropTargetRef = useRef<string | null>(null);
 
   const [dragging, setDragging] = useState(false);
-  const [hovering, setHovering] = useState(false);
   const [ghostPos, setGhostPos] = useState<{ x: number; y: number } | null>(null);
   const [dragSource, setDragSource] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<BranchLabelHit | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [menu, setMenu] = useState<DropMenu | null>(null);
 
-  const toLocal = useCallback(
-    (e: PointerLike) => {
-      const rect = canvasRef.current?.getBoundingClientRect();
-      return { x: e.clientX - (rect?.left ?? 0), y: e.clientY - (rect?.top ?? 0) };
-    },
-    [canvasRef],
-  );
+  const onPillPointerDown = useCallback((e: React.PointerEvent, label: BranchLabel) => {
+    candidateRef.current = { source: label.name, startX: e.clientX, startY: e.clientY };
+    didDragRef.current = false;
+  }, []);
 
-  // Local-branch pill under the pointer that differs from the drag source.
-  const localTargetAt = useCallback(
-    (e: PointerLike, source: string): BranchLabelHit | undefined => {
-      const { x, y } = toLocal(e);
-      const h = hitTestLabel(labelHitsRef.current ?? [], x, y);
-      return h && isLocalBranch(h) && h.name !== source ? h : undefined;
-    },
-    [toLocal, labelHitsRef],
-  );
+  const onPillPointerEnter = useCallback((label: BranchLabel) => {
+    if (!draggingRef.current) return;
+    const source = candidateRef.current?.source;
+    const local = !label.isRemote && !label.isTag;
+    if (local && label.name !== source) {
+      dropTargetRef.current = label.name;
+      setDropTarget(label.name);
+    }
+  }, []);
 
-  const onPointerDown = useCallback(
-    (e: PointerLike) => {
-      const { x, y } = toLocal(e);
-      const h = hitTestLabel(labelHitsRef.current ?? [], x, y);
-      candidateRef.current =
-        h && isLocalBranch(h)
-          ? { source: h.name, startX: e.clientX, startY: e.clientY }
-          : null;
-      didDragRef.current = false;
-    },
-    [toLocal, labelHitsRef],
-  );
+  const onPillPointerLeave = useCallback(() => {
+    if (!draggingRef.current) return;
+    dropTargetRef.current = null;
+    setDropTarget(null);
+  }, []);
 
-  const onPointerMove = useCallback(
-    (e: PointerLike) => {
-      // Hover feedback (independent of an active drag): a local pill under the
-      // pointer means it can be grabbed.
-      const { x, y } = toLocal(e);
-      const over = hitTestLabel(labelHitsRef.current ?? [], x, y);
-      setHovering(!!(over && isLocalBranch(over)));
-
+  useEffect(() => {
+    const move = (e: PointerEvent) => {
       const c = candidateRef.current;
       if (!c) return;
-      if (!didDragRef.current) {
-        const dist = Math.hypot(e.clientX - c.startX, e.clientY - c.startY);
-        if (dist <= DRAG_THRESHOLD) return;
+      if (!draggingRef.current) {
+        if (Math.hypot(e.clientX - c.startX, e.clientY - c.startY) <= DRAG_THRESHOLD) return;
+        draggingRef.current = true;
         didDragRef.current = true;
         setDragging(true);
         setDragSource(c.source);
       }
       setGhostPos({ x: e.clientX, y: e.clientY });
-      setDropTarget(localTargetAt(e, c.source) ?? null);
-      e.preventDefault?.();
-    },
-    [localTargetAt, toLocal, labelHitsRef],
-  );
-
-  const onPointerUp = useCallback(
-    (e: PointerLike) => {
+    };
+    const up = (e: PointerEvent) => {
       const c = candidateRef.current;
-      if (c && didDragRef.current) {
-        const target = localTargetAt(e, c.source);
-        if (target) {
-          setMenu({ x: e.clientX, y: e.clientY, source: c.source, target: target.name });
-        }
+      if (c && draggingRef.current && dropTargetRef.current) {
+        setMenu({ x: e.clientX, y: e.clientY, source: c.source, target: dropTargetRef.current });
       }
       candidateRef.current = null;
+      draggingRef.current = false;
+      dropTargetRef.current = null;
       setDragging(false);
       setGhostPos(null);
       setDropTarget(null);
-      setDragSource(null);
-    },
-    [localTargetAt],
-  );
-
-  const onPointerLeave = useCallback(() => setHovering(false), []);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+  }, []);
 
   const closeMenu = useCallback(() => setMenu(null), []);
 
-  // True (once) if the last press turned into a drag — lets the canvas swallow
-  // the trailing click so a drag doesn't also select a commit.
+  // True (once) if the last press became a drag, so the trailing click can be
+  // swallowed (a drag shouldn't also select).
   const consumeClick = useCallback(() => {
     const did = didDragRef.current;
     didDragRef.current = false;
@@ -140,12 +109,10 @@ export function useGraphDragDrop({
   }, [menu, onStartPullRequest]);
 
   return {
-    onPointerDown,
-    onPointerMove,
-    onPointerUp,
-    onPointerLeave,
+    onPillPointerDown,
+    onPillPointerEnter,
+    onPillPointerLeave,
     dragging,
-    hovering,
     ghostPos,
     dragSource,
     dropTarget,

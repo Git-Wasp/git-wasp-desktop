@@ -1,37 +1,5 @@
-// Pure drag-and-drop helpers for the commit graph. Kept free of React and
-// stores so the hit-testing and merge sequencing are unit-testable without a
-// real canvas (jsdom cannot measure canvas text).
-
-export interface BranchLabelHit {
-  name: string;
-  isRemote: boolean;
-  isTag: boolean;
-  // Canvas-local CSS pixel rect of the rendered branch pill.
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
-/** Topmost (last-drawn) pill whose rect contains the point, if any. */
-export function hitTestLabel(
-  hits: BranchLabelHit[],
-  x: number,
-  y: number,
-): BranchLabelHit | undefined {
-  for (let i = hits.length - 1; i >= 0; i--) {
-    const h = hits[i];
-    if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) {
-      return h;
-    }
-  }
-  return undefined;
-}
-
-/** Only local branches may be dragged or used as a merge/PR target. */
-export function isLocalBranch(hit: BranchLabelHit): boolean {
-  return !hit.isRemote && !hit.isTag;
-}
+// Pure merge sequencing for branch-pill drag-and-drop. (Pill hit-testing now
+// lives in the DOM via useGraphDragDrop; this stays store-free and testable.)
 
 interface RunMergeArgs {
   source: string;
