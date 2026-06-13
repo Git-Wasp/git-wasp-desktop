@@ -348,6 +348,17 @@ impl RepoManager {
             .and_then(|id| config.workspaces.iter().find(|w| &w.id == id))
             .cloned())
     }
+
+    pub fn set_active_theme(&self, id: Option<&str>) -> anyhow::Result<()> {
+        let mut config = self.config_lock()?;
+        config.active_theme = id.map(|s| s.to_string());
+        let _ = config.save();
+        Ok(())
+    }
+
+    pub fn get_active_theme(&self) -> anyhow::Result<Option<String>> {
+        Ok(self.config_lock()?.active_theme.clone())
+    }
 }
 
 /// Tauri managed state — wraps RepoManager in Arc so it can be cloned into
@@ -491,6 +502,14 @@ impl AppState {
 
     pub fn get_active_workspace(&self) -> anyhow::Result<Option<Workspace>> {
         self.manager.get_active_workspace()
+    }
+
+    pub fn set_active_theme(&self, id: Option<&str>) -> anyhow::Result<()> {
+        self.manager.set_active_theme(id)
+    }
+
+    pub fn get_active_theme(&self) -> anyhow::Result<Option<String>> {
+        self.manager.get_active_theme()
     }
 }
 
