@@ -84,6 +84,44 @@ describe("ConflictFileEditor", () => {
     });
   });
 
+  it("decorates the changed characters on the source and current sides", async () => {
+    const { container } = render(<ConflictFileEditor file={file} onMarkResolved={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(container.querySelector(".cm-diff-add")).toBeInTheDocument(); // source side
+      expect(container.querySelector(".cm-diff-del")).toBeInTheDocument(); // current side
+    });
+  });
+
+  it("renders per-line selection checkboxes on the conflict lines", async () => {
+    const { container } = render(<ConflictFileEditor file={file} onMarkResolved={vi.fn()} />);
+
+    await waitFor(() => {
+      const boxes = container.querySelectorAll(".cm-select-checkbox");
+      // one source line + one current line for this single-line conflict
+      expect(boxes.length).toBe(2);
+    });
+  });
+
+  it("composes the result from an individually selected source line", async () => {
+    const { container } = render(<ConflictFileEditor file={file} onMarkResolved={vi.fn()} />);
+
+    const sourceBox = await waitFor(() => {
+      const boxes = container.querySelectorAll<HTMLInputElement>(".cm-select-checkbox");
+      expect(boxes.length).toBe(2);
+      return boxes[0]; // Source pane renders first
+    });
+
+    fireEvent.click(sourceBox);
+
+    await waitFor(() => {
+      const resultText = getResultPaneText(container);
+      expect(resultText).not.toContain("<<<<<<< HEAD");
+      expect(resultText).toContain("source text");
+      expect(resultText).not.toContain("current text");
+    });
+  });
+
   it("calls onMarkResolved with the file path and the current result content", async () => {
     const onMarkResolved = vi.fn();
     render(<ConflictFileEditor file={file} onMarkResolved={onMarkResolved} />);
