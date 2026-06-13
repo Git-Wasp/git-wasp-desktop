@@ -55,11 +55,11 @@ const pill = (over: Partial<BranchLabelHit>): BranchLabelHit => ({
   ...over,
 });
 
-let selectCommit: ReturnType<typeof vi.fn>;
+let selectCommit: ReturnType<typeof vi.fn<(oid: string, extend: boolean) => void>>;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  selectCommit = vi.fn();
+  selectCommit = vi.fn<(oid: string, extend: boolean) => void>();
   testHits = [
     pill({ name: "main", x: 0, y: 0, w: 60, h: 16 }),
     pill({ name: "feat", x: 0, y: 30, w: 60, h: 16 }),
