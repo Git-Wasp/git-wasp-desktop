@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
+import { useGraphStore } from "./graphStore";
 import type {
   FileDiffHunks,
   Identity,
@@ -15,6 +16,7 @@ interface WorkingTreeStore {
 
   loadStatus: () => Promise<void>;
   selectFile: (path: string, kind: "staged" | "unstaged") => Promise<void>;
+  clearSelectedFile: () => void;
   stageFile: (path: string) => Promise<void>;
   unstageFile: (path: string) => Promise<void>;
   stageHunk: (path: string, hunkIndex: number) => Promise<void>;
@@ -43,6 +45,8 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
     const diff = await invoke<FileDiffHunks>(command, { path });
     set({ selectedDiff: diff });
   },
+
+  clearSelectedFile: () => set({ selectedPath: null, selectedDiff: null }),
 
   stageFile: async (path: string) => {
     const status = await invoke<WorkingTreeStatus>("stage_file", { path });
@@ -97,7 +101,11 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const unlisten = await listen("working-tree-changed", () => {
       if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => get().loadStatus(), 300);
+      debounceTimer = setTimeout(() => {
+        get().loadStatus();
+        // Keep the graph's working-tree node in sync with the file count.
+        useGraphStore.getState().refresh();
+      }, 300);
     });
     return unlisten;
   },

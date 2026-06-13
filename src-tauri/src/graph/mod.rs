@@ -10,6 +10,9 @@ pub struct GraphNode {
     pub oid: String,
     pub short_oid: String,
     pub summary: String,
+    /// The commit message body (everything after the summary line).
+    #[serde(default)]
+    pub body: String,
     pub author_name: String,
     pub author_email: String,
     pub author_timestamp: i64,
@@ -21,6 +24,13 @@ pub struct GraphNode {
     pub edges: Vec<GraphEdge>,
     pub branch_labels: Vec<BranchLabel>,
     pub is_head: bool,
+    /// True for the synthetic "uncommitted changes" node drawn above the
+    /// current branch tip. Such a node has a sentinel oid and no real commit.
+    #[serde(default)]
+    pub is_working_tree: bool,
+    /// Number of changed files, set only on the working-tree node.
+    #[serde(default)]
+    pub change_count: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

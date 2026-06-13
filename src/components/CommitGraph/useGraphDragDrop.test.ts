@@ -1,177 +1,102 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { useGraphDragDrop } from "./useGraphDragDrop";
-import type { BranchLabelHit } from "./dragDrop";
+import type { BranchLabel } from "../../types/graph";
 
-const pill = (over: Partial<BranchLabelHit>): BranchLabelHit => ({
-  name: "main",
+const label = (name: string, over: Partial<BranchLabel> = {}): BranchLabel => ({
+  name,
   isRemote: false,
   isTag: false,
-  x: 0,
-  y: 0,
-  w: 50,
-  h: 16,
   ...over,
 });
 
-function setup(hits: BranchLabelHit[]) {
+// jsdom PointerEvent ignores clientX; MouseEvent honors it and dispatch is by
+// type name, so window listeners receive coordinates.
+function fireWindow(type: string, clientX: number, clientY: number) {
+  window.dispatchEvent(new MouseEvent(type, { clientX, clientY, bubbles: true }));
+}
+
+const down = (clientX: number, clientY: number) =>
+  ({ clientX, clientY, preventDefault: vi.fn() }) as unknown as React.PointerEvent;
+
+function setup() {
   const onMerge = vi.fn();
   const onStartPullRequest = vi.fn();
-  const canvas = {
-    getBoundingClientRect: () => ({ left: 0, top: 0 }),
-  } as unknown as HTMLCanvasElement;
-  const canvasRef = { current: canvas };
-  const labelHitsRef = { current: hits };
-
-  const view = renderHook(() =>
-    useGraphDragDrop({ canvasRef, labelHitsRef, onMerge, onStartPullRequest }),
-  );
+  const view = renderHook(() => useGraphDragDrop({ onMerge, onStartPullRequest }));
   return { ...view, onMerge, onStartPullRequest };
 }
 
-const evt = (clientX: number, clientY: number) => ({
-  clientX,
-  clientY,
-  preventDefault: vi.fn(),
-});
-
-// main pill on row 0, feat pill on row 1.
-const localHits = (): BranchLabelHit[] => [
-  pill({ name: "main", x: 0, y: 0, w: 50, h: 16 }),
-  pill({ name: "feat", x: 0, y: 30, w: 50, h: 16 }),
-];
-
-describe("useGraphDragDrop", () => {
+describe("useGraphDragDrop (DOM pills)", () => {
   it("starts dragging once the pointer moves past the threshold", () => {
-    const { result } = setup(localHits());
-
-    act(() => result.current.onPointerDown(evt(10, 8)));
+    const { result } = setup();
+    act(() => result.current.onPillPointerDown(down(10, 8), label("main")));
     expect(result.current.dragging).toBe(false);
 
-    act(() => result.current.onPointerMove(evt(10, 20)));
+    act(() => fireWindow("pointermove", 10, 20));
     expect(result.current.dragging).toBe(true);
+    expect(result.current.dragSource).toBe("main");
   });
 
-  it("highlights a different local pill as the drop target", () => {
-    const { result } = setup(localHits());
-
-    act(() => result.current.onPointerDown(evt(10, 8)));
-    act(() => result.current.onPointerMove(evt(10, 38)));
-
-    expect(result.current.dropTarget?.name).toBe("feat");
+  it("marks a different local pill as the drop target on enter", () => {
+    const { result } = setup();
+    act(() => result.current.onPillPointerDown(down(10, 8), label("main")));
+    act(() => fireWindow("pointermove", 10, 20));
+    act(() => result.current.onPillPointerEnter(label("feat")));
+    expect(result.current.dropTarget).toBe("feat");
   });
 
-  it("opens the drop menu with source and target on release", () => {
-    const { result } = setup(localHits());
-
-    act(() => result.current.onPointerDown(evt(10, 8)));
-    act(() => result.current.onPointerMove(evt(10, 38)));
-    act(() => result.current.onPointerUp(evt(10, 38)));
+  it("opens the drop menu with source and target on release over a target", () => {
+    const { result } = setup();
+    act(() => result.current.onPillPointerDown(down(10, 8), label("main")));
+    act(() => fireWindow("pointermove", 10, 20));
+    act(() => result.current.onPillPointerEnter(label("feat")));
+    act(() => fireWindow("pointerup", 30, 40));
 
     expect(result.current.menu).toMatchObject({ source: "main", target: "feat" });
   });
 
-  it("confirmMerge invokes onMerge with source and target", () => {
-    const { result, onMerge } = setup(localHits());
-
-    act(() => result.current.onPointerDown(evt(10, 8)));
-    act(() => result.current.onPointerMove(evt(10, 38)));
-    act(() => result.current.onPointerUp(evt(10, 38)));
-    act(() => result.current.confirmMerge());
-
-    expect(onMerge).toHaveBeenCalledWith("main", "feat");
+  it("does not open a menu without a drop target", () => {
+    const { result } = setup();
+    act(() => result.current.onPillPointerDown(down(10, 8), label("main")));
+    act(() => fireWindow("pointermove", 10, 20));
+    act(() => fireWindow("pointerup", 30, 40));
     expect(result.current.menu).toBeNull();
   });
 
-  it("confirmStartPullRequest invokes onStartPullRequest with source and target", () => {
-    const { result, onStartPullRequest } = setup(localHits());
+  it("ignores the source pill and remote/tag pills as targets", () => {
+    const { result } = setup();
+    act(() => result.current.onPillPointerDown(down(10, 8), label("main")));
+    act(() => fireWindow("pointermove", 10, 20));
+    act(() => result.current.onPillPointerEnter(label("main"))); // same as source
+    expect(result.current.dropTarget).toBeNull();
+    act(() => result.current.onPillPointerEnter(label("origin/main", { isRemote: true })));
+    expect(result.current.dropTarget).toBeNull();
+  });
 
-    act(() => result.current.onPointerDown(evt(10, 8)));
-    act(() => result.current.onPointerMove(evt(10, 38)));
-    act(() => result.current.onPointerUp(evt(10, 38)));
+  it("confirm actions call the injected handlers", () => {
+    const { result, onMerge, onStartPullRequest } = setup();
+    act(() => result.current.onPillPointerDown(down(10, 8), label("main")));
+    act(() => fireWindow("pointermove", 10, 20));
+    act(() => result.current.onPillPointerEnter(label("feat")));
+    act(() => fireWindow("pointerup", 30, 40));
+
+    act(() => result.current.confirmMerge());
+    expect(onMerge).toHaveBeenCalledWith("main", "feat");
+
+    act(() => result.current.onPillPointerDown(down(10, 8), label("main")));
+    act(() => fireWindow("pointermove", 10, 20));
+    act(() => result.current.onPillPointerEnter(label("feat")));
+    act(() => fireWindow("pointerup", 30, 40));
     act(() => result.current.confirmStartPullRequest());
-
     expect(onStartPullRequest).toHaveBeenCalledWith("main", "feat");
   });
 
-  it("does not open a menu when dropped on the same branch", () => {
-    const { result } = setup(localHits());
-
-    act(() => result.current.onPointerDown(evt(10, 8)));
-    act(() => result.current.onPointerMove(evt(40, 10))); // moved, still over main
-    act(() => result.current.onPointerUp(evt(40, 10)));
-
-    expect(result.current.menu).toBeNull();
-  });
-
-  it("does not start a drag from a remote or tag pill", () => {
-    const { result } = setup([
-      pill({ name: "origin/main", isRemote: true, x: 0, y: 0, w: 80, h: 16 }),
-      pill({ name: "feat", x: 0, y: 30, w: 50, h: 16 }),
-    ]);
-
-    act(() => result.current.onPointerDown(evt(10, 8)));
-    act(() => result.current.onPointerMove(evt(10, 38)));
-    act(() => result.current.onPointerUp(evt(10, 38)));
-
-    expect(result.current.dragging).toBe(false);
-    expect(result.current.menu).toBeNull();
-  });
-
   it("consumeClick reports and clears a completed drag", () => {
-    const { result } = setup(localHits());
-
-    act(() => result.current.onPointerDown(evt(10, 8)));
-    act(() => result.current.onPointerMove(evt(10, 38)));
-    act(() => result.current.onPointerUp(evt(10, 38)));
-
+    const { result } = setup();
+    act(() => result.current.onPillPointerDown(down(10, 8), label("main")));
+    act(() => fireWindow("pointermove", 10, 20));
+    act(() => fireWindow("pointerup", 10, 20));
     expect(result.current.consumeClick()).toBe(true);
-    // Second read is cleared.
-    expect(result.current.consumeClick()).toBe(false);
-  });
-
-  it("reports hovering while the pointer is over a local pill", () => {
-    const { result } = setup(localHits());
-
-    act(() => result.current.onPointerMove(evt(10, 8)));
-
-    expect(result.current.hovering).toBe(true);
-  });
-
-  it("clears hovering when the pointer leaves the pills", () => {
-    const { result } = setup(localHits());
-
-    act(() => result.current.onPointerMove(evt(10, 8)));
-    act(() => result.current.onPointerMove(evt(200, 200)));
-
-    expect(result.current.hovering).toBe(false);
-  });
-
-  it("does not report hovering over a remote pill", () => {
-    const { result } = setup([
-      pill({ name: "origin/main", isRemote: true, x: 0, y: 0, w: 80, h: 16 }),
-    ]);
-
-    act(() => result.current.onPointerMove(evt(10, 8)));
-
-    expect(result.current.hovering).toBe(false);
-  });
-
-  it("onPointerLeave clears hovering", () => {
-    const { result } = setup(localHits());
-
-    act(() => result.current.onPointerMove(evt(10, 8)));
-    act(() => result.current.onPointerLeave());
-
-    expect(result.current.hovering).toBe(false);
-  });
-
-  it("consumeClick is false for a plain press without movement", () => {
-    const { result } = setup(localHits());
-
-    act(() => result.current.onPointerDown(evt(10, 8)));
-    act(() => result.current.onPointerUp(evt(10, 8)));
-
     expect(result.current.consumeClick()).toBe(false);
   });
 });

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import type { GraphViewport } from "../types/graph";
-import type { BranchLabelHit } from "../components/CommitGraph/dragDrop";
 import { THEME_CHANGE_EVENT } from "../lib/applyTheme";
 
 interface Selection {
@@ -17,39 +16,41 @@ interface GraphConfig {
 }
 
 function resolveCssVar(name: string): string {
-  return getComputedStyle(document.documentElement)
-    .getPropertyValue(name)
-    .trim();
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
 function resolveLaneColors(): string[] {
-  return Array.from({ length: 8 }, (_, i) =>
-    resolveCssVar(`--color-lane-${i}`)
-  );
+  return Array.from({ length: 8 }, (_, i) => resolveCssVar(`--color-lane-${i}`));
 }
 
 function resolveConfig(): GraphConfig {
   const px = (v: string) => parseFloat(v) || 0;
   return {
-    rowHeight: px(resolveCssVar("--graph-row-height")) || 28,
+    rowHeight: px(resolveCssVar("--graph-row-height")) || 34,
     laneWidth: px(resolveCssVar("--graph-lane-width")) || 20,
     dotRadius: px(resolveCssVar("--graph-dot-radius")) || 5,
     lineWidth: px(resolveCssVar("--graph-line-width")) || 2,
   };
 }
 
+/**
+ * Renders the graph column only — lane lines, commit dots, the working-tree
+ * marker, and the selection band. Branch labels and commit messages are DOM
+ * columns rendered alongside the canvas (see CommitGraph). The canvas element
+ * is positioned within the graph column, so x is measured from the column's
+ * left edge (lane 0).
+ */
 export function useCommitGraph(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   viewport: GraphViewport | null,
   selection: Selection,
-  labelHitsRef?: React.RefObject<BranchLabelHit[]>
 ): void {
   const configRef = useRef<GraphConfig | null>(null);
   const laneColorsRef = useRef<string[]>([]);
   const [themeTick, setThemeTick] = useState(0);
 
-  // Resolve CSS tokens at mount and whenever the theme changes (tokens are read
-  // from CSS, so a theme swap must re-resolve colours and trigger a redraw).
+  // Resolve CSS tokens at mount and on theme change (tokens are read from CSS,
+  // so a theme swap must re-resolve colours and redraw).
   useEffect(() => {
     configRef.current = resolveConfig();
     laneColorsRef.current = resolveLaneColors();
@@ -70,12 +71,11 @@ export function useCommitGraph(
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const { rowHeight, laneWidth, dotRadius, lineWidth } =
-      configRef.current;
+    const { rowHeight, laneWidth, dotRadius, lineWidth } = configRef.current;
     const laneColors = laneColorsRef.current;
+    const selectedBg = resolveCssVar("--color-bg-selected") || "rgba(77, 157, 224, 0.15)";
     const dpr = window.devicePixelRatio || 1;
 
-    // Sync canvas pixel size to CSS size.
     const cssW = canvas.clientWidth;
     const cssH = canvas.clientHeight;
     if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
@@ -85,38 +85,29 @@ export function useCommitGraph(
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
 
-    // Reset the branch-pill hit-boxes; repopulated as labels are drawn below.
-    if (labelHitsRef) labelHitsRef.current = [];
-
-    // The canvas renders only the viewport slice; row 0 here corresponds to
-    // viewport.offset in the full graph. We map to y by local row index.
+    // row 0 here corresponds to viewport.offset in the full graph.
     viewport.nodes.forEach((node, localRow) => {
       const y = localRow * rowHeight + rowHeight / 2;
       const x = node.lane * laneWidth + laneWidth / 2;
       const color = laneColors[node.colorIndex % 8] || "#4d9de0";
 
-      // Selection highlight.
+      // Selection band (graph-column portion; the DOM cells match it).
       if (selection.range.has(node.oid)) {
-        ctx.fillStyle = "rgba(77, 157, 224, 0.15)";
+        ctx.fillStyle = selectedBg;
         ctx.fillRect(0, localRow * rowHeight, cssW, rowHeight);
       }
 
-      // Edges for this row.
+      // Edges passing through this row.
       node.edges.forEach((edge) => {
-        const edgeColor = laneColors[edge.colorIndex % 8] || "#4d9de0";
-        ctx.strokeStyle = edgeColor;
+        ctx.strokeStyle = laneColors[edge.colorIndex % 8] || "#4d9de0";
         ctx.lineWidth = lineWidth;
         ctx.beginPath();
-
         const srcX = edge.srcLane * laneWidth + laneWidth / 2;
         const dstX = edge.dstLane * laneWidth + laneWidth / 2;
-
         if (edge.kind === "Straight") {
-          // Vertical line through this row.
           ctx.moveTo(srcX, localRow * rowHeight);
           ctx.lineTo(srcX, (localRow + 1) * rowHeight);
         } else {
-          // Bezier curve from src to dst lane, spanning one row height.
           const topY = localRow * rowHeight;
           const botY = (localRow + 1) * rowHeight;
           ctx.moveTo(srcX, topY);
@@ -125,64 +116,28 @@ export function useCommitGraph(
         ctx.stroke();
       });
 
+      // Working-tree node: a hollow dashed marker (label lives in the DOM cell).
+      if (node.isWorkingTree) {
+        ctx.beginPath();
+        ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
+        ctx.setLineDash([2, 2]);
+        ctx.strokeStyle = resolveCssVar("--color-warning") || "#ff9f0a";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.setLineDash([]);
+        return;
+      }
+
       // Commit dot.
       ctx.beginPath();
       ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
       ctx.fillStyle = color;
       ctx.fill();
-
       if (node.isHead) {
         ctx.strokeStyle = "#ffffff";
         ctx.lineWidth = 1.5;
         ctx.stroke();
       }
-
-      // Branch labels (pill badges).
-      if (node.branchLabels.length > 0) {
-        ctx.font = `${11}px var(--font-family-mono, monospace)`;
-        let labelX = x + dotRadius + 6;
-        node.branchLabels.forEach((label) => {
-          const text = label.name;
-          const textW = ctx.measureText(text).width;
-          const padX = 6;
-          const padY = 3;
-          const badgeH = 16;
-          const badgeW = textW + padX * 2;
-          const badgeY = y - badgeH / 2;
-
-          ctx.fillStyle = label.isTag ? "#f59e0b" : label.isRemote ? "#a855f7" : "#4d9de0";
-          ctx.beginPath();
-          ctx.roundRect(labelX, badgeY, badgeW, badgeH, 3);
-          ctx.fill();
-
-          ctx.fillStyle = "#ffffff";
-          ctx.fillText(text, labelX + padX, badgeY + badgeH - padY - 2);
-
-          if (labelHitsRef) {
-            labelHitsRef.current.push({
-              name: label.name,
-              isRemote: label.isRemote,
-              isTag: label.isTag,
-              x: labelX,
-              y: badgeY,
-              w: badgeW,
-              h: badgeH,
-            });
-          }
-
-          labelX += badgeW + 4;
-        });
-      }
-
-      // Commit summary text.
-      const textX = x + dotRadius + 8 + (node.branchLabels.length > 0
-        ? node.branchLabels.reduce((acc, l) => acc + ctx.measureText(l.name).width + 16, 0)
-        : 0);
-      ctx.font = `${13}px var(--font-family-sans, system-ui)`;
-      ctx.fillStyle = node.isHead
-        ? resolveCssVar("--color-text-primary") || "#eef1f5"
-        : resolveCssVar("--color-text-secondary") || "#a3afc2";
-      ctx.fillText(node.summary, textX, y + 4);
     });
-  }, [viewport, selection, canvasRef, labelHitsRef, themeTick]);
+  }, [viewport, selection, canvasRef, themeTick]);
 }

@@ -24,8 +24,10 @@ export interface FetchResult {
 }
 
 export type PullResult =
-  | { status: "FastForwarded" }
-  | { status: "AlreadyUpToDate" };
+  | { status: "fastForwarded" }
+  | { status: "alreadyUpToDate" }
+  | { status: "merged" }
+  | { status: "conflicts" };
 
 export interface AheadBehind {
   branch: string;

@@ -2,6 +2,7 @@ export interface GraphNode {
   oid: string;
   shortOid: string;
   summary: string;
+  body?: string;
   authorName: string;
   authorEmail: string;
   authorTimestamp: number;
@@ -13,6 +14,9 @@ export interface GraphNode {
   edges: GraphEdge[];
   branchLabels: BranchLabel[];
   isHead: boolean;
+  // Present on the synthetic working-tree node (see graph layout).
+  isWorkingTree?: boolean;
+  changeCount?: number | null;
 }
 
 export interface GraphEdge {

@@ -5,10 +5,12 @@ export function HunkDiffViewer({
   diffHunks,
   kind,
   onDiscardFile,
+  onClose,
 }: {
   diffHunks: FileDiffHunks;
   kind: "staged" | "unstaged";
   onDiscardFile?: () => void;
+  onClose?: () => void;
 }) {
   const { stageHunk, unstageHunk, discardHunk } = useWorkingTreeStore();
 
@@ -41,22 +43,43 @@ export function HunkDiffViewer({
         >
           {diffHunks.path}
         </span>
-        {kind === "unstaged" && onDiscardFile && (
-          <button
-            onClick={onDiscardFile}
-            style={{
-              fontSize: "var(--font-size-xs)",
-              padding: "2px var(--space-2)",
-              background: "transparent",
-              border: "1px solid var(--color-danger)",
-              borderRadius: "var(--radius-sm)",
-              color: "var(--color-danger)",
-              cursor: "pointer",
-            }}
-          >
-            Discard file
-          </button>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+          {kind === "unstaged" && onDiscardFile && (
+            <button
+              onClick={onDiscardFile}
+              style={{
+                fontSize: "var(--font-size-xs)",
+                padding: "2px var(--space-2)",
+                background: "transparent",
+                border: "1px solid var(--color-danger)",
+                borderRadius: "var(--radius-sm)",
+                color: "var(--color-danger)",
+                cursor: "pointer",
+              }}
+            >
+              Discard file
+            </button>
+          )}
+          {onClose && (
+            <button
+              onClick={onClose}
+              aria-label="Close diff"
+              title="Close diff"
+              style={{
+                fontSize: "var(--font-size-sm)",
+                lineHeight: 1,
+                padding: "2px var(--space-2)",
+                background: "transparent",
+                border: "1px solid var(--color-border-subtle)",
+                borderRadius: "var(--radius-sm)",
+                color: "var(--color-text-secondary)",
+                cursor: "pointer",
+              }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Hunks */}
