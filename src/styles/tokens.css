@@ -123,12 +123,14 @@
   --graph-line-width: 2px;
 }
 
-/* Light theme overrides — surface/text/border only; lane colours are stable */
+/* Light theme overrides — surface/text/border plus the colour groups that
+   were dark-tuned in :root (lanes, diff, shadows, interactive). */
 [data-theme="light"] {
   --color-bg-app:      #f5f7fa;
   --color-bg-panel:    #ffffff;
   --color-bg-surface:  #f0f2f5;
   --color-bg-elevated: #e8eaed;
+  --color-bg-overlay:  rgba(0, 0, 0, 0.35);
 
   --color-text-primary:   #1a1d23;
   --color-text-secondary: #3d4454;
@@ -138,4 +140,30 @@
   --color-border-subtle:  #e0e3e8;
   --color-border-default: #c8cdd5;
   --color-border-strong:  #a3afc2;
+
+  /* Graph lanes — darkened for contrast on a light background */
+  --color-lane-0: #2563eb;
+  --color-lane-1: #9333ea;
+  --color-lane-2: #16a34a;
+  --color-lane-3: #d97706;
+  --color-lane-4: #e11d48;
+  --color-lane-5: #0d9488;
+  --color-lane-6: #ca8a04;
+  --color-lane-7: #4f46e5;
+
+  /* Diff — keep hues, lift the backgrounds for a light surface */
+  --color-diff-add:    #16a34a;
+  --color-diff-del:    #dc2626;
+  --color-diff-add-bg: rgba(22, 163, 74, 0.12);
+  --color-diff-del-bg: rgba(220, 38, 38, 0.10);
+  --color-bg-hunk-header: #eef1f5;
+
+  /* Shadows — far lighter than the dark theme's heavy drop shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.10);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.16);
+
+  /* Interactive surfaces */
+  --color-bg-selected: #d6e6fb;
+  --color-bg-input:    #ffffff;
 }

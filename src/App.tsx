@@ -6,18 +6,21 @@ import { WorkingTreePanel } from "./components/WorkingTree/WorkingTreePanel";
 import { PRPanel } from "./components/PRPanel/PRPanel";
 import { MergeEditor } from "./components/Merge/MergeEditor";
 import { WorkspaceOverview } from "./components/Workspace/WorkspaceOverview";
+import { SettingsView } from "./components/Settings/SettingsView";
 import { useRepoStore } from "./stores/repoStore";
 import { useGraphStore } from "./stores/graphStore";
 import { useGithubStore } from "./stores/githubStore";
 import { useMergeStore } from "./stores/mergeStore";
+import { useThemeStore } from "./stores/themeStore";
 
-type View = "history" | "working-tree" | "prs" | "workspace";
+type View = "history" | "working-tree" | "prs" | "workspace" | "settings";
 
 export default function App() {
   const { loadCurrentRepo } = useRepoStore();
   const { selectedOid } = useGraphStore();
   const { init, setPrDraft } = useGithubStore();
   const { status: operationStatus, loadStatus } = useMergeStore();
+  const { initTheme } = useThemeStore();
   const [view, setView] = useState<View>("history");
 
   const handleStartPullRequest = (head: string, base: string) => {
@@ -28,6 +31,10 @@ export default function App() {
   useEffect(() => {
     loadCurrentRepo();
   }, [loadCurrentRepo]);
+
+  useEffect(() => {
+    initTheme();
+  }, [initTheme]);
 
   useEffect(() => {
     init();
@@ -86,6 +93,8 @@ export default function App() {
           <WorkingTreePanel />
         ) : view === "prs" ? (
           <PRPanel />
+        ) : view === "settings" ? (
+          <SettingsView />
         ) : (
           <WorkspaceOverview />
         )}

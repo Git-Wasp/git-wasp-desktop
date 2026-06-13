@@ -1,6 +1,7 @@
 import { setEditorAppearance, type Appearance } from "./editorTheme";
 
 export const CUSTOM_STYLE_ID = "app-custom-theme";
+export const THEME_CHANGE_EVENT = "app-theme-change";
 
 export interface AppliedTheme {
   id: string;
@@ -39,4 +40,8 @@ export function applyTheme(theme: AppliedTheme): void {
   }
 
   setEditorAppearance(theme.appearance);
+
+  // Canvas-rendered surfaces (the commit graph) read their colours from CSS
+  // tokens, so they need a nudge to re-resolve and redraw on a theme change.
+  window.dispatchEvent(new Event(THEME_CHANGE_EVENT));
 }
