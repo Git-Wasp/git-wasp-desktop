@@ -166,3 +166,51 @@ describe("CommitGraph context menu", () => {
     expect(screen.queryByText(/^Checkout /)).toBeNull();
   });
 });
+
+describe("CommitGraph working-tree node", () => {
+  const wipViewport = (): GraphViewport => ({
+    totalCount: 2,
+    offset: 0,
+    nodes: [
+      {
+        oid: "WORKING_TREE",
+        shortOid: "WORKING_TREE",
+        summary: "3 uncommitted changes",
+        authorName: "",
+        authorEmail: "",
+        authorTimestamp: 0,
+        lane: 0,
+        row: 0,
+        colorIndex: 0,
+        parents: ["a".repeat(40)],
+        children: [],
+        edges: [],
+        branchLabels: [],
+        isHead: false,
+        isWorkingTree: true,
+        changeCount: 3,
+      },
+      { ...makeViewport().nodes[0], row: 1 },
+    ],
+  });
+
+  it("opens the changes view when the working-tree node is clicked", () => {
+    const selectCommit = vi.fn();
+    const onViewChanges = vi.fn();
+    useGraphStore.setState({ viewport: wipViewport(), selectCommit });
+
+    const { container } = render(<CommitGraph onViewChanges={onViewChanges} />);
+    fireEvent.click(container.querySelector("canvas")!, { clientY: 5 }); // row 0 = WIP
+
+    expect(onViewChanges).toHaveBeenCalled();
+    expect(selectCommit).not.toHaveBeenCalled();
+  });
+
+  it("does not open a context menu on the working-tree node", () => {
+    useGraphStore.setState({ viewport: wipViewport() });
+    render(<CommitGraph onViewChanges={vi.fn()} />);
+
+    fireEvent.contextMenu(document.querySelector("canvas")!, { clientY: 5 });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+});

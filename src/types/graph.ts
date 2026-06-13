@@ -13,6 +13,9 @@ export interface GraphNode {
   edges: GraphEdge[];
   branchLabels: BranchLabel[];
   isHead: boolean;
+  // Present on the synthetic working-tree node (see graph layout).
+  isWorkingTree?: boolean;
+  changeCount?: number | null;
 }
 
 export interface GraphEdge {

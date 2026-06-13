@@ -24,8 +24,10 @@ type PromptState =
 
 export function CommitGraph({
   onStartPullRequest,
+  onViewChanges,
 }: {
   onStartPullRequest?: (head: string, base: string) => void;
+  onViewChanges?: () => void;
 } = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -115,16 +117,22 @@ export function CommitGraph({
       // Swallow the click that follows a drag so it doesn't also select.
       if (drag.consumeClick()) return;
       const node = nodeAtClientY(e.currentTarget, e.clientY);
-      if (node) selectCommit(node.oid, e.shiftKey);
+      if (!node) return;
+      // The working-tree node opens the changes view instead of selecting.
+      if (node.isWorkingTree) {
+        onViewChanges?.();
+        return;
+      }
+      selectCommit(node.oid, e.shiftKey);
     },
-    [drag, nodeAtClientY, selectCommit]
+    [drag, nodeAtClientY, selectCommit, onViewChanges]
   );
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       e.preventDefault();
       const node = nodeAtClientY(e.currentTarget, e.clientY);
-      if (!node) return;
+      if (!node || node.isWorkingTree) return; // no menu for the working-tree node
       selectCommit(node.oid, false);
       setMenu({ x: e.clientX, y: e.clientY, node });
     },

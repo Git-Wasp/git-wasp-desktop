@@ -125,6 +125,24 @@ export function useCommitGraph(
         ctx.stroke();
       });
 
+      // Working-tree node: a hollow dashed marker in the warning colour plus a
+      // count label, then skip the normal commit rendering.
+      if (node.isWorkingTree) {
+        const warn = resolveCssVar("--color-warning") || "#ff9f0a";
+        ctx.beginPath();
+        ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
+        ctx.setLineDash([2, 2]);
+        ctx.strokeStyle = warn;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.font = `${13}px var(--font-family-sans, system-ui)`;
+        ctx.fillStyle = warn;
+        ctx.fillText(node.summary, x + dotRadius + 8, y + 4);
+        return;
+      }
+
       // Commit dot.
       ctx.beginPath();
       ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
