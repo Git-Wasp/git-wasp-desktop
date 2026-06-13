@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useGraphStore } from "../../stores/graphStore";
 import { useRepoStore } from "../../stores/repoStore";
+import { useMergeStore } from "../../stores/mergeStore";
 import { useCommitGraph } from "../../hooks/useCommitGraph";
 import { ContextMenu, type MenuItem } from "../common/ContextMenu";
 import { PromptDialog } from "../common/PromptDialog";
+import { runMerge, type BranchLabelHit } from "./dragDrop";
+import { useGraphDragDrop } from "./useGraphDragDrop";
 import type { GraphNode } from "../../types/graph";
 
 const ROW_HEIGHT = 28;
@@ -19,13 +22,19 @@ type PromptState =
   | { kind: "new-branch"; oid: string }
   | { kind: "rename-branch"; branch: string };
 
-export function CommitGraph() {
+export function CommitGraph({
+  onStartPullRequest,
+}: {
+  onStartPullRequest?: (head: string, base: string) => void;
+} = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const labelHitsRef = useRef<BranchLabelHit[]>([]);
   const { viewport, selection, fetchViewport, selectCommit, refresh } =
     useGraphStore();
-  const { createBranch, checkoutBranch, renameBranch, deleteBranch } =
+  const { currentRepo, createBranch, checkoutBranch, renameBranch, deleteBranch } =
     useRepoStore();
+  const startMerge = useMergeStore((s) => s.startMerge);
 
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [prompt, setPrompt] = useState<PromptState | null>(null);
@@ -73,12 +82,38 @@ export function CommitGraph() {
     [viewport]
   );
 
+  // Merge source into target (auto-checking-out target first), then refresh.
+  const handleMerge = useCallback(
+    (source: string, target: string) => {
+      void (async () => {
+        await runMerge({
+          source,
+          target,
+          currentBranch: currentRepo?.headBranch ?? null,
+          checkoutBranch,
+          startMerge,
+        });
+        await refresh();
+      })();
+    },
+    [currentRepo, checkoutBranch, startMerge, refresh]
+  );
+
+  const drag = useGraphDragDrop({
+    canvasRef,
+    labelHitsRef,
+    onMerge: handleMerge,
+    onStartPullRequest: onStartPullRequest ?? (() => {}),
+  });
+
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
+      // Swallow the click that follows a drag so it doesn't also select.
+      if (drag.consumeClick()) return;
       const node = nodeAtClientY(e.currentTarget, e.clientY);
       if (node) selectCommit(node.oid, e.shiftKey);
     },
-    [nodeAtClientY, selectCommit]
+    [drag, nodeAtClientY, selectCommit]
   );
 
   const handleContextMenu = useCallback(
@@ -159,10 +194,35 @@ export function CommitGraph() {
     }
   };
 
-  useCommitGraph(canvasRef, viewport, selection);
+  useCommitGraph(canvasRef, viewport, selection, labelHitsRef);
 
   const totalHeight = (viewport?.totalCount ?? 0) * ROW_HEIGHT;
   const canvasTop = (viewport?.offset ?? 0) * ROW_HEIGHT;
+
+  // Page-space rect of the highlighted drop target pill.
+  const canvasRect = canvasRef.current?.getBoundingClientRect();
+  const targetRect =
+    drag.dropTarget && canvasRect
+      ? {
+          left: canvasRect.left + drag.dropTarget.x,
+          top: canvasRect.top + drag.dropTarget.y,
+          width: drag.dropTarget.w,
+          height: drag.dropTarget.h,
+        }
+      : null;
+
+  const dropMenuItems: MenuItem[] = drag.menu
+    ? [
+        {
+          label: `Merge ${drag.menu.source} into ${drag.menu.target}`,
+          onSelect: drag.confirmMerge,
+        },
+        {
+          label: `Start pull request ${drag.menu.source} → ${drag.menu.target}`,
+          onSelect: drag.confirmStartPullRequest,
+        },
+      ]
+    : [];
 
   return (
     <div
@@ -180,12 +240,63 @@ export function CommitGraph() {
             position: "absolute",
             top: canvasTop,
             left: 0,
-            cursor: "default",
+            cursor: drag.dragging ? "grabbing" : "default",
+            touchAction: "none",
           }}
           onClick={handleCanvasClick}
           onContextMenu={handleContextMenu}
+          onPointerDown={drag.onPointerDown}
+          onPointerMove={drag.onPointerMove}
+          onPointerUp={drag.onPointerUp}
         />
       </div>
+
+      {/* Drop-target pill highlight */}
+      {targetRect && (
+        <div
+          style={{
+            position: "fixed",
+            left: targetRect.left,
+            top: targetRect.top,
+            width: targetRect.width,
+            height: targetRect.height,
+            border: "2px solid var(--color-accent-primary)",
+            borderRadius: "var(--radius-sm)",
+            pointerEvents: "none",
+            zIndex: 150,
+          }}
+        />
+      )}
+
+      {/* Drag ghost following the cursor */}
+      {drag.dragging && drag.dragSource && drag.ghostPos && (
+        <div
+          style={{
+            position: "fixed",
+            left: drag.ghostPos.x + 8,
+            top: drag.ghostPos.y + 8,
+            padding: "var(--space-1) var(--space-2)",
+            fontSize: "var(--font-size-xs)",
+            fontFamily: "var(--font-family-mono)",
+            background: "var(--color-accent-primary)",
+            color: "#fff",
+            borderRadius: "var(--radius-sm)",
+            pointerEvents: "none",
+            zIndex: 150,
+          }}
+        >
+          {drag.dragSource}
+        </div>
+      )}
+
+      {drag.menu && (
+        <ContextMenu
+          x={drag.menu.x}
+          y={drag.menu.y}
+          items={dropMenuItems}
+          onClose={drag.closeMenu}
+        />
+      )}
 
       {menu && (
         <ContextMenu
