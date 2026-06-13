@@ -25,9 +25,11 @@ type PromptState =
 export function CommitGraph({
   onStartPullRequest,
   onViewChanges,
+  onCommitSelect,
 }: {
   onStartPullRequest?: (head: string, base: string) => void;
   onViewChanges?: () => void;
+  onCommitSelect?: () => void;
 } = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -124,8 +126,9 @@ export function CommitGraph({
         return;
       }
       selectCommit(node.oid, e.shiftKey);
+      onCommitSelect?.();
     },
-    [drag, nodeAtClientY, selectCommit, onViewChanges]
+    [drag, nodeAtClientY, selectCommit, onViewChanges, onCommitSelect]
   );
 
   const handleContextMenu = useCallback(

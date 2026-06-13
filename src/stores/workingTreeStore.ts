@@ -16,6 +16,7 @@ interface WorkingTreeStore {
 
   loadStatus: () => Promise<void>;
   selectFile: (path: string, kind: "staged" | "unstaged") => Promise<void>;
+  clearSelectedFile: () => void;
   stageFile: (path: string) => Promise<void>;
   unstageFile: (path: string) => Promise<void>;
   stageHunk: (path: string, hunkIndex: number) => Promise<void>;
@@ -44,6 +45,8 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
     const diff = await invoke<FileDiffHunks>(command, { path });
     set({ selectedDiff: diff });
   },
+
+  clearSelectedFile: () => set({ selectedPath: null, selectedDiff: null }),
 
   stageFile: async (path: string) => {
     const status = await invoke<WorkingTreeStatus>("stage_file", { path });

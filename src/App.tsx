@@ -4,6 +4,8 @@ import { CommitGraph } from "./components/CommitGraph/CommitGraph";
 import { HistoryToolbar } from "./components/CommitGraph/HistoryToolbar";
 import { CommitDetail } from "./components/CommitDetail/CommitDetail";
 import { WorkingTreePanel } from "./components/WorkingTree/WorkingTreePanel";
+import { UncommittedPanel } from "./components/WorkingTree/UncommittedPanel";
+import { HunkDiffViewer } from "./components/WorkingTree/HunkDiffViewer";
 import { PRPanel } from "./components/PRPanel/PRPanel";
 import { MergeEditor } from "./components/Merge/MergeEditor";
 import { WorkspaceOverview } from "./components/Workspace/WorkspaceOverview";
@@ -15,18 +17,41 @@ import { useGraphStore } from "./stores/graphStore";
 import { useGithubStore } from "./stores/githubStore";
 import { useMergeStore } from "./stores/mergeStore";
 import { useThemeStore } from "./stores/themeStore";
+import { useWorkingTreeStore } from "./stores/workingTreeStore";
 
 type View = "history" | "working-tree" | "prs" | "workspace" | "settings";
 
 export default function App() {
-  const { loadCurrentRepo } = useRepoStore();
+  const { loadCurrentRepo, currentRepo } = useRepoStore();
   const { selectedOid } = useGraphStore();
   const { init, setPrDraft } = useGithubStore();
   const { status: operationStatus, loadStatus } = useMergeStore();
   const { initTheme } = useThemeStore();
+  const {
+    status: wtStatus,
+    selectedPath: wtSelectedPath,
+    selectedDiff: wtSelectedDiff,
+    clearSelectedFile,
+    discardFile,
+  } = useWorkingTreeStore();
   const [view, setView] = useState<View>("history");
+  // In the history view, the right panel shows commit details or the
+  // uncommitted-changes list (when the working-tree node is active).
+  const [historyRightMode, setHistoryRightMode] = useState<"commit" | "uncommitted">("commit");
   const [sidebarWidth, setSidebarWidth] = usePersistedWidth("sidebarWidth", 220, 160, 400);
   const [detailWidth, setDetailWidth] = usePersistedWidth("detailWidth", 380, 280, 720);
+
+  const enterUncommitted = () => {
+    clearSelectedFile();
+    setHistoryRightMode("uncommitted");
+  };
+  const exitUncommitted = () => {
+    clearSelectedFile();
+    setHistoryRightMode("commit");
+  };
+
+  const showingUncommittedDiff = historyRightMode === "uncommitted" && wtSelectedDiff != null;
+  const diffKind = wtStatus?.staged.some((e) => e.path === wtSelectedPath) ? "staged" : "unstaged";
 
   const handleStartPullRequest = (head: string, base: string) => {
     setPrDraft({ head, base });
@@ -95,10 +120,24 @@ export default function App() {
             >
               <HistoryToolbar />
               <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-                <CommitGraph
-                  onStartPullRequest={handleStartPullRequest}
-                  onViewChanges={() => setView("working-tree")}
-                />
+                {showingUncommittedDiff && wtSelectedDiff ? (
+                  <HunkDiffViewer
+                    diffHunks={wtSelectedDiff}
+                    kind={diffKind}
+                    onDiscardFile={
+                      diffKind === "unstaged" && wtSelectedPath
+                        ? () => discardFile(wtSelectedPath)
+                        : undefined
+                    }
+                    onClose={clearSelectedFile}
+                  />
+                ) : (
+                  <CommitGraph
+                    onStartPullRequest={handleStartPullRequest}
+                    onViewChanges={enterUncommitted}
+                    onCommitSelect={exitUncommitted}
+                  />
+                )}
               </div>
             </div>
             <ResizeHandle
@@ -113,7 +152,11 @@ export default function App() {
                 overflow: "hidden",
               }}
             >
-              <CommitDetail oid={selectedOid} />
+              {historyRightMode === "uncommitted" ? (
+                <UncommittedPanel branch={currentRepo?.headBranch ?? null} />
+              ) : (
+                <CommitDetail oid={selectedOid} />
+              )}
             </div>
           </>
         ) : view === "working-tree" ? (
