@@ -47,13 +47,17 @@ export function CommitGraph({
     fetchViewport(0, limit);
   }, [fetchViewport]);
 
-  // Sync canvas CSS size to container, then redraw.
+  // Sync canvas CSS size to container width and the drawn-row count, then
+  // redraw. The canvas is positioned at `canvasTop` (BUFFER_ROWS above the
+  // scroll position) and draws every node in the slice, so its height must
+  // span all those rows — not just the visible viewport — or the lower part of
+  // the viewport is left uncovered when scrolled.
   useEffect(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container) return;
     canvas.style.width = container.clientWidth + "px";
-    canvas.style.height = container.clientHeight + "px";
+    canvas.style.height = (viewport?.nodes.length ?? 0) * ROW_HEIGHT + "px";
   }, [viewport]);
 
   const handleScroll = useCallback(

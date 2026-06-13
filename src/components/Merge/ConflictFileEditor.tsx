@@ -7,7 +7,7 @@ import {
   highlightActiveLineGutter,
   type DecorationSet,
 } from "@codemirror/view";
-import { oneDark } from "@codemirror/theme-one-dark";
+import { editorThemeExtension, registerEditorView } from "../../lib/editorTheme";
 import type { ConflictedFile } from "../../types/merge";
 import { isBlockResolved } from "../../lib/conflictBlocks";
 import {
@@ -136,7 +136,7 @@ function ReadOnlyPane({
     const extensions = [
       lineNumbers(),
       ...activeLineExtensions,
-      oneDark,
+      editorThemeExtension(),
       paneTheme,
       EditorState.readOnly.of(true),
       EditorView.lineWrapping,
@@ -151,8 +151,10 @@ function ReadOnlyPane({
       parent: containerRef.current,
     });
     viewRef.current = view;
+    const unregister = registerEditorView(view);
 
     return () => {
+      unregister();
       view.destroy();
       viewRef.current = null;
     };
@@ -223,7 +225,7 @@ export function ConflictFileEditor({ file, onMarkResolved }: ConflictFileEditorP
         extensions: [
           lineNumbers(),
           ...activeLineExtensions,
-          oneDark,
+          editorThemeExtension(),
           paneTheme,
           EditorView.lineWrapping,
           blockRangesField.init((state) =>
@@ -242,8 +244,10 @@ export function ConflictFileEditor({ file, onMarkResolved }: ConflictFileEditorP
       parent: resultContainerRef.current,
     });
     resultViewRef.current = view;
+    const unregister = registerEditorView(view);
 
     return () => {
+      unregister();
       view.destroy();
       resultViewRef.current = null;
     };

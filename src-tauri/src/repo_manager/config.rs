@@ -48,6 +48,8 @@ pub struct AppConfig {
     pub workspaces: Vec<Workspace>,
     #[serde(default)]
     pub active_workspace_id: Option<String>,
+    #[serde(default)]
+    pub active_theme: Option<String>,
 }
 
 fn default_github_hosts() -> Vec<GithubHostConfig> {
@@ -62,6 +64,7 @@ impl Default for AppConfig {
             github_hosts: default_github_hosts(),
             workspaces: Vec::new(),
             active_workspace_id: None,
+            active_theme: None,
         }
     }
 }
@@ -172,5 +175,18 @@ mod tests {
         let config: AppConfig = serde_json::from_str(json).unwrap();
         assert!(config.workspaces.is_empty());
         assert_eq!(config.active_workspace_id, None);
+    }
+
+    #[test]
+    fn active_theme_round_trips_and_defaults_to_none() {
+        let json = r#"{"recentRepos":[],"lastRepoPath":null}"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.active_theme, None);
+
+        let mut config = AppConfig::default();
+        config.active_theme = Some("solar-light".to_string());
+        let restored: AppConfig =
+            serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+        assert_eq!(restored.active_theme, Some("solar-light".to_string()));
     }
 }

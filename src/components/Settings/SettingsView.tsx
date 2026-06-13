@@ -1,0 +1,31 @@
+import { ThemeManager } from "./ThemeManager";
+
+const sectionTitleStyle: React.CSSProperties = {
+  fontSize: "var(--font-size-md)",
+  fontWeight: "var(--font-weight-semibold)",
+  color: "var(--color-text-primary)",
+  marginBottom: "var(--space-3)",
+};
+
+export function SettingsView() {
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: "var(--space-5)" }}>
+      <h1
+        style={{
+          margin: 0,
+          marginBottom: "var(--space-5)",
+          fontSize: "var(--font-size-xl)",
+          fontWeight: "var(--font-weight-semibold)",
+          color: "var(--color-text-primary)",
+        }}
+      >
+        Settings
+      </h1>
+
+      <section style={{ maxWidth: 640 }}>
+        <h2 style={sectionTitleStyle}>Themes</h2>
+        <ThemeManager />
+      </section>
+    </div>
+  );
+}

@@ -9,6 +9,7 @@ mod operation_runner;
 mod remote_ops;
 mod repo_manager;
 mod stash;
+mod themes;
 mod working_tree;
 mod workspace_ops;
 
@@ -96,6 +97,12 @@ pub fn run() {
             commands::workspace::workspace_fetch_all,
             commands::workspace::workspace_pull_all,
             commands::workspace::search_workspace,
+            // Themes
+            commands::theme::list_custom_themes,
+            commands::theme::import_theme,
+            commands::theme::delete_theme,
+            commands::theme::set_active_theme,
+            commands::theme::get_active_theme,
         ])
         .setup(|app| {
             repo_manager::restore_last_repo(app)?;

@@ -3,7 +3,7 @@ import { EditorState } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { StreamLanguage } from "@codemirror/language";
 import { diff } from "@codemirror/legacy-modes/mode/diff";
-import { oneDark } from "@codemirror/theme-one-dark";
+import { editorThemeExtension, registerEditorView } from "../../lib/editorTheme";
 
 interface DiffViewerProps {
   content: string;
@@ -35,20 +35,23 @@ export function DiffViewer({ content }: DiffViewerProps) {
       extensions: [
         lineNumbers(),
         diffLang,
-        oneDark,
+        editorThemeExtension(),
         tokenTheme,
         EditorState.readOnly.of(true),
         EditorView.lineWrapping,
       ],
     });
 
-    viewRef.current = new EditorView({
+    const view = new EditorView({
       state,
       parent: containerRef.current,
     });
+    viewRef.current = view;
+    const unregister = registerEditorView(view);
 
     return () => {
-      viewRef.current?.destroy();
+      unregister();
+      view.destroy();
       viewRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

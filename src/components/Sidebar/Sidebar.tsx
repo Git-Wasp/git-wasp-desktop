@@ -6,6 +6,7 @@ import { useGithubStore } from "../../stores/githubStore";
 import { useRemoteStore } from "../../stores/remoteStore";
 import { useMergeStore } from "../../stores/mergeStore";
 import { StashPanel } from "./StashPanel";
+import { CollapsibleSection } from "./CollapsibleSection";
 import { RowMenu } from "./RowMenu";
 import { RemoteActions } from "./RemoteActions";
 import { CloneDialog } from "../GitHub/CloneDialog";
@@ -15,14 +16,16 @@ import { WorkspaceSidebarSection } from "../Workspace/WorkspaceSidebarSection";
 
 const INITIAL_LIMIT = 150;
 
-type View = "history" | "working-tree" | "prs" | "workspace";
+type View = "history" | "working-tree" | "prs" | "workspace" | "settings";
 
 export function Sidebar({
   view,
   onViewChange,
+  width = 220,
 }: {
   view: View;
   onViewChange: (v: View) => void;
+  width?: number;
 }) {
   const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, loadBranches, checkoutBranch, createBranch, deleteBranch } =
     useRepoStore();
@@ -94,7 +97,7 @@ export function Sidebar({
   return (
     <div
       style={{
-        width: 220,
+        width,
         flexShrink: 0,
         display: "flex",
         flexDirection: "column",
@@ -106,6 +109,7 @@ export function Sidebar({
       {/* Repo name / open button */}
       <div
         style={{
+          flexShrink: 0,
           padding: "var(--space-4)",
           borderBottom: "1px solid var(--color-border-subtle)",
         }}
@@ -263,6 +267,8 @@ export function Sidebar({
         </div>
       </div>
 
+      {/* Scrollable middle region */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
       <WorkspaceSwitcher />
 
       <RemoteActions onOpenClone={() => setShowCloneDialog(true)} />
@@ -276,34 +282,11 @@ export function Sidebar({
 
       {/* Branch list */}
       {currentRepo && (
-        <div
-          style={{
-            padding: "var(--space-2) 0",
-            borderBottom: "1px solid var(--color-border-subtle)",
-            overflowY: "auto",
-            maxHeight: 220,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "0 var(--space-3)",
-              marginBottom: "var(--space-1)",
-            }}
-          >
-            <span
-              style={{
-                fontSize: "var(--font-size-xs)",
-                fontWeight: "var(--font-weight-semibold)",
-                color: "var(--color-text-muted)",
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-              }}
-            >
-              Branches
-            </span>
+        <CollapsibleSection
+          id="branches"
+          title="Branches"
+          bodyStyle={{ overflowY: "auto", maxHeight: 220 }}
+          action={
             <button
               onClick={() => setShowNewBranch((v) => !v)}
               style={{
@@ -318,8 +301,8 @@ export function Sidebar({
             >
               + New
             </button>
-          </div>
-
+          }
+        >
           {showNewBranch && (
             <div style={{ padding: "0 var(--space-3)", marginBottom: "var(--space-1)", display: "flex", gap: "var(--space-1)" }}>
               <input
@@ -427,27 +410,14 @@ export function Sidebar({
                 />
               </div>
             ))}
-        </div>
+        </CollapsibleSection>
       )}
 
       <WorkspaceSidebarSection />
 
       {/* Recent repos */}
       {recentRepos.length > 0 && (
-        <div style={{ padding: "var(--space-2) 0", overflowY: "auto", flex: 1 }}>
-          <div
-            style={{
-              padding: "0 var(--space-3)",
-              fontSize: "var(--font-size-xs)",
-              fontWeight: "var(--font-weight-semibold)",
-              color: "var(--color-text-muted)",
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              marginBottom: "var(--space-1)",
-            }}
-          >
-            Recent
-          </div>
+        <CollapsibleSection id="recent" title="Recent" bodyStyle={{ overflowY: "auto" }}>
           {recentRepos.map((r) => (
             <div
               key={r.path}
@@ -480,10 +450,29 @@ export function Sidebar({
               />
             </div>
           ))}
-        </div>
+        </CollapsibleSection>
       )}
 
       <StashPanel />
+      </div>
+
+      {/* Settings (always available, pinned to the bottom) */}
+      <button
+        onClick={() => onViewChange("settings")}
+        style={{
+          flexShrink: 0,
+          padding: "var(--space-2) var(--space-4)",
+          textAlign: "left",
+          fontSize: "var(--font-size-sm)",
+          background: view === "settings" ? "var(--color-bg-elevated)" : "transparent",
+          color: view === "settings" ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+          border: "none",
+          borderTop: "1px solid var(--color-border-subtle)",
+          cursor: "pointer",
+        }}
+      >
+        ⚙ Settings
+      </button>
     </div>
   );
 }

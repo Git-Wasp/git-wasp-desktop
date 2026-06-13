@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { GraphViewport } from "../types/graph";
 import type { BranchLabelHit } from "../components/CommitGraph/dragDrop";
+import { THEME_CHANGE_EVENT } from "../lib/applyTheme";
 
 interface Selection {
   anchor: string | null;
@@ -45,11 +46,21 @@ export function useCommitGraph(
 ): void {
   const configRef = useRef<GraphConfig | null>(null);
   const laneColorsRef = useRef<string[]>([]);
+  const [themeTick, setThemeTick] = useState(0);
 
-  // Resolve CSS tokens once at mount.
+  // Resolve CSS tokens at mount and whenever the theme changes (tokens are read
+  // from CSS, so a theme swap must re-resolve colours and trigger a redraw).
   useEffect(() => {
     configRef.current = resolveConfig();
     laneColorsRef.current = resolveLaneColors();
+
+    const onThemeChange = () => {
+      configRef.current = resolveConfig();
+      laneColorsRef.current = resolveLaneColors();
+      setThemeTick((t) => t + 1);
+    };
+    window.addEventListener(THEME_CHANGE_EVENT, onThemeChange);
+    return () => window.removeEventListener(THEME_CHANGE_EVENT, onThemeChange);
   }, []);
 
   useEffect(() => {
@@ -173,5 +184,5 @@ export function useCommitGraph(
         : resolveCssVar("--color-text-secondary") || "#a3afc2";
       ctx.fillText(node.summary, textX, y + 4);
     });
-  }, [viewport, selection, canvasRef, labelHitsRef]);
+  }, [viewport, selection, canvasRef, labelHitsRef, themeTick]);
 }
