@@ -1,4 +1,5 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { Button } from "../ui/Button";
 import type { CiStatus, PullRequest } from "../../types/github";
 
 const ciBadge: Record<CiStatus, { label: string; color: string }> = {
@@ -73,21 +74,9 @@ export function PRRow({ pr }: { pr: PullRequest }) {
         ✓ {pr.approvalCount}
       </span>
 
-      <button
-        onClick={() => openUrl(pr.url)}
-        style={{
-          fontSize: "var(--font-size-xs)",
-          padding: "1px var(--space-2)",
-          background: "transparent",
-          border: "1px solid var(--color-border-subtle)",
-          borderRadius: "var(--radius-sm)",
-          color: "var(--color-text-muted)",
-          cursor: "pointer",
-          flexShrink: 0,
-        }}
-      >
+      <Button size="sm" onClick={() => openUrl(pr.url)} style={{ flexShrink: 0 }}>
         Open
-      </button>
+      </Button>
     </div>
   );
 }

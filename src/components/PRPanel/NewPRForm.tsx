@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useGithubStore } from "../../stores/githubStore";
 import { useRepoStore } from "../../stores/repoStore";
 import type { PullRequest } from "../../types/github";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
@@ -60,11 +62,12 @@ export function NewPRForm({
         borderBottom: "1px solid var(--color-border-subtle)",
       }}
     >
-      <input
+      <Input
+        fullWidth
         placeholder="Pull request title"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        style={inputStyle}
+        style={{ marginBottom: "var(--space-2)" }}
       />
       <textarea
         placeholder="Description (optional)"
@@ -73,19 +76,19 @@ export function NewPRForm({
         rows={3}
         style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }}
       />
-      <div style={{ display: "flex", gap: "var(--space-2)" }}>
-        <input
+      <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
+        <Input
           placeholder="head branch"
           value={head}
           onChange={(e) => setHead(e.target.value)}
-          style={{ ...inputStyle, flex: 1, fontFamily: "var(--font-family-mono)" }}
+          style={{ flex: 1, fontFamily: "var(--font-family-mono)" }}
         />
-        <span style={{ alignSelf: "center", color: "var(--color-text-muted)" }}>→</span>
-        <input
+        <span style={{ color: "var(--color-text-muted)" }}>→</span>
+        <Input
           placeholder="base branch"
           value={base}
           onChange={(e) => setBase(e.target.value)}
-          style={{ ...inputStyle, flex: 1, fontFamily: "var(--font-family-mono)" }}
+          style={{ flex: 1, fontFamily: "var(--font-family-mono)" }}
         />
       </div>
 
@@ -95,39 +98,18 @@ export function NewPRForm({
         </div>
       )}
 
-      <div style={{ display: "flex", gap: "var(--space-2)" }}>
-        <button
-          onClick={onCancel}
-          style={{
-            flex: 1,
-            padding: "var(--space-1) var(--space-2)",
-            fontSize: "var(--font-size-sm)",
-            background: "transparent",
-            color: "var(--color-text-secondary)",
-            border: "1px solid var(--color-border-subtle)",
-            borderRadius: "var(--radius-sm)",
-            cursor: "pointer",
-          }}
-        >
+      <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-2)" }}>
+        <Button variant="secondary" fullWidth onClick={onCancel}>
           Cancel
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="primary"
+          fullWidth
           onClick={handleSubmit}
           disabled={isSubmitting || !title.trim() || !head.trim() || !base.trim()}
-          style={{
-            flex: 1,
-            padding: "var(--space-1) var(--space-2)",
-            fontSize: "var(--font-size-sm)",
-            background: "var(--color-accent-primary)",
-            color: "#fff",
-            border: "none",
-            borderRadius: "var(--radius-sm)",
-            cursor: isSubmitting ? "default" : "pointer",
-            opacity: isSubmitting ? 0.6 : 1,
-          }}
         >
           {isSubmitting ? "Creating…" : "Create"}
-        </button>
+        </Button>
       </div>
     </div>
   );

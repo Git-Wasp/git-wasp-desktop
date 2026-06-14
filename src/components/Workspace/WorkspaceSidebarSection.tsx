@@ -4,6 +4,7 @@ import { useRepoStore } from "../../stores/repoStore";
 import { useGraphStore } from "../../stores/graphStore";
 import { RowMenu } from "../Sidebar/RowMenu";
 import { CollapsibleSection } from "../Sidebar/CollapsibleSection";
+import { Button } from "../ui/Button";
 
 const INITIAL_LIMIT = 150;
 
@@ -39,20 +40,9 @@ export function WorkspaceSidebarSection() {
       bodyStyle={{ overflowY: "auto", maxHeight: 220 }}
       action={
         showAddCurrentRepo ? (
-          <button
-            onClick={() => addRepoToWorkspace(activeWorkspace.id, currentRepo.path)}
-            style={{
-              fontSize: "var(--font-size-xs)",
-              padding: "1px var(--space-2)",
-              background: "transparent",
-              border: "1px solid var(--color-border-subtle)",
-              borderRadius: "var(--radius-sm)",
-              color: "var(--color-text-muted)",
-              cursor: "pointer",
-            }}
-          >
+          <Button size="sm" onClick={() => addRepoToWorkspace(activeWorkspace.id, currentRepo.path)}>
             + Add current repo
-          </button>
+          </Button>
         ) : undefined
       }
     >

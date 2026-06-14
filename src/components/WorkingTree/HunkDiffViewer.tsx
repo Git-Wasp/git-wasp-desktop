@@ -1,5 +1,7 @@
 import { useWorkingTreeStore } from "../../stores/workingTreeStore";
 import type { FileDiffHunks } from "../../types/workingTree";
+import { Button } from "../ui/Button";
+import { IconButton } from "../ui/IconButton";
 
 export function HunkDiffViewer({
   diffHunks,
@@ -45,39 +47,14 @@ export function HunkDiffViewer({
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
           {kind === "unstaged" && onDiscardFile && (
-            <button
-              onClick={onDiscardFile}
-              style={{
-                fontSize: "var(--font-size-xs)",
-                padding: "2px var(--space-2)",
-                background: "transparent",
-                border: "1px solid var(--color-danger)",
-                borderRadius: "var(--radius-sm)",
-                color: "var(--color-danger)",
-                cursor: "pointer",
-              }}
-            >
+            <Button variant="danger" size="sm" onClick={onDiscardFile}>
               Discard file
-            </button>
+            </Button>
           )}
           {onClose && (
-            <button
-              onClick={onClose}
-              aria-label="Close diff"
-              title="Close diff"
-              style={{
-                fontSize: "var(--font-size-sm)",
-                lineHeight: 1,
-                padding: "2px var(--space-2)",
-                background: "transparent",
-                border: "1px solid var(--color-border-subtle)",
-                borderRadius: "var(--radius-sm)",
-                color: "var(--color-text-secondary)",
-                cursor: "pointer",
-              }}
-            >
+            <IconButton aria-label="Close diff" title="Close diff" onClick={onClose}>
               ✕
-            </button>
+            </IconButton>
           )}
         </div>
       </div>
@@ -122,33 +99,18 @@ export function HunkDiffViewer({
                 <div style={{ display: "flex", gap: "var(--space-1)" }}>
                   {kind === "unstaged" && (
                     <>
-                      <button
-                        onClick={() =>
-                          stageHunk(diffHunks.path, hunk.index)
-                        }
-                        style={hunkButtonStyle("accent")}
-                      >
+                      <Button variant="primary" size="sm" onClick={() => stageHunk(diffHunks.path, hunk.index)}>
                         Stage hunk
-                      </button>
-                      <button
-                        onClick={() =>
-                          discardHunk(diffHunks.path, hunk.index)
-                        }
-                        style={hunkButtonStyle("danger")}
-                      >
+                      </Button>
+                      <Button variant="danger" size="sm" onClick={() => discardHunk(diffHunks.path, hunk.index)}>
                         Discard
-                      </button>
+                      </Button>
                     </>
                   )}
                   {kind === "staged" && (
-                    <button
-                      onClick={() =>
-                        unstageHunk(diffHunks.path, hunk.index)
-                      }
-                      style={hunkButtonStyle("muted")}
-                    >
+                    <Button size="sm" onClick={() => unstageHunk(diffHunks.path, hunk.index)}>
                       Unstage hunk
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>
@@ -193,29 +155,3 @@ export function HunkDiffViewer({
   );
 }
 
-function hunkButtonStyle(variant: "accent" | "danger" | "muted") {
-  const colors = {
-    accent: {
-      border: "var(--color-accent-primary)",
-      color: "var(--color-accent-primary)",
-    },
-    danger: {
-      border: "var(--color-danger)",
-      color: "var(--color-danger)",
-    },
-    muted: {
-      border: "var(--color-border-subtle)",
-      color: "var(--color-text-muted)",
-    },
-  };
-  const c = colors[variant];
-  return {
-    fontSize: "var(--font-size-xs)" as const,
-    padding: "2px var(--space-2)",
-    background: "transparent",
-    border: `1px solid ${c.border}`,
-    borderRadius: "var(--radius-sm)",
-    color: c.color,
-    cursor: "pointer" as const,
-  };
-}

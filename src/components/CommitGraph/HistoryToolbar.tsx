@@ -6,6 +6,7 @@ import { useGithubStore } from "../../stores/githubStore";
 import { useMergeStore } from "../../stores/mergeStore";
 import { ContextMenu, type MenuItem } from "../common/ContextMenu";
 import { PromptDialog } from "../common/PromptDialog";
+import { Button } from "../ui/Button";
 
 const barStyle: React.CSSProperties = {
   display: "flex",
@@ -16,19 +17,6 @@ const barStyle: React.CSSProperties = {
   background: "var(--color-bg-panel)",
   flexShrink: 0,
 };
-
-function buttonStyle(disabled: boolean): React.CSSProperties {
-  return {
-    padding: "var(--space-1) var(--space-3)",
-    fontSize: "var(--font-size-sm)",
-    background: "transparent",
-    color: disabled ? "var(--color-text-muted)" : "var(--color-text-secondary)",
-    border: "1px solid var(--color-border-subtle)",
-    borderRadius: "var(--radius-sm)",
-    cursor: disabled ? "default" : "pointer",
-    opacity: disabled ? 0.6 : 1,
-  };
-}
 
 export function HistoryToolbar() {
   const {
@@ -104,21 +92,15 @@ export function HistoryToolbar() {
 
   return (
     <div style={barStyle}>
-      <button type="button" onClick={handlePush} disabled={!hasRemote || busy} style={buttonStyle(!hasRemote || busy)}>
+      <Button type="button" onClick={handlePush} disabled={!hasRemote || busy}>
         {isPushing ? "Pushing…" : "Push"}
-      </button>
-      <button
-        type="button"
-        ref={pullButtonRef}
-        onClick={openPullMenu}
-        disabled={!hasRemote || busy}
-        style={buttonStyle(!hasRemote || busy)}
-      >
+      </Button>
+      <Button type="button" ref={pullButtonRef} onClick={openPullMenu} disabled={!hasRemote || busy}>
         {isPulling || isFetching ? "Pulling…" : "Pull ▾"}
-      </button>
-      <button type="button" onClick={() => setShowNewBranch(true)} style={buttonStyle(false)}>
+      </Button>
+      <Button type="button" onClick={() => setShowNewBranch(true)}>
         New branch
-      </button>
+      </Button>
 
       {lastError && (
         <span

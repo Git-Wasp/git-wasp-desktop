@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useGithubStore } from "../../stores/githubStore";
 import { PRRow } from "./PRRow";
 import { NewPRForm } from "./NewPRForm";
+import { Button } from "../ui/Button";
+import { EmptyState } from "../ui/EmptyState";
 
 export function PRPanel() {
   const { remoteInfo, pullRequests, loadPullRequests, prDraft, setPrDraft } =
@@ -27,11 +29,7 @@ export function PRPanel() {
   };
 
   if (!remoteInfo) {
-    return (
-      <div style={{ padding: "var(--space-4)", color: "var(--color-text-muted)", fontSize: "var(--font-size-sm)" }}>
-        No GitHub remote detected for this repository.
-      </div>
-    );
+    return <EmptyState message="No GitHub remote detected for this repository." />;
   }
 
   return (
@@ -54,20 +52,9 @@ export function PRPanel() {
         >
           Pull Requests · {remoteInfo.owner}/{remoteInfo.repo}
         </span>
-        <button
-          onClick={() => setShowNewForm((v) => !v)}
-          style={{
-            fontSize: "var(--font-size-xs)",
-            padding: "var(--space-1) var(--space-2)",
-            background: "var(--color-accent-primary)",
-            color: "#fff",
-            border: "none",
-            borderRadius: "var(--radius-sm)",
-            cursor: "pointer",
-          }}
-        >
+        <Button variant="primary" size="sm" onClick={() => setShowNewForm((v) => !v)}>
           New Pull Request
-        </button>
+        </Button>
       </div>
 
       {showNewForm && (
@@ -87,9 +74,7 @@ export function PRPanel() {
 
       <div style={{ overflowY: "auto", flex: 1 }}>
         {pullRequests.length === 0 ? (
-          <div style={{ padding: "var(--space-4)", color: "var(--color-text-muted)", fontSize: "var(--font-size-sm)" }}>
-            No open pull requests.
-          </div>
+          <EmptyState message="No open pull requests." />
         ) : (
           pullRequests.map((pr) => <PRRow key={pr.number} pr={pr} />)
         )}

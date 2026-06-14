@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useGithubStore } from "../../stores/githubStore";
+import { Button } from "../ui/Button";
 
 export function DeviceFlowModal({
   host,
@@ -122,21 +123,9 @@ export function DeviceFlowModal({
             >
               {deviceFlowInit.userCode}
             </div>
-            <button
-              onClick={handleOpenBrowser}
-              style={{
-                width: "100%",
-                padding: "var(--space-2)",
-                fontSize: "var(--font-size-sm)",
-                background: "var(--color-accent-primary)",
-                color: "#fff",
-                border: "none",
-                borderRadius: "var(--radius-sm)",
-                cursor: "pointer",
-              }}
-            >
+            <Button variant="primary" fullWidth onClick={handleOpenBrowser}>
               Open in browser
-            </button>
+            </Button>
             <p
               style={{
                 marginTop: "var(--space-3)",
@@ -154,22 +143,9 @@ export function DeviceFlowModal({
           </p>
         )}
 
-        <button
-          onClick={handleCancel}
-          style={{
-            width: "100%",
-            marginTop: "var(--space-2)",
-            padding: "var(--space-2)",
-            fontSize: "var(--font-size-sm)",
-            background: "transparent",
-            color: "var(--color-text-secondary)",
-            border: "1px solid var(--color-border-subtle)",
-            borderRadius: "var(--radius-sm)",
-            cursor: "pointer",
-          }}
-        >
+        <Button variant="secondary" fullWidth onClick={handleCancel} style={{ marginTop: "var(--space-2)" }}>
           Cancel
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import { useMergeStore } from "../../stores/mergeStore";
 import type { ConflictSide } from "../../types/merge";
 import { ConflictFileEditor } from "./ConflictFileEditor";
 import { NonTextConflictPicker } from "./NonTextConflictPicker";
+import { Button } from "../ui/Button";
 
 const containerStyle: React.CSSProperties = {
   display: "flex",
@@ -35,26 +36,6 @@ const messageInputStyle: React.CSSProperties = {
   color: "var(--color-text-primary)",
   border: "1px solid var(--color-border-subtle)",
   borderRadius: "var(--radius-sm)",
-};
-
-const primaryButtonStyle: React.CSSProperties = {
-  padding: "var(--space-1) var(--space-3)",
-  fontSize: "var(--font-size-sm)",
-  background: "var(--color-accent-primary)",
-  color: "#fff",
-  border: "none",
-  borderRadius: "var(--radius-sm)",
-  cursor: "pointer",
-};
-
-const dangerButtonStyle: React.CSSProperties = {
-  padding: "var(--space-1) var(--space-3)",
-  fontSize: "var(--font-size-sm)",
-  background: "transparent",
-  color: "var(--color-danger)",
-  border: "1px solid var(--color-danger)",
-  borderRadius: "var(--radius-sm)",
-  cursor: "pointer",
 };
 
 const fileListStyle: React.CSSProperties = {
@@ -142,17 +123,17 @@ export function MergeEditor() {
           placeholder="Merge commit message"
           style={messageInputStyle}
         />
-        <button
+        <Button
+          variant="primary"
           type="button"
           onClick={handleComplete}
           disabled={isLoading || conflicts.length > 0 || commitMessage.trim() === ""}
-          style={primaryButtonStyle}
         >
           Complete merge
-        </button>
-        <button type="button" onClick={handleAbort} disabled={isLoading} style={dangerButtonStyle}>
+        </Button>
+        <Button variant="danger" type="button" onClick={handleAbort} disabled={isLoading}>
           Abort merge
-        </button>
+        </Button>
       </div>
 
       {actionError && (

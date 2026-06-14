@@ -3,6 +3,8 @@ import { useWorkspaceStore } from "../../stores/workspaceStore";
 import { useRepoStore } from "../../stores/repoStore";
 import { useGraphStore } from "../../stores/graphStore";
 import type { CrossRepoSearchResult } from "../../types/workspace";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 
 const INITIAL_LIMIT = 150;
 
@@ -21,17 +23,6 @@ const headerCellStyle: React.CSSProperties = {
   textTransform: "uppercase",
   letterSpacing: "0.06em",
 };
-
-const actionButtonStyle = (disabled: boolean): React.CSSProperties => ({
-  padding: "var(--space-1) var(--space-2)",
-  fontSize: "var(--font-size-sm)",
-  background: "transparent",
-  color: disabled ? "var(--color-text-muted)" : "var(--color-text-secondary)",
-  border: "1px solid var(--color-border-subtle)",
-  borderRadius: "var(--radius-sm)",
-  cursor: disabled ? "default" : "pointer",
-  opacity: disabled ? 0.6 : 1,
-});
 
 export function WorkspaceOverview() {
   const {
@@ -86,20 +77,12 @@ export function WorkspaceOverview() {
           {activeWorkspace.name}
         </h2>
         <div style={{ display: "flex", gap: "var(--space-1)" }}>
-          <button
-            onClick={() => fetchAll(activeWorkspace.id)}
-            disabled={isFetchingAll}
-            style={actionButtonStyle(isFetchingAll)}
-          >
+          <Button onClick={() => fetchAll(activeWorkspace.id)} disabled={isFetchingAll}>
             {isFetchingAll ? "Fetching…" : "Fetch all"}
-          </button>
-          <button
-            onClick={() => pullAll(activeWorkspace.id)}
-            disabled={isPullingAll}
-            style={actionButtonStyle(isPullingAll)}
-          >
+          </Button>
+          <Button onClick={() => pullAll(activeWorkspace.id)} disabled={isPullingAll}>
             {isPullingAll ? "Pulling…" : "Pull all"}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -150,23 +133,13 @@ export function WorkspaceOverview() {
         </tbody>
       </table>
 
-      <input
+      <Input
+        fullWidth
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={handleSearchKeyDown}
         placeholder="Search branches and commits…"
-        style={{
-          width: "100%",
-          fontSize: "var(--font-size-sm)",
-          fontFamily: "var(--font-family-mono)",
-          background: "var(--color-bg-input)",
-          border: "1px solid var(--color-border-subtle)",
-          borderRadius: "var(--radius-sm)",
-          color: "var(--color-text-primary)",
-          padding: "var(--space-1) var(--space-2)",
-          outline: "none",
-          marginBottom: "var(--space-2)",
-        }}
+        style={{ fontFamily: "var(--font-family-mono)", marginBottom: "var(--space-2)" }}
       />
 
       {searchResults.length > 0 && (

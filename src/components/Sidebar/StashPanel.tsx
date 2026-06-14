@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { StashEntry, WorkingTreeStatus } from "../../types/workingTree";
 import { useWorkingTreeStore } from "../../stores/workingTreeStore";
 import { CollapsibleSection } from "./CollapsibleSection";
+import { Button } from "../ui/Button";
 
 export function StashPanel() {
   const [stashes, setStashes] = useState<StashEntry[]>([]);
@@ -65,21 +66,9 @@ export function StashPanel() {
       id="stashes"
       title="Stashes"
       action={
-        <button
-          onClick={handleStash}
-          disabled={loading}
-          style={{
-            fontSize: "var(--font-size-xs)",
-            padding: "2px var(--space-2)",
-            background: "transparent",
-            border: "1px solid var(--color-border-subtle)",
-            borderRadius: "var(--radius-sm)",
-            color: "var(--color-text-muted)",
-            cursor: "pointer",
-          }}
-        >
+        <Button size="sm" onClick={handleStash} disabled={loading}>
           Stash
-        </button>
+        </Button>
       }
     >
       {stashes.map((s) => (
@@ -104,26 +93,19 @@ export function StashPanel() {
           </div>
           <div style={{ display: "flex", gap: "var(--space-1)" }}>
             {(["Apply", "Pop", "Drop"] as const).map((action) => (
-              <button
+              <Button
                 key={action}
+                size="sm"
+                variant={action === "Drop" ? "danger" : "secondary"}
                 disabled={loading}
                 onClick={() => {
                   if (action === "Apply") handleApply(s.index);
                   else if (action === "Pop") handlePop(s.index);
                   else handleDrop(s.index);
                 }}
-                style={{
-                  fontSize: "var(--font-size-xs)",
-                  padding: "1px var(--space-2)",
-                  background: "transparent",
-                  border: "1px solid var(--color-border-subtle)",
-                  borderRadius: "var(--radius-sm)",
-                  color: action === "Drop" ? "var(--color-danger)" : "var(--color-text-muted)",
-                  cursor: "pointer",
-                }}
               >
                 {action}
-              </button>
+              </Button>
             ))}
           </div>
         </div>

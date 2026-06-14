@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useWorkingTreeStore } from "../../stores/workingTreeStore";
+import { Button } from "../ui/Button";
 import { useGraphStore } from "../../stores/graphStore";
 
 const INITIAL_LIMIT = 100;
@@ -88,26 +89,9 @@ export function CommitForm({ stagedCount }: { stagedCount: number }) {
         </div>
       )}
 
-      <button
-        onClick={handleCommit}
-        disabled={!canCommit}
-        style={{
-          padding: "var(--space-2) var(--space-3)",
-          background: canCommit
-            ? "var(--color-accent-primary)"
-            : "var(--color-bg-panel)",
-          border: "none",
-          borderRadius: "var(--radius-sm)",
-          color: canCommit
-            ? "var(--color-text-on-accent)"
-            : "var(--color-text-muted)",
-          fontWeight: "var(--font-weight-medium)",
-          fontSize: "var(--font-size-sm)",
-          cursor: canCommit ? "pointer" : "not-allowed",
-        }}
-      >
+      <Button variant="primary" onClick={handleCommit} disabled={!canCommit}>
         {committing ? "Committing…" : `Commit${stagedCount > 0 ? ` (${stagedCount})` : ""}`}
-      </button>
+      </Button>
     </div>
   );
 }

@@ -115,6 +115,13 @@
   --color-bg-selected:    var(--color-accent-muted);
   --color-bg-input:       var(--color-neutral-100);
   --color-text-on-accent: #ffffff;
+  --color-bg-hover:       var(--color-neutral-200);
+  --color-accent-hover:   var(--color-accent-secondary);
+
+  /* === CONTROLS === */
+  --control-height-sm: 24px;
+  --control-height-md: 30px;
+  --focus-ring: 0 0 0 2px var(--color-accent-primary);
 
   /* === LAYOUT — Commit graph === */
   --graph-row-height: 34px;
@@ -166,4 +173,5 @@
   /* Interactive surfaces */
   --color-bg-selected: #d6e6fb;
   --color-bg-input:    #ffffff;
+  --color-bg-hover:    #e3e7ec;
 }
