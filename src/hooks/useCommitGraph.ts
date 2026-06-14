@@ -74,6 +74,7 @@ export function useCommitGraph(
     const { rowHeight, laneWidth, dotRadius, lineWidth } = configRef.current;
     const laneColors = laneColorsRef.current;
     const selectedBg = resolveCssVar("--color-bg-selected") || "rgba(77, 157, 224, 0.15)";
+    const nodeBg = resolveCssVar("--color-graph-node-bg") || "rgba(255, 255, 255, 0.035)";
     const dpr = window.devicePixelRatio || 1;
 
     const cssW = canvas.clientWidth;
@@ -90,11 +91,25 @@ export function useCommitGraph(
       const y = localRow * rowHeight + rowHeight / 2;
       const x = node.lane * laneWidth + laneWidth / 2;
       const color = laneColors[node.colorIndex % 8] || "#4d9de0";
+      const rowTop = localRow * rowHeight;
+
+      // Per-commit highlight band behind the row.
+      if (!node.isWorkingTree) {
+        ctx.fillStyle = nodeBg;
+        ctx.fillRect(0, rowTop + 1, cssW, rowHeight - 2);
+      }
 
       // Selection band (graph-column portion; the DOM cells match it).
       if (selection.range.has(node.oid)) {
         ctx.fillStyle = selectedBg;
-        ctx.fillRect(0, localRow * rowHeight, cssW, rowHeight);
+        ctx.fillRect(0, rowTop, cssW, rowHeight);
+      }
+
+      // Strong right-aligned accent line in the commit's lane colour, drawn on
+      // top of the bands so it reads clearly even when the row is selected.
+      if (!node.isWorkingTree) {
+        ctx.fillStyle = color;
+        ctx.fillRect(cssW - 3, rowTop + 5, 3, rowHeight - 10);
       }
 
       // Edges connect this row's dot centre to the next row's centre, so the
