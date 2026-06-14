@@ -1,16 +1,21 @@
 import { useEffect, useRef } from "react";
+import type { CSSProperties } from "react";
 
 /**
  * A thin draggable vertical divider. Reports the horizontal pointer delta while
- * dragging via `onResize`; the parent applies it to a panel width. Uses window
- * listeners so the drag continues even when the pointer leaves the handle.
+ * dragging via `onResize`; the parent applies it to a panel/column width. Uses
+ * window listeners so the drag continues even when the pointer leaves the
+ * handle. An optional `style` allows absolute positioning (e.g. overlaying a
+ * column boundary).
  */
 export function ResizeHandle({
   onResize,
   ariaLabel,
+  style,
 }: {
   onResize: (deltaX: number) => void;
   ariaLabel?: string;
+  style?: CSSProperties;
 }) {
   const dragging = useRef(false);
   const lastX = useRef(0);
@@ -55,6 +60,7 @@ export function ResizeHandle({
         width: 5,
         cursor: "col-resize",
         background: "var(--color-border-subtle)",
+        ...style,
       }}
     />
   );

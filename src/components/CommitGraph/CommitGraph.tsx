@@ -5,17 +5,20 @@ import { useMergeStore } from "../../stores/mergeStore";
 import { useCommitGraph } from "../../hooks/useCommitGraph";
 import { ContextMenu, type MenuItem } from "../common/ContextMenu";
 import { PromptDialog } from "../common/PromptDialog";
+import { ResizeHandle } from "../common/ResizeHandle";
+import { usePersistedWidth } from "../../lib/usePersistedWidth";
 import { runMerge } from "./dragDrop";
 import { useGraphDragDrop } from "./useGraphDragDrop";
 import { BranchCell, MessageCell } from "./columns";
 import {
   COLUMNS,
-  columnStyle,
   ROW_HEIGHT,
   BRANCH_COL_WIDTH,
   GRAPH_COL_WIDTH,
+  type GraphColumn,
   type PillHandlers,
 } from "./columnModel";
+import type { CSSProperties } from "react";
 import type { GraphNode } from "../../types/graph";
 
 const BUFFER_ROWS = 20;
@@ -59,6 +62,16 @@ export function CommitGraph({
 
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [prompt, setPrompt] = useState<PromptState | null>(null);
+
+  // Resizable, persisted column widths (the message column flexes to fill).
+  const [branchWidth, setBranchWidth] = usePersistedWidth("graphBranchColWidth", BRANCH_COL_WIDTH, 100, 400);
+  const [graphWidth, setGraphWidth] = usePersistedWidth("graphGraphColWidth", GRAPH_COL_WIDTH, 60, 400);
+
+  const colStyle = (col: GraphColumn): CSSProperties => {
+    if (col.kind === "branch") return { width: branchWidth, flexShrink: 0 };
+    if (col.kind === "graph") return { width: graphWidth, flexShrink: 0 };
+    return { flex: 1, minWidth: 0 };
+  };
 
   // Initial load.
   useEffect(() => {
@@ -209,7 +222,7 @@ export function CommitGraph({
     : [];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--color-bg-app)" }}>
+    <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--color-bg-app)" }}>
       {/* Column header */}
       <div
         role="row"
@@ -223,11 +236,23 @@ export function CommitGraph({
         }}
       >
         {COLUMNS.map((col) => (
-          <div key={col.id} style={{ ...columnStyle(col), ...headerCellStyle }}>
+          <div key={col.id} style={{ ...colStyle(col), ...headerCellStyle }}>
             {col.header}
           </div>
         ))}
       </div>
+
+      {/* Draggable column dividers (full height, overlaid on the boundaries). */}
+      <ResizeHandle
+        ariaLabel="Resize branch column"
+        onResize={(dx) => setBranchWidth((w) => w + dx)}
+        style={{ position: "absolute", top: 0, bottom: 0, left: branchWidth - 2, zIndex: 5 }}
+      />
+      <ResizeHandle
+        ariaLabel="Resize graph column"
+        onResize={(dx) => setGraphWidth((w) => w + dx)}
+        style={{ position: "absolute", top: 0, bottom: 0, left: branchWidth + graphWidth - 2, zIndex: 5 }}
+      />
 
       {/* Scrollable rows */}
       <div ref={containerRef} style={{ flex: 1, minHeight: 0, overflowY: "auto" }} onScroll={handleScroll}>
@@ -237,9 +262,9 @@ export function CommitGraph({
             ref={canvasRef}
             style={{
               position: "absolute",
-              left: BRANCH_COL_WIDTH,
+              left: branchWidth,
               top: canvasTop,
-              width: GRAPH_COL_WIDTH,
+              width: graphWidth,
               height: sliceHeight,
               pointerEvents: "none",
             }}
@@ -267,7 +292,8 @@ export function CommitGraph({
               >
                 <div
                   style={{
-                    ...columnStyle(COLUMNS[0]),
+                    width: branchWidth,
+                    flexShrink: 0,
                     height: "100%",
                     display: "flex",
                     alignItems: "center",
@@ -279,7 +305,7 @@ export function CommitGraph({
                   <BranchCell node={node} handlers={pillHandlers} />
                 </div>
                 {/* graph gap — canvas shows through */}
-                <div style={{ width: GRAPH_COL_WIDTH, flexShrink: 0, height: "100%" }} />
+                <div style={{ width: graphWidth, flexShrink: 0, height: "100%" }} />
                 <div
                   style={{
                     flex: 1,
