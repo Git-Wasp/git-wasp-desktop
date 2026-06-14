@@ -18,6 +18,7 @@ import {
 } from "../../lib/lineSelection";
 import { buildPaneDecorations } from "./mergeDecorations";
 import { selectionGutter, setSelectedLines } from "./selectionGutter";
+import { Button } from "../ui/Button";
 
 interface ConflictFileEditorProps {
   file: ConflictedFile;
@@ -100,16 +101,6 @@ const paneLabelStyle: React.CSSProperties = {
   fontWeight: 500,
   color: "var(--color-text-secondary)",
   borderBottom: "1px solid var(--color-border-subtle)",
-};
-
-const acceptButtonStyle: React.CSSProperties = {
-  padding: "var(--space-1) var(--space-2)",
-  fontSize: "var(--font-size-sm)",
-  border: "1px solid var(--color-border-subtle)",
-  borderRadius: "var(--radius-sm)",
-  background: "transparent",
-  color: "var(--color-text-secondary)",
-  cursor: "pointer",
 };
 
 function ReadOnlyPane({
@@ -368,21 +359,9 @@ export function ConflictFileEditor({ file, onMarkResolved }: ConflictFileEditorP
           <span style={{ fontSize: "var(--font-size-sm)", fontWeight: 500, color: "var(--color-text-secondary)" }}>
             Result
           </span>
-          <button
-            type="button"
-            onClick={handleMarkResolved}
-            style={{
-              padding: "var(--space-1) var(--space-2)",
-              fontSize: "var(--font-size-sm)",
-              background: "var(--color-accent-primary)",
-              color: "#fff",
-              border: "none",
-              borderRadius: "var(--radius-sm)",
-              cursor: "pointer",
-            }}
-          >
+          <Button variant="primary" size="sm" type="button" onClick={handleMarkResolved}>
             Mark resolved
-          </button>
+          </Button>
         </div>
         {file.conflictBlocks.length > 0 && (
           <div
@@ -402,12 +381,12 @@ export function ConflictFileEditor({ file, onMarkResolved }: ConflictFileEditorP
                     Conflict {index + 1}
                     {resolved ? " — resolved" : ""}
                   </span>
-                  <button type="button" onClick={() => selectWholeSide(index, "source")} style={acceptButtonStyle}>
+                  <Button size="sm" type="button" onClick={() => selectWholeSide(index, "source")}>
                     Accept source
-                  </button>
-                  <button type="button" onClick={() => selectWholeSide(index, "current")} style={acceptButtonStyle}>
+                  </Button>
+                  <Button size="sm" type="button" onClick={() => selectWholeSide(index, "current")}>
                     Accept current
-                  </button>
+                  </Button>
                 </div>
               );
             })}

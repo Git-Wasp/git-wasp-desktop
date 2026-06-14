@@ -2,6 +2,8 @@ import { useEffect } from "react";
 import { useWorkingTreeStore } from "../../stores/workingTreeStore";
 import { HunkDiffViewer } from "./HunkDiffViewer";
 import { CommitForm } from "./CommitForm";
+import { Button } from "../ui/Button";
+import { EmptyState } from "../ui/EmptyState";
 import type { StatusEntry } from "../../types/workingTree";
 
 const STATUS_ICONS: Record<string, string> = {
@@ -60,21 +62,16 @@ function FileRow({
       >
         {entry.path}
       </span>
-      <button
-        onClick={(e) => { e.stopPropagation(); action(); }}
-        style={{
-          fontSize: "var(--font-size-xs)",
-          padding: "2px var(--space-2)",
-          background: "var(--color-bg-panel)",
-          border: "1px solid var(--color-border-subtle)",
-          borderRadius: "var(--radius-sm)",
-          color: "var(--color-text-secondary)",
-          cursor: "pointer",
-          flexShrink: 0,
+      <Button
+        size="sm"
+        onClick={(e) => {
+          e.stopPropagation();
+          action();
         }}
+        style={{ flexShrink: 0 }}
       >
         {actionLabel}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -204,18 +201,7 @@ export function WorkingTreePanel() {
             onDiscardFile={() => selectedPath && discardFile(selectedPath)}
           />
         ) : (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              height: "100%",
-              color: "var(--color-text-muted)",
-              fontSize: "var(--font-size-sm)",
-            }}
-          >
-            Select a file to view its diff
-          </div>
+          <EmptyState message="Select a file to view its diff" />
         )}
       </div>
     </div>

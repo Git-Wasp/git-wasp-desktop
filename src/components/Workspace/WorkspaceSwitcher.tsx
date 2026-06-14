@@ -1,18 +1,8 @@
 import { useEffect, useState } from "react";
 import { useWorkspaceStore } from "../../stores/workspaceStore";
 import { RowMenu } from "../Sidebar/RowMenu";
-
-const inputStyle: React.CSSProperties = {
-  flex: 1,
-  fontSize: "var(--font-size-xs)",
-  fontFamily: "var(--font-family-mono)",
-  background: "var(--color-bg-input)",
-  border: "1px solid var(--color-border-subtle)",
-  borderRadius: "var(--radius-sm)",
-  color: "var(--color-text-primary)",
-  padding: "2px var(--space-2)",
-  outline: "none",
-};
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 
 export function WorkspaceSwitcher() {
   const {
@@ -85,49 +75,30 @@ export function WorkspaceSwitcher() {
         >
           Workspace
         </span>
-        <button
-          onClick={() => setShowNewWorkspace((v) => !v)}
-          style={{
-            fontSize: "var(--font-size-xs)",
-            padding: "1px var(--space-2)",
-            background: "transparent",
-            border: "1px solid var(--color-border-subtle)",
-            borderRadius: "var(--radius-sm)",
-            color: "var(--color-text-muted)",
-            cursor: "pointer",
-          }}
-        >
+        <Button size="sm" onClick={() => setShowNewWorkspace((v) => !v)}>
           + New Workspace
-        </button>
+        </Button>
       </div>
 
       {showNewWorkspace && (
         <div style={{ padding: "0 var(--space-3)", marginBottom: "var(--space-1)", display: "flex", gap: "var(--space-1)" }}>
-          <input
+          <Input
             autoFocus
             value={newWorkspaceName}
             onChange={(e) => setNewWorkspaceName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") handleCreate();
-              if (e.key === "Escape") { setShowNewWorkspace(false); setNewWorkspaceName(""); }
+              if (e.key === "Escape") {
+                setShowNewWorkspace(false);
+                setNewWorkspaceName("");
+              }
             }}
             placeholder="Workspace name"
-            style={inputStyle}
+            style={{ flex: 1, fontFamily: "var(--font-family-mono)" }}
           />
-          <button
-            onClick={handleCreate}
-            style={{
-              fontSize: "var(--font-size-xs)",
-              padding: "2px var(--space-2)",
-              background: "var(--color-accent-primary)",
-              border: "none",
-              borderRadius: "var(--radius-sm)",
-              color: "#fff",
-              cursor: "pointer",
-            }}
-          >
+          <Button variant="primary" size="sm" onClick={handleCreate}>
             Create
-          </button>
+          </Button>
         </div>
       )}
 
@@ -155,7 +126,7 @@ export function WorkspaceSwitcher() {
               }}
             >
               {renamingId === w.id ? (
-                <input
+                <Input
                   autoFocus
                   value={renameValue}
                   onChange={(e) => setRenameValue(e.target.value)}
@@ -163,7 +134,7 @@ export function WorkspaceSwitcher() {
                     if (e.key === "Enter") handleRename(w.id);
                     if (e.key === "Escape") setRenamingId(null);
                   }}
-                  style={inputStyle}
+                  style={{ flex: 1, fontFamily: "var(--font-family-mono)" }}
                 />
               ) : (
                 <button

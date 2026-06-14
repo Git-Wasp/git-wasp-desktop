@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { IconButton } from "../ui/IconButton";
 
 export interface RowMenuItem {
   label: string;
@@ -23,7 +24,7 @@ export function RowMenu({ items, label }: { items: RowMenuItem[]; label: string 
 
   return (
     <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
-      <button
+      <IconButton
         onClick={(e) => {
           e.stopPropagation();
           setOpen((v) => !v);
@@ -32,20 +33,9 @@ export function RowMenu({ items, label }: { items: RowMenuItem[]; label: string 
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
-        style={{
-          fontSize: "var(--font-size-xs)",
-          padding: "1px 4px",
-          background: "transparent",
-          border: "none",
-          borderRadius: "var(--radius-sm)",
-          color: "var(--color-text-muted)",
-          cursor: "pointer",
-          opacity: 0.7,
-          lineHeight: 1,
-        }}
       >
         ⋮
-      </button>
+      </IconButton>
       {open && (
         <div
           role="menu"

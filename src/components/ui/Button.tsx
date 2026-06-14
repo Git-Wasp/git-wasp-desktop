@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from "react";
 
 export type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
@@ -49,23 +50,27 @@ function hoverBackground(variant: ButtonVariant): string {
  * styling so every button across the app reads the same. Forwards all native
  * button props (onClick, type, disabled, aria-label, title…).
  */
-export function Button({
-  variant = "secondary",
-  size = "md",
-  fullWidth,
-  loading,
-  disabled,
-  style,
-  children,
-  onMouseEnter,
-  onMouseLeave,
-  ...rest
-}: ButtonProps) {
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+  {
+    variant = "secondary",
+    size = "md",
+    fullWidth,
+    loading,
+    disabled,
+    style,
+    children,
+    onMouseEnter,
+    onMouseLeave,
+    ...rest
+  },
+  ref,
+) {
   const isDisabled = disabled || loading;
   const base = variantStyles(variant);
 
   return (
     <button
+      ref={ref}
       {...rest}
       disabled={isDisabled}
       aria-busy={loading || undefined}
@@ -98,4 +103,4 @@ export function Button({
       {loading ? "…" : children}
     </button>
   );
-}
+});

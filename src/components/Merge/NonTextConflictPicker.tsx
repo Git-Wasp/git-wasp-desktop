@@ -1,4 +1,5 @@
 import type { ConflictedFile, ConflictKind, ConflictSide } from "../../types/merge";
+import { Button } from "../ui/Button";
 
 interface NonTextConflictPickerProps {
   file: ConflictedFile;
@@ -68,16 +69,6 @@ const descriptionStyle: React.CSSProperties = {
   color: "var(--color-text-secondary)",
 };
 
-const choiceButtonStyle: React.CSSProperties = {
-  padding: "var(--space-1) var(--space-2)",
-  fontSize: "var(--font-size-sm)",
-  border: "1px solid var(--color-border-subtle)",
-  borderRadius: "var(--radius-sm)",
-  background: "var(--color-accent-primary)",
-  color: "#fff",
-  cursor: "pointer",
-};
-
 export function NonTextConflictPicker({ file, onResolveWithSide, onResolveWithDeletion }: NonTextConflictPickerProps) {
   const choices = choicesForFile(file, onResolveWithSide, onResolveWithDeletion);
 
@@ -87,9 +78,9 @@ export function NonTextConflictPicker({ file, onResolveWithSide, onResolveWithDe
       <p style={descriptionStyle}>{KIND_DESCRIPTION[file.kind]}</p>
       <div style={{ display: "flex", gap: "var(--space-2)" }}>
         {choices.map((choice) => (
-          <button key={choice.label} type="button" onClick={choice.onClick} style={choiceButtonStyle}>
+          <Button variant="primary" key={choice.label} type="button" onClick={choice.onClick}>
             {choice.label}
-          </button>
+          </Button>
         ))}
       </div>
     </div>

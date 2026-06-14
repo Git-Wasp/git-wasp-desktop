@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useWorkingTreeStore } from "../../stores/workingTreeStore";
 import type { StatusEntry } from "../../types/workingTree";
+import { EmptyState } from "../ui/EmptyState";
 
 const STATUS_ICONS: Record<string, string> = {
   Added: "A",
@@ -158,18 +159,7 @@ export function UncommittedPanel({ branch }: { branch: string | null }) {
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: "var(--space-2) 0" }}>
-        {status && count === 0 && (
-          <div
-            style={{
-              padding: "var(--space-4)",
-              textAlign: "center",
-              color: "var(--color-text-muted)",
-              fontSize: "var(--font-size-sm)",
-            }}
-          >
-            No uncommitted changes
-          </div>
-        )}
+        {status && count === 0 && <EmptyState message="No uncommitted changes" />}
         {status && (
           <>
             <Section title="Staged" entries={status.staged} kind="staged" selectedPath={selectedPath} onSelect={selectFile} />

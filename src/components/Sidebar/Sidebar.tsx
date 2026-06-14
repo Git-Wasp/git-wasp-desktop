@@ -8,6 +8,8 @@ import { useMergeStore } from "../../stores/mergeStore";
 import { StashPanel } from "./StashPanel";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { RowMenu } from "./RowMenu";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 import { RemoteActions } from "./RemoteActions";
 import { CloneDialog } from "../GitHub/CloneDialog";
 import { DeviceFlowModal } from "../GitHub/DeviceFlowModal";
@@ -141,22 +143,14 @@ export function Sidebar({
             {currentRepo.headBranch ?? "detached"}
           </div>
         )}
-        <button
+        <Button
+          variant="primary"
+          fullWidth
           onClick={handleOpenFolder}
-          style={{
-            marginTop: "var(--space-3)",
-            width: "100%",
-            padding: "var(--space-1) var(--space-2)",
-            fontSize: "var(--font-size-sm)",
-            background: "var(--color-accent-primary)",
-            color: "#fff",
-            border: "none",
-            borderRadius: "var(--radius-sm)",
-            cursor: "pointer",
-          }}
+          style={{ marginTop: "var(--space-3)" }}
         >
           Open Repository…
-        </button>
+        </Button>
 
         {/* View toggle */}
         {currentRepo && (
@@ -232,37 +226,13 @@ export function Sidebar({
             {isConnected ? `Connected · ${githubHost}` : `Not connected · ${githubHost}`}
           </span>
           {isConnected ? (
-            <button
-              onClick={() => logout(githubHost)}
-              style={{
-                fontSize: "var(--font-size-xs)",
-                padding: "1px var(--space-2)",
-                background: "transparent",
-                border: "1px solid var(--color-border-subtle)",
-                borderRadius: "var(--radius-sm)",
-                color: "var(--color-text-muted)",
-                cursor: "pointer",
-                flexShrink: 0,
-              }}
-            >
+            <Button size="sm" onClick={() => logout(githubHost)} style={{ flexShrink: 0 }}>
               Disconnect
-            </button>
+            </Button>
           ) : (
-            <button
-              onClick={() => setShowConnectFlow(true)}
-              style={{
-                fontSize: "var(--font-size-xs)",
-                padding: "1px var(--space-2)",
-                background: "transparent",
-                border: "1px solid var(--color-border-subtle)",
-                borderRadius: "var(--radius-sm)",
-                color: "var(--color-text-secondary)",
-                cursor: "pointer",
-                flexShrink: 0,
-              }}
-            >
+            <Button size="sm" onClick={() => setShowConnectFlow(true)} style={{ flexShrink: 0 }}>
               Connect
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -287,59 +257,30 @@ export function Sidebar({
           title="Branches"
           bodyStyle={{ overflowY: "auto", maxHeight: 220 }}
           action={
-            <button
-              onClick={() => setShowNewBranch((v) => !v)}
-              style={{
-                fontSize: "var(--font-size-xs)",
-                padding: "1px var(--space-2)",
-                background: "transparent",
-                border: "1px solid var(--color-border-subtle)",
-                borderRadius: "var(--radius-sm)",
-                color: "var(--color-text-muted)",
-                cursor: "pointer",
-              }}
-            >
+            <Button size="sm" onClick={() => setShowNewBranch((v) => !v)}>
               + New
-            </button>
+            </Button>
           }
         >
           {showNewBranch && (
             <div style={{ padding: "0 var(--space-3)", marginBottom: "var(--space-1)", display: "flex", gap: "var(--space-1)" }}>
-              <input
+              <Input
                 autoFocus
                 value={newBranchName}
                 onChange={(e) => setNewBranchName(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleCreateBranch();
-                  if (e.key === "Escape") { setShowNewBranch(false); setNewBranchName(""); }
+                  if (e.key === "Escape") {
+                    setShowNewBranch(false);
+                    setNewBranchName("");
+                  }
                 }}
                 placeholder="branch-name"
-                style={{
-                  flex: 1,
-                  fontSize: "var(--font-size-xs)",
-                  fontFamily: "var(--font-family-mono)",
-                  background: "var(--color-bg-input)",
-                  border: "1px solid var(--color-border-subtle)",
-                  borderRadius: "var(--radius-sm)",
-                  color: "var(--color-text-primary)",
-                  padding: "2px var(--space-2)",
-                  outline: "none",
-                }}
+                style={{ flex: 1, fontFamily: "var(--font-family-mono)" }}
               />
-              <button
-                onClick={handleCreateBranch}
-                style={{
-                  fontSize: "var(--font-size-xs)",
-                  padding: "2px var(--space-2)",
-                  background: "var(--color-accent-primary)",
-                  border: "none",
-                  borderRadius: "var(--radius-sm)",
-                  color: "#fff",
-                  cursor: "pointer",
-                }}
-              >
+              <Button variant="primary" size="sm" onClick={handleCreateBranch}>
                 Create
-              </button>
+              </Button>
             </div>
           )}
 
