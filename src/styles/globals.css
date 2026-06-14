@@ -37,6 +37,12 @@
   box-sizing: border-box;
 }
 
+/* Keyboard focus affordance — visible only for keyboard users, not mouse clicks. */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 html,
 body,
 #root {
