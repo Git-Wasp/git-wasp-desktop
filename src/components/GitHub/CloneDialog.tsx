@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useGithubStore } from "../../stores/githubStore";
 import { useRepoStore } from "../../stores/repoStore";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 import type { GithubRepo } from "../../types/github";
 import type { RepoInfo } from "../../types/repo";
 
@@ -80,22 +82,12 @@ export function CloneDialog({ host, onClose }: { host: string; onClose: () => vo
           Clone from GitHub
         </h2>
 
-        <input
+        <Input
+          fullWidth
           placeholder="Search repositories…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          style={{
-            width: "100%",
-            boxSizing: "border-box",
-            padding: "var(--space-1) var(--space-2)",
-            marginBottom: "var(--space-2)",
-            fontSize: "var(--font-size-sm)",
-            background: "var(--color-bg-input)",
-            border: "1px solid var(--color-border-subtle)",
-            borderRadius: "var(--radius-sm)",
-            color: "var(--color-text-primary)",
-            outline: "none",
-          }}
+          style={{ marginBottom: "var(--space-2)" }}
         />
 
         <div style={{ overflowY: "auto", maxHeight: 240, marginBottom: "var(--space-3)" }}>
@@ -130,20 +122,9 @@ export function CloneDialog({ host, onClose }: { host: string; onClose: () => vo
 
         {selected && (
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-3)" }}>
-            <button
-              onClick={handleChooseFolder}
-              style={{
-                padding: "var(--space-1) var(--space-2)",
-                fontSize: "var(--font-size-xs)",
-                background: "transparent",
-                color: "var(--color-text-secondary)",
-                border: "1px solid var(--color-border-subtle)",
-                borderRadius: "var(--radius-sm)",
-                cursor: "pointer",
-              }}
-            >
+            <Button variant="secondary" size="sm" onClick={handleChooseFolder}>
               Choose folder…
-            </button>
+            </Button>
             <span
               style={{
                 fontSize: "var(--font-size-xs)",
@@ -166,38 +147,12 @@ export function CloneDialog({ host, onClose }: { host: string; onClose: () => vo
         )}
 
         <div style={{ display: "flex", gap: "var(--space-2)" }}>
-          <button
-            onClick={onClose}
-            style={{
-              flex: 1,
-              padding: "var(--space-2)",
-              fontSize: "var(--font-size-sm)",
-              background: "transparent",
-              color: "var(--color-text-secondary)",
-              border: "1px solid var(--color-border-subtle)",
-              borderRadius: "var(--radius-sm)",
-              cursor: "pointer",
-            }}
-          >
+          <Button variant="secondary" fullWidth onClick={onClose}>
             Cancel
-          </button>
-          <button
-            onClick={handleClone}
-            disabled={!destPath || isCloning}
-            style={{
-              flex: 1,
-              padding: "var(--space-2)",
-              fontSize: "var(--font-size-sm)",
-              background: "var(--color-accent-primary)",
-              color: "#fff",
-              border: "none",
-              borderRadius: "var(--radius-sm)",
-              cursor: !destPath || isCloning ? "default" : "pointer",
-              opacity: !destPath || isCloning ? 0.6 : 1,
-            }}
-          >
+          </Button>
+          <Button variant="primary" fullWidth disabled={!destPath || isCloning} onClick={handleClone}>
             {isCloning ? "Cloning…" : "Clone"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

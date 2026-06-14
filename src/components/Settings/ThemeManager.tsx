@@ -1,25 +1,6 @@
 import { useEffect } from "react";
 import { useThemeStore, type ThemeInfo } from "../../stores/themeStore";
-
-const importButtonStyle: React.CSSProperties = {
-  padding: "var(--space-1) var(--space-3)",
-  fontSize: "var(--font-size-sm)",
-  background: "var(--color-accent-primary)",
-  color: "#fff",
-  border: "none",
-  borderRadius: "var(--radius-sm)",
-  cursor: "pointer",
-};
-
-const smallButtonStyle: React.CSSProperties = {
-  padding: "var(--space-1) var(--space-2)",
-  fontSize: "var(--font-size-xs)",
-  background: "transparent",
-  color: "var(--color-text-secondary)",
-  border: "1px solid var(--color-border-subtle)",
-  borderRadius: "var(--radius-sm)",
-  cursor: "pointer",
-};
+import { Button } from "../ui/Button";
 
 function ThemeRow({ theme, active }: { theme: ThemeInfo; active: boolean }) {
   const { setActiveTheme, deleteTheme, previewTheme, clearPreview } = useThemeStore();
@@ -57,27 +38,28 @@ function ThemeRow({ theme, active }: { theme: ThemeInfo; active: boolean }) {
       {active ? (
         <span style={{ fontSize: "var(--font-size-xs)", color: "var(--color-accent-primary)" }}>Active</span>
       ) : (
-        <button
+        <Button
           type="button"
+          size="sm"
           aria-label={`Activate ${theme.name}`}
           onClick={() => setActiveTheme(theme.id)}
-          style={smallButtonStyle}
         >
           Activate
-        </button>
+        </Button>
       )}
 
       {!theme.builtin && (
-        <button
+        <Button
           type="button"
+          size="sm"
+          variant="danger"
           aria-label={`Delete ${theme.name}`}
           onClick={() => {
             if (window.confirm(`Delete theme "${theme.name}"?`)) deleteTheme(theme.id);
           }}
-          style={{ ...smallButtonStyle, color: "var(--color-danger)", borderColor: "var(--color-danger)" }}
         >
           Delete
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -103,9 +85,9 @@ export function ThemeManager() {
         <span style={{ fontSize: "var(--font-size-sm)", color: "var(--color-text-secondary)" }}>
           Hover a theme to preview it; click Activate to keep it.
         </span>
-        <button type="button" onClick={() => importTheme()} style={importButtonStyle}>
+        <Button variant="primary" type="button" onClick={() => importTheme()}>
           Import theme…
-        </button>
+        </Button>
       </div>
 
       <div

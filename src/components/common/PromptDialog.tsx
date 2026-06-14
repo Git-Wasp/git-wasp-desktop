@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 
 interface PromptDialogProps {
   title: string;
@@ -83,58 +85,22 @@ export function PromptDialog({
           </label>
         )}
 
-        <input
+        <Input
           autoFocus
+          fullWidth
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          style={{
-            width: "100%",
-            boxSizing: "border-box",
-            padding: "var(--space-1) var(--space-2)",
-            marginBottom: "var(--space-3)",
-            fontSize: "var(--font-size-sm)",
-            background: "var(--color-bg-input)",
-            border: "1px solid var(--color-border-subtle)",
-            borderRadius: "var(--radius-sm)",
-            color: "var(--color-text-primary)",
-            outline: "none",
-          }}
+          style={{ marginBottom: "var(--space-3)" }}
         />
 
         <div style={{ display: "flex", gap: "var(--space-2)" }}>
-          <button
-            onClick={onCancel}
-            style={{
-              flex: 1,
-              padding: "var(--space-2)",
-              fontSize: "var(--font-size-sm)",
-              background: "transparent",
-              color: "var(--color-text-secondary)",
-              border: "1px solid var(--color-border-subtle)",
-              borderRadius: "var(--radius-sm)",
-              cursor: "pointer",
-            }}
-          >
+          <Button variant="secondary" fullWidth onClick={onCancel}>
             Cancel
-          </button>
-          <button
-            onClick={confirm}
-            disabled={!canConfirm}
-            style={{
-              flex: 1,
-              padding: "var(--space-2)",
-              fontSize: "var(--font-size-sm)",
-              background: "var(--color-accent-primary)",
-              color: "#fff",
-              border: "none",
-              borderRadius: "var(--radius-sm)",
-              cursor: canConfirm ? "pointer" : "default",
-              opacity: canConfirm ? 1 : 0.6,
-            }}
-          >
+          </Button>
+          <Button variant="primary" fullWidth disabled={!canConfirm} onClick={confirm}>
             {confirmLabel}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
