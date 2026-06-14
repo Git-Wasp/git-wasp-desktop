@@ -168,10 +168,12 @@ fn assign_lanes(
             }
         };
 
-        // Collect edges visible in this row (lanes passing through).
+        // Each edge describes how a lane at this row connects to the next row.
+        // The renderer draws it from this row's dot centre down to the next
+        // row's centre, so lines join dot-to-dot.
         let mut edges: Vec<GraphEdge> = Vec::new();
 
-        // For each active lane, emit a "straight" edge if it passes through.
+        // Other occupied lanes pass straight through to the next row.
         for (i, slot) in active_lanes.iter().enumerate() {
             if slot.is_some() && i != lane {
                 edges.push(GraphEdge {
@@ -198,11 +200,18 @@ fn assign_lanes(
                     kind: EdgeKind::Merge,
                 });
             } else if !primary_lane_given {
-                // Primary parent inherits this commit's lane (straight continuation).
+                // Primary parent inherits this commit's lane: draw the straight
+                // continuation down to it (the line through the dots).
                 active_lanes[lane] = Some(*parent);
                 lane_colors[lane] = color_index;
                 reserved.insert(*parent, (lane, color_index));
                 primary_lane_given = true;
+                edges.push(GraphEdge {
+                    src_lane: lane,
+                    dst_lane: lane,
+                    color_index,
+                    kind: EdgeKind::Straight,
+                });
             } else {
                 // Secondary parent → new lane (branch opening).
                 let free = active_lanes.iter().position(|s| s.is_none());
@@ -359,6 +368,31 @@ mod tests {
         assert!(viewport.nodes[1].is_head);
         assert_eq!(viewport.nodes[1].row, 1);
         assert_eq!(viewport.nodes[0].lane, viewport.nodes[1].lane);
+    }
+
+    #[test]
+    fn linear_history_has_straight_connecting_edges() {
+        let (_dir, repo) = init_repo();
+        let c1 = repo.find_commit(make_commit(&repo, "first", &[])).unwrap();
+        let c2 = repo.find_commit(make_commit(&repo, "second", &[&c1])).unwrap();
+        make_commit(&repo, "third", &[&c2]);
+
+        let viewport = compute_layout(&repo, 0, 10).unwrap();
+
+        // Every commit except the root has a straight edge to its parent in the
+        // same lane (the line through the dots).
+        for node in viewport.nodes.iter().filter(|n| !n.parents.is_empty()) {
+            assert!(
+                node.edges
+                    .iter()
+                    .any(|e| matches!(e.kind, EdgeKind::Straight) && e.src_lane == 0 && e.dst_lane == 0),
+                "node {} missing its straight continuation edge",
+                node.summary,
+            );
+        }
+        // The root commit (no parent) has no outgoing edge.
+        let root = viewport.nodes.iter().find(|n| n.parents.is_empty()).unwrap();
+        assert!(root.edges.is_empty());
     }
 
     #[test]

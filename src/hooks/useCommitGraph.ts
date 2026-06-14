@@ -97,21 +97,23 @@ export function useCommitGraph(
         ctx.fillRect(0, localRow * rowHeight, cssW, rowHeight);
       }
 
-      // Edges passing through this row.
+      // Edges connect this row's dot centre to the next row's centre, so the
+      // lines join dot-to-dot (an edge spans the lower half of this row and the
+      // upper half of the next).
+      const yMid = localRow * rowHeight + rowHeight / 2;
+      const yNext = yMid + rowHeight;
       node.edges.forEach((edge) => {
         ctx.strokeStyle = laneColors[edge.colorIndex % 8] || "#4d9de0";
         ctx.lineWidth = lineWidth;
         ctx.beginPath();
         const srcX = edge.srcLane * laneWidth + laneWidth / 2;
         const dstX = edge.dstLane * laneWidth + laneWidth / 2;
-        if (edge.kind === "Straight") {
-          ctx.moveTo(srcX, localRow * rowHeight);
-          ctx.lineTo(srcX, (localRow + 1) * rowHeight);
+        if (srcX === dstX) {
+          ctx.moveTo(srcX, yMid);
+          ctx.lineTo(srcX, yNext);
         } else {
-          const topY = localRow * rowHeight;
-          const botY = (localRow + 1) * rowHeight;
-          ctx.moveTo(srcX, topY);
-          ctx.bezierCurveTo(srcX, topY + rowHeight * 0.5, dstX, botY - rowHeight * 0.5, dstX, botY);
+          ctx.moveTo(srcX, yMid);
+          ctx.bezierCurveTo(srcX, yMid + rowHeight * 0.5, dstX, yNext - rowHeight * 0.5, dstX, yNext);
         }
         ctx.stroke();
       });
