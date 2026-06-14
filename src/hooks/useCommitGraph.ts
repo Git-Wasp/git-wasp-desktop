@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import type { GraphViewport } from "../types/graph";
 import { THEME_CHANGE_EVENT } from "../lib/applyTheme";
 
+// Left padding inside the graph column so dots clear the branch|graph divider.
+const GRAPH_PAD_LEFT = 10;
+
 interface Selection {
   anchor: string | null;
   focus: string | null;
@@ -44,6 +47,9 @@ export function useCommitGraph(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   viewport: GraphViewport | null,
   selection: Selection,
+  // The canvas CSS width; a change must re-size the pixel buffer and redraw,
+  // otherwise the browser stretches the stale bitmap and squashes the dots.
+  width?: number,
 ): void {
   const configRef = useRef<GraphConfig | null>(null);
   const laneColorsRef = useRef<string[]>([]);
@@ -74,6 +80,7 @@ export function useCommitGraph(
     const { rowHeight, laneWidth, dotRadius, lineWidth } = configRef.current;
     const laneColors = laneColorsRef.current;
     const selectedBg = resolveCssVar("--color-bg-selected") || "rgba(77, 157, 224, 0.15)";
+    const nodeBg = resolveCssVar("--color-graph-node-bg") || "rgba(255, 255, 255, 0.035)";
     const dpr = window.devicePixelRatio || 1;
 
     const cssW = canvas.clientWidth;
@@ -85,33 +92,51 @@ export function useCommitGraph(
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
 
+    const laneX = (lane: number) => GRAPH_PAD_LEFT + lane * laneWidth + laneWidth / 2;
+
     // row 0 here corresponds to viewport.offset in the full graph.
     viewport.nodes.forEach((node, localRow) => {
       const y = localRow * rowHeight + rowHeight / 2;
-      const x = node.lane * laneWidth + laneWidth / 2;
+      const x = laneX(node.lane);
       const color = laneColors[node.colorIndex % 8] || "#4d9de0";
+      const rowTop = localRow * rowHeight;
+
+      // Per-commit highlight band behind the row.
+      if (!node.isWorkingTree) {
+        ctx.fillStyle = nodeBg;
+        ctx.fillRect(0, rowTop + 1, cssW, rowHeight - 2);
+      }
 
       // Selection band (graph-column portion; the DOM cells match it).
       if (selection.range.has(node.oid)) {
         ctx.fillStyle = selectedBg;
-        ctx.fillRect(0, localRow * rowHeight, cssW, rowHeight);
+        ctx.fillRect(0, rowTop, cssW, rowHeight);
       }
 
-      // Edges passing through this row.
+      // Strong right-aligned accent line in the commit's lane colour, drawn on
+      // top of the bands so it reads clearly even when the row is selected.
+      if (!node.isWorkingTree) {
+        ctx.fillStyle = color;
+        ctx.fillRect(cssW - 3, rowTop + 5, 3, rowHeight - 10);
+      }
+
+      // Edges connect this row's dot centre to the next row's centre, so the
+      // lines join dot-to-dot (an edge spans the lower half of this row and the
+      // upper half of the next).
+      const yMid = localRow * rowHeight + rowHeight / 2;
+      const yNext = yMid + rowHeight;
       node.edges.forEach((edge) => {
         ctx.strokeStyle = laneColors[edge.colorIndex % 8] || "#4d9de0";
         ctx.lineWidth = lineWidth;
         ctx.beginPath();
-        const srcX = edge.srcLane * laneWidth + laneWidth / 2;
-        const dstX = edge.dstLane * laneWidth + laneWidth / 2;
-        if (edge.kind === "Straight") {
-          ctx.moveTo(srcX, localRow * rowHeight);
-          ctx.lineTo(srcX, (localRow + 1) * rowHeight);
+        const srcX = laneX(edge.srcLane);
+        const dstX = laneX(edge.dstLane);
+        if (srcX === dstX) {
+          ctx.moveTo(srcX, yMid);
+          ctx.lineTo(srcX, yNext);
         } else {
-          const topY = localRow * rowHeight;
-          const botY = (localRow + 1) * rowHeight;
-          ctx.moveTo(srcX, topY);
-          ctx.bezierCurveTo(srcX, topY + rowHeight * 0.5, dstX, botY - rowHeight * 0.5, dstX, botY);
+          ctx.moveTo(srcX, yMid);
+          ctx.bezierCurveTo(srcX, yMid + rowHeight * 0.5, dstX, yNext - rowHeight * 0.5, dstX, yNext);
         }
         ctx.stroke();
       });
@@ -139,5 +164,5 @@ export function useCommitGraph(
         ctx.stroke();
       }
     });
-  }, [viewport, selection, canvasRef, themeTick]);
+  }, [viewport, selection, canvasRef, themeTick, width]);
 }

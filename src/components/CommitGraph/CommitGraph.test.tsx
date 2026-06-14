@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { CommitGraph } from "./CommitGraph";
@@ -89,6 +89,18 @@ describe("CommitGraph columns", () => {
     fireEvent.click(screen.getByText("second commit"));
     expect(selectCommit).toHaveBeenCalledWith("b".repeat(40), false);
     expect(onCommitSelect).toHaveBeenCalled();
+  });
+
+  it("persists a resized branch column width to localStorage", () => {
+    localStorage.removeItem("graphBranchColWidth");
+    render(<CommitGraph />);
+    const handle = screen.getByRole("separator", { name: "Resize branch column" });
+
+    act(() => handle.dispatchEvent(new MouseEvent("pointerdown", { clientX: 100, bubbles: true })));
+    act(() => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 140, bubbles: true })));
+    act(() => window.dispatchEvent(new MouseEvent("pointerup", { clientX: 140, bubbles: true })));
+
+    expect(localStorage.getItem("graphBranchColWidth")).toBe("220"); // 180 default + 40
   });
 });
 

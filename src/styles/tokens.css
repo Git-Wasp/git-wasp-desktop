@@ -126,8 +126,10 @@
   /* === LAYOUT — Commit graph === */
   --graph-row-height: 34px;
   --graph-lane-width: 20px;
-  --graph-dot-radius: 5px;
+  --graph-dot-radius: 8px;
   --graph-line-width: 2px;
+  /* Semi-opaque highlight behind each commit row in the graph column. */
+  --color-graph-node-bg: rgba(255, 255, 255, 0.035);
 }
 
 /* Light theme overrides — surface/text/border plus the colour groups that
@@ -174,4 +176,5 @@
   --color-bg-selected: #d6e6fb;
   --color-bg-input:    #ffffff;
   --color-bg-hover:    #e3e7ec;
+  --color-graph-node-bg: rgba(0, 0, 0, 0.04);
 }
