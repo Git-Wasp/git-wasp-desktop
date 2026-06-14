@@ -204,7 +204,7 @@ export function CommitGraph({
     }
   };
 
-  useCommitGraph(canvasRef, viewport, selection);
+  useCommitGraph(canvasRef, viewport, selection, graphWidth);
 
   const offset = viewport?.offset ?? 0;
   const totalHeight = (viewport?.totalCount ?? 0) * ROW_HEIGHT;

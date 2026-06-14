@@ -44,6 +44,9 @@ export function useCommitGraph(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   viewport: GraphViewport | null,
   selection: Selection,
+  // The canvas CSS width; a change must re-size the pixel buffer and redraw,
+  // otherwise the browser stretches the stale bitmap and squashes the dots.
+  width?: number,
 ): void {
   const configRef = useRef<GraphConfig | null>(null);
   const laneColorsRef = useRef<string[]>([]);
@@ -156,5 +159,5 @@ export function useCommitGraph(
         ctx.stroke();
       }
     });
-  }, [viewport, selection, canvasRef, themeTick]);
+  }, [viewport, selection, canvasRef, themeTick, width]);
 }
