@@ -57,11 +57,16 @@ export function ResizeHandle({
       }}
       style={{
         flexShrink: 0,
-        width: 5,
+        width: 7,
+        display: "flex",
+        justifyContent: "center",
         cursor: "col-resize",
-        background: "var(--color-border-subtle)",
+        background: "transparent",
         ...style,
       }}
-    />
+    >
+      {/* Thin visible divider centred in a wider (transparent) grab zone. */}
+      <div style={{ width: 1, alignSelf: "stretch", background: "var(--color-border-subtle)" }} />
+    </div>
   );
 }

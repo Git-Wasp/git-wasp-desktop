@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import type { GraphViewport } from "../types/graph";
 import { THEME_CHANGE_EVENT } from "../lib/applyTheme";
 
+// Left padding inside the graph column so dots clear the branch|graph divider.
+const GRAPH_PAD_LEFT = 10;
+
 interface Selection {
   anchor: string | null;
   focus: string | null;
@@ -89,10 +92,12 @@ export function useCommitGraph(
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
 
+    const laneX = (lane: number) => GRAPH_PAD_LEFT + lane * laneWidth + laneWidth / 2;
+
     // row 0 here corresponds to viewport.offset in the full graph.
     viewport.nodes.forEach((node, localRow) => {
       const y = localRow * rowHeight + rowHeight / 2;
-      const x = node.lane * laneWidth + laneWidth / 2;
+      const x = laneX(node.lane);
       const color = laneColors[node.colorIndex % 8] || "#4d9de0";
       const rowTop = localRow * rowHeight;
 
@@ -124,8 +129,8 @@ export function useCommitGraph(
         ctx.strokeStyle = laneColors[edge.colorIndex % 8] || "#4d9de0";
         ctx.lineWidth = lineWidth;
         ctx.beginPath();
-        const srcX = edge.srcLane * laneWidth + laneWidth / 2;
-        const dstX = edge.dstLane * laneWidth + laneWidth / 2;
+        const srcX = laneX(edge.srcLane);
+        const dstX = laneX(edge.dstLane);
         if (srcX === dstX) {
           ctx.moveTo(srcX, yMid);
           ctx.lineTo(srcX, yNext);

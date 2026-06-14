@@ -246,12 +246,12 @@ export function CommitGraph({
       <ResizeHandle
         ariaLabel="Resize branch column"
         onResize={(dx) => setBranchWidth((w) => w + dx)}
-        style={{ position: "absolute", top: 0, bottom: 0, left: branchWidth - 2, zIndex: 5 }}
+        style={{ position: "absolute", top: 0, bottom: 0, left: branchWidth - 3, zIndex: 5 }}
       />
       <ResizeHandle
         ariaLabel="Resize graph column"
         onResize={(dx) => setGraphWidth((w) => w + dx)}
-        style={{ position: "absolute", top: 0, bottom: 0, left: branchWidth + graphWidth - 2, zIndex: 5 }}
+        style={{ position: "absolute", top: 0, bottom: 0, left: branchWidth + graphWidth - 3, zIndex: 5 }}
       />
 
       {/* Scrollable rows */}
