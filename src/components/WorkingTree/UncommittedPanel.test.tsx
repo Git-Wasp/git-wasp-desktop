@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { UncommittedPanel } from "./UncommittedPanel";
 import { useWorkingTreeStore } from "../../stores/workingTreeStore";
+import { useGraphStore } from "../../stores/graphStore";
 import type { WorkingTreeStatus } from "../../types/workingTree";
 
 const status: WorkingTreeStatus = {
@@ -17,10 +18,17 @@ beforeEach(() => {
     status,
     selectedPath: null,
     selectedDiff: null,
+    identity: { name: "A", email: "a@a" },
     loadStatus: vi.fn().mockResolvedValue(undefined),
     startWatching: vi.fn().mockResolvedValue(() => {}),
     selectFile: vi.fn().mockResolvedValue(undefined),
+    stageFile: vi.fn().mockResolvedValue(undefined),
+    unstageFile: vi.fn().mockResolvedValue(undefined),
+    createCommit: vi.fn().mockResolvedValue(undefined),
+    discardAll: vi.fn().mockResolvedValue(undefined),
+    loadIdentity: vi.fn(),
   });
+  useGraphStore.setState({ fetchViewport: vi.fn().mockResolvedValue(undefined) });
 });
 
 describe("UncommittedPanel", () => {
