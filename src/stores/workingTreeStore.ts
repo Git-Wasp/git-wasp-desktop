@@ -23,6 +23,7 @@ interface WorkingTreeStore {
   unstageHunk: (path: string, hunkIndex: number) => Promise<void>;
   discardFile: (path: string) => Promise<void>;
   discardHunk: (path: string, hunkIndex: number) => Promise<void>;
+  discardAll: () => Promise<void>;
   createCommit: (message: string) => Promise<void>;
   loadIdentity: () => Promise<void>;
   startWatching: () => Promise<() => void>;
@@ -85,6 +86,13 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
     if (get().selectedPath === path) {
       await get().selectFile(path, "unstaged");
     }
+  },
+
+  discardAll: async () => {
+    const status = await invoke<WorkingTreeStatus>("discard_all");
+    set({ status, selectedPath: null, selectedDiff: null });
+    // Keep the graph's working-tree node in sync after a bulk discard.
+    useGraphStore.getState().refresh();
   },
 
   createCommit: async (message: string) => {

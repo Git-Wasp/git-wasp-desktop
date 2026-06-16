@@ -51,6 +51,7 @@ pub fn run() {
             // Discard
             commands::discard::discard_file,
             commands::discard::discard_hunk,
+            commands::discard::discard_all,
             // Commit
             commands::commit::create_commit,
             commands::commit::get_commit_identity,

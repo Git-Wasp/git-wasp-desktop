@@ -55,3 +55,50 @@ body,
   line-height: var(--line-height-normal);
   -webkit-font-smoothing: antialiased;
 }
+
+/* Rendered markdown (commit-message preview). Tame default element margins so a
+   short message previews compactly. */
+.markdown-preview > :first-child {
+  margin-top: 0;
+}
+.markdown-preview > :last-child {
+  margin-bottom: 0;
+}
+.markdown-preview p,
+.markdown-preview ul,
+.markdown-preview ol,
+.markdown-preview pre {
+  margin: 0 0 var(--space-2);
+}
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3,
+.markdown-preview h4 {
+  margin: var(--space-2) 0 var(--space-1);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+}
+.markdown-preview ul,
+.markdown-preview ol {
+  padding-left: var(--space-5);
+}
+.markdown-preview code {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  background: var(--color-bg-elevated);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+}
+.markdown-preview pre {
+  background: var(--color-bg-elevated);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+}
+.markdown-preview pre code {
+  background: none;
+  padding: 0;
+}
+.markdown-preview a {
+  color: var(--color-accent-primary);
+}
