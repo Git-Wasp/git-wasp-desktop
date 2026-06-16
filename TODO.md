@@ -71,3 +71,15 @@ between sections, and add new ideas under the right heading. Items marked
 - [ ] `cargo-deny` / licence audit in CI (Phase 6)
 - [ ] Error-handling audit — every git failure surfaces a clear, actionable message (Phase 6)
 - [ ] Graph performance profiling against large repos (10k+ commits) (Phase 6)
+
+## General UX
+
+- [ ] Toast notification system including options for placement (top/middle/bottom + left/right)
+- [ ] Auto close right panel when commit completed
+- [ ] Progress/spinners for buttons (e.g. when pushing, pulling) to show something is happening
+- [ ] Branch selection highlight obscures the graph lines - z-index issue?
+- [ ] Include section in settings to view open source packages used?
+- [ ] Main buttons "open repository", "history", "prs" to move to menu/tabs
+- [ ] Allow removing items from "recent"
+- [ ] Fetch/pull/push buttons to be removed from left sidebar
+- [ ] Better primary/secondary button design (currently boring!)
