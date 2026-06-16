@@ -7,6 +7,7 @@
 - [ ] Integrate user icons via gravatar
 - [ ] Multi tab view for opening multiple repositories at once
 - [ ] Remove unnecessary “workspace” feature
+- [ ] Add support for executing git hooks (pre-commit and pre-push). Show output in built in view pane.
 - [ ] Add support for work trees
 - [ ] Right-click actions on commits
 - [ ] Right-click actions on branches e.g. delete local, push, etc.
