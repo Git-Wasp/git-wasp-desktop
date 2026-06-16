@@ -8,7 +8,6 @@ import { UncommittedPanel } from "./components/WorkingTree/UncommittedPanel";
 import { HunkDiffViewer } from "./components/WorkingTree/HunkDiffViewer";
 import { PRPanel } from "./components/PRPanel/PRPanel";
 import { MergeEditor } from "./components/Merge/MergeEditor";
-import { WorkspaceOverview } from "./components/Workspace/WorkspaceOverview";
 import { SettingsView } from "./components/Settings/SettingsView";
 import { ResizeHandle } from "./components/common/ResizeHandle";
 import { usePersistedWidth } from "./lib/usePersistedWidth";
@@ -19,7 +18,7 @@ import { useMergeStore } from "./stores/mergeStore";
 import { useThemeStore } from "./stores/themeStore";
 import { useWorkingTreeStore } from "./stores/workingTreeStore";
 
-type View = "history" | "working-tree" | "prs" | "workspace" | "settings";
+type View = "history" | "working-tree" | "prs" | "settings";
 
 export default function App() {
   const { loadCurrentRepo, currentRepo } = useRepoStore();
@@ -163,10 +162,8 @@ export default function App() {
           <WorkingTreePanel />
         ) : view === "prs" ? (
           <PRPanel />
-        ) : view === "settings" ? (
-          <SettingsView />
         ) : (
-          <WorkspaceOverview />
+          <SettingsView />
         )}
       </div>
     </div>

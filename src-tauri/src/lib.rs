@@ -11,7 +11,6 @@ mod repo_manager;
 mod stash;
 mod themes;
 mod working_tree;
-mod workspace_ops;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -85,19 +84,6 @@ pub fn run() {
             commands::github::list_github_repos,
             commands::github::list_pull_requests,
             commands::github::create_pull_request,
-            // Workspaces
-            commands::workspace::list_workspaces,
-            commands::workspace::create_workspace,
-            commands::workspace::rename_workspace,
-            commands::workspace::delete_workspace,
-            commands::workspace::add_repo_to_workspace,
-            commands::workspace::remove_repo_from_workspace,
-            commands::workspace::set_active_workspace,
-            commands::workspace::get_active_workspace,
-            commands::workspace::get_workspace_status,
-            commands::workspace::workspace_fetch_all,
-            commands::workspace::workspace_pull_all,
-            commands::workspace::search_workspace,
             // Themes
             commands::theme::list_custom_themes,
             commands::theme::import_theme,

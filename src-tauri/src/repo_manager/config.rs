@@ -28,15 +28,6 @@ impl GithubHostConfig {
     }
 }
 
-/// A named group of repository paths, persisted for cross-repo workflows.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Workspace {
-    pub id: String,
-    pub name: String,
-    pub repo_paths: Vec<PathBuf>,
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
@@ -44,10 +35,6 @@ pub struct AppConfig {
     pub last_repo_path: Option<PathBuf>,
     #[serde(default = "default_github_hosts")]
     pub github_hosts: Vec<GithubHostConfig>,
-    #[serde(default)]
-    pub workspaces: Vec<Workspace>,
-    #[serde(default)]
-    pub active_workspace_id: Option<String>,
     #[serde(default)]
     pub active_theme: Option<String>,
 }
@@ -62,8 +49,6 @@ impl Default for AppConfig {
             recent_repos: Vec::new(),
             last_repo_path: None,
             github_hosts: default_github_hosts(),
-            workspaces: Vec::new(),
-            active_workspace_id: None,
             active_theme: None,
         }
     }
@@ -140,41 +125,12 @@ mod tests {
     }
 
     #[test]
-    fn default_config_has_no_workspaces() {
-        let config = AppConfig::default();
-        assert!(config.workspaces.is_empty());
-        assert_eq!(config.active_workspace_id, None);
-    }
-
-    #[test]
-    fn workspace_round_trips_json() {
-        let mut config = AppConfig::default();
-        config.workspaces.push(Workspace {
-            id: "ws-1".to_string(),
-            name: "My Workspace".to_string(),
-            repo_paths: vec![PathBuf::from("/repos/a"), PathBuf::from("/repos/b")],
-        });
-        config.active_workspace_id = Some("ws-1".to_string());
-
-        let json = serde_json::to_string(&config).unwrap();
-        let restored: AppConfig = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(restored.workspaces.len(), 1);
-        assert_eq!(restored.workspaces[0].id, "ws-1");
-        assert_eq!(restored.workspaces[0].name, "My Workspace");
-        assert_eq!(
-            restored.workspaces[0].repo_paths,
-            vec![PathBuf::from("/repos/a"), PathBuf::from("/repos/b")]
-        );
-        assert_eq!(restored.active_workspace_id, Some("ws-1".to_string()));
-    }
-
-    #[test]
-    fn legacy_config_without_workspaces_gets_default() {
-        let json = r#"{"recentRepos":[],"lastRepoPath":null}"#;
+    fn unknown_legacy_workspace_fields_are_ignored() {
+        // Old configs may still carry workspace keys; serde ignores unknown
+        // fields, so loading them must succeed.
+        let json = r#"{"recentRepos":[],"lastRepoPath":null,"workspaces":[{"id":"ws-1","name":"x","repoPaths":[]}],"activeWorkspaceId":"ws-1"}"#;
         let config: AppConfig = serde_json::from_str(json).unwrap();
-        assert!(config.workspaces.is_empty());
-        assert_eq!(config.active_workspace_id, None);
+        assert!(config.recent_repos.is_empty());
     }
 
     #[test]

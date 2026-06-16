@@ -8,11 +8,8 @@ import { useGraphStore } from "../../stores/graphStore";
 import { useGithubStore } from "../../stores/githubStore";
 import { useRemoteStore } from "../../stores/remoteStore";
 import { useMergeStore } from "../../stores/mergeStore";
-import { useWorkspaceStore } from "../../stores/workspaceStore";
 
 const mockInvoke = vi.mocked(invoke);
-
-const workspaceA = { id: "ws-1", name: "Workspace A", repoPaths: [] };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -71,52 +68,29 @@ beforeEach(() => {
     status: { kind: "none" },
     startMerge: vi.fn().mockResolvedValue({ kind: "none" }),
   });
-
-  useWorkspaceStore.setState({
-    workspaces: [workspaceA],
-    activeWorkspace: workspaceA,
-    repoStatuses: [],
-    searchResults: [],
-    operationResults: [],
-    isLoadingStatus: false,
-    isSearching: false,
-    isFetchingAll: false,
-    isPullingAll: false,
-    lastError: null,
-    loadWorkspaces: vi.fn().mockResolvedValue(undefined),
-    loadActiveWorkspace: vi.fn().mockResolvedValue(undefined),
-    createWorkspace: vi.fn().mockResolvedValue(workspaceA),
-    renameWorkspace: vi.fn().mockResolvedValue(undefined),
-    deleteWorkspace: vi.fn().mockResolvedValue(undefined),
-    addRepoToWorkspace: vi.fn().mockResolvedValue(undefined),
-    removeRepoFromWorkspace: vi.fn().mockResolvedValue(undefined),
-    setActiveWorkspace: vi.fn().mockResolvedValue(undefined),
-    loadStatus: vi.fn().mockResolvedValue(undefined),
-    search: vi.fn().mockResolvedValue(undefined),
-    fetchAll: vi.fn().mockResolvedValue(undefined),
-    pullAll: vi.fn().mockResolvedValue(undefined),
-  });
 });
 
 describe("Sidebar", () => {
-  it("renders a Workspace nav button that switches the view", () => {
+  it("renders the History, Changes, and PRs nav buttons", () => {
+    render(<Sidebar view="history" onViewChange={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "History" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Changes" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "PRs" })).toBeInTheDocument();
+  });
+
+  it("switches the view when a nav button is clicked", () => {
     const onViewChange = vi.fn();
     render(<Sidebar view="history" onViewChange={onViewChange} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+    fireEvent.click(screen.getByRole("button", { name: "Changes" }));
 
-    expect(onViewChange).toHaveBeenCalledWith("workspace");
+    expect(onViewChange).toHaveBeenCalledWith("working-tree");
   });
 
-  it("renders the WorkspaceSwitcher", () => {
+  it("no longer renders a Workspace nav button", () => {
     render(<Sidebar view="history" onViewChange={vi.fn()} />);
 
-    expect(screen.getByRole("button", { name: /Workspace A/, current: true })).toBeInTheDocument();
-  });
-
-  it("renders the WorkspaceSidebarSection", () => {
-    render(<Sidebar view="history" onViewChange={vi.fn()} />);
-
-    expect(screen.getByText("Workspace Repos")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Workspace" })).toBeNull();
   });
 });

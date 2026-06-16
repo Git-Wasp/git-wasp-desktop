@@ -259,23 +259,6 @@ pub fn pull_ff(
     Ok(PullFfOutcome::FastForwarded)
 }
 
-/// Fetch + fast-forward only; errors when the branch has diverged. Used by the
-/// bulk workspace pull, which doesn't offer a merge path.
-pub fn pull(
-    repo: &Repository,
-    remote_name: &str,
-    branch: &str,
-    token: Option<&str>,
-) -> anyhow::Result<PullResult> {
-    match pull_ff(repo, remote_name, branch, token)? {
-        PullFfOutcome::AlreadyUpToDate => Ok(PullResult::AlreadyUpToDate),
-        PullFfOutcome::FastForwarded => Ok(PullResult::FastForwarded),
-        PullFfOutcome::Diverged { .. } => {
-            anyhow::bail!("cannot fast-forward: local branch has diverged from upstream")
-        }
-    }
-}
-
 pub fn push(
     repo: &Repository,
     remote_name: &str,

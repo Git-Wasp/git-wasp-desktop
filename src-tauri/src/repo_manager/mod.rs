@@ -1,6 +1,6 @@
 mod config;
 
-pub use config::{AppConfig, RepoEntry, Workspace};
+pub use config::{AppConfig, RepoEntry};
 
 use crate::commands::branch::BranchInfo;
 use crate::commands::repo::RepoInfo;
@@ -10,7 +10,6 @@ use anyhow::Context;
 use git2::{BranchType, ObjectType, Repository};
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 
 pub struct RepoManager {
@@ -261,94 +260,6 @@ impl RepoManager {
         self.with_repo_and_operation_mut(|repo, op| crate::operation_runner::abort_merge(repo, op))
     }
 
-    pub fn list_workspaces(&self) -> anyhow::Result<Vec<Workspace>> {
-        Ok(self.config_lock()?.workspaces.clone())
-    }
-
-    pub fn create_workspace(&self, name: &str) -> anyhow::Result<Workspace> {
-        let id = format!(
-            "ws-{}",
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis()
-        );
-        let workspace = Workspace { id, name: name.to_string(), repo_paths: Vec::new() };
-        let mut config = self.config_lock()?;
-        config.workspaces.push(workspace.clone());
-        let _ = config.save();
-        Ok(workspace)
-    }
-
-    pub fn rename_workspace(&self, id: &str, name: &str) -> anyhow::Result<()> {
-        let mut config = self.config_lock()?;
-        let workspace = config
-            .workspaces
-            .iter_mut()
-            .find(|w| w.id == id)
-            .ok_or_else(|| anyhow::anyhow!("workspace not found: {id}"))?;
-        workspace.name = name.to_string();
-        let _ = config.save();
-        Ok(())
-    }
-
-    pub fn delete_workspace(&self, id: &str) -> anyhow::Result<()> {
-        let mut config = self.config_lock()?;
-        config.workspaces.retain(|w| w.id != id);
-        if config.active_workspace_id.as_deref() == Some(id) {
-            config.active_workspace_id = None;
-        }
-        let _ = config.save();
-        Ok(())
-    }
-
-    pub fn add_repo_to_workspace(&self, workspace_id: &str, path: &Path) -> anyhow::Result<Workspace> {
-        let mut config = self.config_lock()?;
-        let workspace = config
-            .workspaces
-            .iter_mut()
-            .find(|w| w.id == workspace_id)
-            .ok_or_else(|| anyhow::anyhow!("workspace not found: {workspace_id}"))?;
-        let path_buf = path.to_path_buf();
-        if !workspace.repo_paths.contains(&path_buf) {
-            workspace.repo_paths.push(path_buf);
-        }
-        let result = workspace.clone();
-        let _ = config.save();
-        Ok(result)
-    }
-
-    pub fn remove_repo_from_workspace(&self, workspace_id: &str, path: &Path) -> anyhow::Result<Workspace> {
-        let mut config = self.config_lock()?;
-        let workspace = config
-            .workspaces
-            .iter_mut()
-            .find(|w| w.id == workspace_id)
-            .ok_or_else(|| anyhow::anyhow!("workspace not found: {workspace_id}"))?;
-        workspace.repo_paths.retain(|p| p != path);
-        let result = workspace.clone();
-        let _ = config.save();
-        Ok(result)
-    }
-
-    pub fn set_active_workspace(&self, id: Option<&str>) -> anyhow::Result<()> {
-        let mut config = self.config_lock()?;
-        if let Some(id) = id {
-            if !config.workspaces.iter().any(|w| w.id == id) {
-                anyhow::bail!("workspace not found: {id}");
-            }
-        }
-        config.active_workspace_id = id.map(|s| s.to_string());
-        let _ = config.save();
-        Ok(())
-    }
-
-    pub fn get_active_workspace(&self) -> anyhow::Result<Option<Workspace>> {
-        let config = self.config_lock()?;
-        Ok(config
-            .active_workspace_id
-            .as_ref()
-            .and_then(|id| config.workspaces.iter().find(|w| &w.id == id))
-            .cloned())
-    }
-
     pub fn set_active_theme(&self, id: Option<&str>) -> anyhow::Result<()> {
         let mut config = self.config_lock()?;
         config.active_theme = id.map(|s| s.to_string());
@@ -470,38 +381,6 @@ impl AppState {
 
     pub fn merge_abort(&self) -> anyhow::Result<()> {
         self.manager.merge_abort()
-    }
-
-    pub fn list_workspaces(&self) -> anyhow::Result<Vec<Workspace>> {
-        self.manager.list_workspaces()
-    }
-
-    pub fn create_workspace(&self, name: &str) -> anyhow::Result<Workspace> {
-        self.manager.create_workspace(name)
-    }
-
-    pub fn rename_workspace(&self, id: &str, name: &str) -> anyhow::Result<()> {
-        self.manager.rename_workspace(id, name)
-    }
-
-    pub fn delete_workspace(&self, id: &str) -> anyhow::Result<()> {
-        self.manager.delete_workspace(id)
-    }
-
-    pub fn add_repo_to_workspace(&self, workspace_id: &str, path: &Path) -> anyhow::Result<Workspace> {
-        self.manager.add_repo_to_workspace(workspace_id, path)
-    }
-
-    pub fn remove_repo_from_workspace(&self, workspace_id: &str, path: &Path) -> anyhow::Result<Workspace> {
-        self.manager.remove_repo_from_workspace(workspace_id, path)
-    }
-
-    pub fn set_active_workspace(&self, id: Option<&str>) -> anyhow::Result<()> {
-        self.manager.set_active_workspace(id)
-    }
-
-    pub fn get_active_workspace(&self) -> anyhow::Result<Option<Workspace>> {
-        self.manager.get_active_workspace()
     }
 
     pub fn set_active_theme(&self, id: Option<&str>) -> anyhow::Result<()> {
@@ -718,75 +597,4 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // ---- workspace CRUD ----
-
-    #[test]
-    fn create_workspace_adds_to_config_and_returns_it() {
-        let manager = RepoManager::new();
-        let workspace = manager.create_workspace("My Workspace").unwrap();
-        assert_eq!(workspace.name, "My Workspace");
-        assert!(workspace.repo_paths.is_empty());
-        let workspaces = manager.list_workspaces().unwrap();
-        assert!(workspaces.iter().any(|w| w.id == workspace.id));
-    }
-
-    #[test]
-    fn rename_workspace_updates_name() {
-        let manager = RepoManager::new();
-        let workspace = manager.create_workspace("Old Name").unwrap();
-        manager.rename_workspace(&workspace.id, "New Name").unwrap();
-        let workspaces = manager.list_workspaces().unwrap();
-        let updated = workspaces.iter().find(|w| w.id == workspace.id).unwrap();
-        assert_eq!(updated.name, "New Name");
-    }
-
-    #[test]
-    fn delete_workspace_removes_it_and_clears_active_if_matched() {
-        let manager = RepoManager::new();
-        let workspace = manager.create_workspace("To Delete").unwrap();
-        manager.set_active_workspace(Some(&workspace.id)).unwrap();
-        manager.delete_workspace(&workspace.id).unwrap();
-        let workspaces = manager.list_workspaces().unwrap();
-        assert!(workspaces.iter().all(|w| w.id != workspace.id));
-        assert!(manager.get_active_workspace().unwrap().is_none());
-    }
-
-    #[test]
-    fn add_repo_to_workspace_dedupes_paths() {
-        let manager = RepoManager::new();
-        let workspace = manager.create_workspace("Repos").unwrap();
-        let path = Path::new("/repos/a");
-        manager.add_repo_to_workspace(&workspace.id, path).unwrap();
-        let updated = manager.add_repo_to_workspace(&workspace.id, path).unwrap();
-        assert_eq!(updated.repo_paths, vec![path.to_path_buf()]);
-    }
-
-    #[test]
-    fn remove_repo_from_workspace_removes_path() {
-        let manager = RepoManager::new();
-        let workspace = manager.create_workspace("Repos").unwrap();
-        let path = Path::new("/repos/a");
-        manager.add_repo_to_workspace(&workspace.id, path).unwrap();
-        let updated = manager.remove_repo_from_workspace(&workspace.id, path).unwrap();
-        assert!(updated.repo_paths.is_empty());
-    }
-
-    #[test]
-    fn set_active_workspace_persists_and_get_active_workspace_returns_it() {
-        let manager = RepoManager::new();
-        let workspace = manager.create_workspace("Active").unwrap();
-        manager.set_active_workspace(Some(&workspace.id)).unwrap();
-        let active = manager.get_active_workspace().unwrap();
-        assert_eq!(active.unwrap().id, workspace.id);
-    }
-
-    #[test]
-    fn list_workspaces_returns_all() {
-        let manager = RepoManager::new();
-        manager.create_workspace("One").unwrap();
-        manager.create_workspace("Two").unwrap();
-        let workspaces = manager.list_workspaces().unwrap();
-        assert!(workspaces.iter().any(|w| w.name == "One"));
-        assert!(workspaces.iter().any(|w| w.name == "Two"));
-    }
 }

@@ -9,9 +9,9 @@ between sections, and add new ideas under the right heading. Items marked
 
 - [ ] Multi-tab view for opening multiple repositories at once
 - [ ] Add support for worktrees
-- [ ] Remove the "workspace" feature — decide the fate of what hangs off it
-      (cross-repo search, bulk fetch/pull, workspace overview, cross-repo
-      notifications) before removing
+- [x] Remove the "workspace" feature — removed entirely, incl. the cross-repo
+      features that hung off it (search, bulk fetch/pull, overview). Cross-repo
+      notifications were never built. Multi-repo to return via the multi-tab view.
 
 ## Commit graph & branches
 
