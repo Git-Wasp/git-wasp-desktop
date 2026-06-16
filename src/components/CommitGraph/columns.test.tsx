@@ -68,4 +68,21 @@ describe("BranchCell", () => {
     expect(screen.getByText("origin/main")).toBeInTheDocument();
     expect(screen.getByText("v1.0")).toBeInTheDocument();
   });
+
+  it("marks local branches with a laptop icon and remotes with a GitHub icon", () => {
+    const { container } = render(
+      <BranchCell
+        node={node({
+          branchLabels: [
+            { name: "main", isRemote: false, isTag: false },
+            { name: "origin/main", isRemote: true, isTag: false },
+            { name: "v1.0", isRemote: false, isTag: true },
+          ],
+        })}
+      />,
+    );
+    // One laptop (local), one GitHub (remote); the tag gets neither.
+    expect(container.querySelectorAll('[data-icon="laptop"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-icon="github"]')).toHaveLength(1);
+  });
 });

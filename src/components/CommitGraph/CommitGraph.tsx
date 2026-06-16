@@ -58,6 +58,7 @@ export function CommitGraph({
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { viewport, selection, fetchViewport, selectCommit, refresh } = useGraphStore();
+  const scrollToRow = useGraphStore((s) => s.scrollToRow);
   const { currentRepo, createBranch, checkoutBranch, renameBranch, deleteBranch } = useRepoStore();
   const startMerge = useMergeStore((s) => s.startMerge);
 

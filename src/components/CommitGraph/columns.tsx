@@ -1,5 +1,6 @@
 import type { BranchLabel, GraphNode } from "../../types/graph";
 import { MAX_BODY_CHARS, type PillHandlers } from "./columnModel";
+import { GitHubIcon, LaptopIcon } from "../ui/icons";
 
 // --- Branch / Tag cell -------------------------------------------------------
 
@@ -34,9 +35,17 @@ function BranchPill({ label, handlers }: { label: BranchLabel; handlers?: PillHa
         whiteSpace: "nowrap",
         outline: isTarget ? "2px solid var(--color-accent-primary)" : "none",
         outlineOffset: 1,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "var(--space-1)",
       }}
     >
-      {label.name}
+      {/* Provenance marker: laptop for local branches, GitHub for remotes.
+          Tags get neither (they're distinguished by colour). */}
+      {!label.isTag && (label.isRemote ? <GitHubIcon /> : <LaptopIcon />)}
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {label.name}
+      </span>
     </span>
   );
 }
