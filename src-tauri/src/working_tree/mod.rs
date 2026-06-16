@@ -95,8 +95,17 @@ pub fn get_working_tree_status(repo: &Repository) -> anyhow::Result<WorkingTreeS
 
 pub fn stage_file(repo: &Repository, path: &str) -> anyhow::Result<WorkingTreeStatus> {
     let mut index = repo.index().context("failed to get index")?;
-    index.add_path(Path::new(path))
-        .with_context(|| format!("failed to stage: {path}"))?;
+    let workdir = repo.workdir().context("bare repository has no working directory")?;
+    if workdir.join(path).exists() {
+        index.add_path(Path::new(path))
+            .with_context(|| format!("failed to stage: {path}"))?;
+    } else {
+        // The file is gone from the working tree: stage its deletion. add_path
+        // can't do this (there's nothing on disk to add), so remove the index
+        // entry instead.
+        index.remove_path(Path::new(path))
+            .with_context(|| format!("failed to stage deletion: {path}"))?;
+    }
     index.write().context("failed to write index")?;
     get_working_tree_status(repo)
 }
@@ -390,6 +399,36 @@ mod tests {
         let status = stage_file(&repo, "file.txt").unwrap();
         assert!(status.staged.iter().any(|e| e.path == "file.txt"));
         assert!(status.unstaged.iter().all(|e| e.path != "file.txt"));
+    }
+
+    #[test]
+    fn stage_deleted_file_stages_the_deletion() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "file.txt", "content");
+        make_initial_commit(&repo);
+        // Delete the file from the working tree.
+        fs::remove_file(dir.path().join("file.txt")).unwrap();
+
+        let status = stage_file(&repo, "file.txt").unwrap();
+
+        let staged = status.staged.iter().find(|e| e.path == "file.txt").expect("staged");
+        assert!(matches!(staged.status, StatusCode::Deleted));
+        assert!(status.unstaged.iter().all(|e| e.path != "file.txt"));
+    }
+
+    #[test]
+    fn unstage_deleted_file_returns_it_to_unstaged() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "file.txt", "content");
+        make_initial_commit(&repo);
+        fs::remove_file(dir.path().join("file.txt")).unwrap();
+        stage_file(&repo, "file.txt").unwrap();
+
+        let status = unstage_file(&repo, "file.txt").unwrap();
+
+        let unstaged = status.unstaged.iter().find(|e| e.path == "file.txt").expect("unstaged");
+        assert!(matches!(unstaged.status, StatusCode::Deleted));
+        assert!(status.staged.iter().all(|e| e.path != "file.txt"));
     }
 
     #[test]
