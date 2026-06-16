@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { CommitGraph } from "./CommitGraph";
@@ -66,7 +66,7 @@ function fireWindow(type: string, clientX: number, clientY: number) {
 }
 
 describe("CommitGraph drag-and-drop (DOM pills)", () => {
-  it("opens the drop menu when a branch pill is dragged onto another", () => {
+  it("opens the merge confirmation modal when a branch pill is dragged onto another", () => {
     render(<CommitGraph onStartPullRequest={vi.fn()} />);
 
     fireEvent.pointerDown(screen.getByText("main"), { clientX: 10, clientY: 8 });
@@ -74,11 +74,12 @@ describe("CommitGraph drag-and-drop (DOM pills)", () => {
     fireEvent.pointerEnter(screen.getByText("feat"));
     fireWindow("pointerup", 10, 30);
 
-    expect(screen.getByText("Merge main into feat")).toBeInTheDocument();
-    expect(screen.getByText(/Start pull request main → feat/)).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: /merge branch/i });
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Merge" })).toBeInTheDocument();
   });
 
-  it("invokes onStartPullRequest from the drop menu", () => {
+  it("invokes onStartPullRequest from the modal", () => {
     const onStartPullRequest = vi.fn();
     render(<CommitGraph onStartPullRequest={onStartPullRequest} />);
 
@@ -86,7 +87,7 @@ describe("CommitGraph drag-and-drop (DOM pills)", () => {
     fireWindow("pointermove", 10, 30);
     fireEvent.pointerEnter(screen.getByText("feat"));
     fireWindow("pointerup", 10, 30);
-    fireEvent.click(screen.getByText(/Start pull request main → feat/));
+    fireEvent.click(screen.getByRole("button", { name: /start pull request/i }));
 
     expect(onStartPullRequest).toHaveBeenCalledWith("main", "feat");
   });

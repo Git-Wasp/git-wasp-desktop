@@ -9,6 +9,7 @@ import { ResizeHandle } from "../common/ResizeHandle";
 import { usePersistedWidth } from "../../lib/usePersistedWidth";
 import { runMerge } from "./dragDrop";
 import { useGraphDragDrop } from "./useGraphDragDrop";
+import { MergeConfirmDialog } from "./MergeConfirmDialog";
 import { BranchCell, MessageCell } from "./columns";
 import {
   COLUMNS,
@@ -211,16 +212,6 @@ export function CommitGraph({
   const canvasTop = offset * ROW_HEIGHT;
   const sliceHeight = (viewport?.nodes.length ?? 0) * ROW_HEIGHT;
 
-  const dropMenuItems: MenuItem[] = drag.menu
-    ? [
-        { label: `Merge ${drag.menu.source} into ${drag.menu.target}`, onSelect: drag.confirmMerge },
-        {
-          label: `Start pull request ${drag.menu.source} → ${drag.menu.target}`,
-          onSelect: drag.confirmStartPullRequest,
-        },
-      ]
-    : [];
-
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--color-bg-app)" }}>
       {/* Column header */}
@@ -347,7 +338,13 @@ export function CommitGraph({
       )}
 
       {drag.menu && (
-        <ContextMenu x={drag.menu.x} y={drag.menu.y} items={dropMenuItems} onClose={drag.closeMenu} />
+        <MergeConfirmDialog
+          source={drag.menu.source}
+          target={drag.menu.target}
+          onConfirm={drag.confirmMerge}
+          onStartPullRequest={onStartPullRequest ? drag.confirmStartPullRequest : undefined}
+          onCancel={drag.closeMenu}
+        />
       )}
 
       {menu && (
