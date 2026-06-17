@@ -83,16 +83,13 @@ export function Sidebar({
   const handleOpenFolder = async () => {
     const selected = await open({ directory: true, multiple: false });
     if (typeof selected === "string") {
+      // openRepo adds the tab and reloads the graph/branches/status itself.
       await openRepo(selected);
-      await fetchViewport(0, INITIAL_LIMIT);
-      loadBranches();
     }
   };
 
   const handleRecentClick = async (path: string) => {
     await openRepo(path);
-    await fetchViewport(0, INITIAL_LIMIT);
-    loadBranches();
   };
 
   const handleCreateBranch = async () => {

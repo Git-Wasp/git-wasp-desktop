@@ -25,6 +25,9 @@ pub fn run() {
             commands::repo::open_repo,
             commands::repo::get_recent_repos,
             commands::repo::get_current_repo,
+            commands::repo::list_open_repos,
+            commands::repo::activate_repo,
+            commands::repo::close_repo,
             // Graph
             commands::graph::get_graph_viewport,
             commands::graph::find_commit_row,
@@ -93,7 +96,7 @@ pub fn run() {
             commands::theme::get_active_theme,
         ])
         .setup(|app| {
-            repo_manager::restore_last_repo(app)?;
+            repo_manager::restore_session(app)?;
             Ok(())
         })
         .run(tauri::generate_context!())
