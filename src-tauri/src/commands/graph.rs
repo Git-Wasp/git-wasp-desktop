@@ -14,3 +14,15 @@ pub async fn get_graph_viewport(
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())
 }
+
+/// The graph row of a commit (e.g. a branch head), so the frontend can scroll
+/// the graph to it. `None` when the commit isn't reachable from HEAD.
+#[tauri::command]
+pub async fn find_commit_row(
+    oid: String,
+    state: State<'_, AppState>,
+) -> Result<Option<usize>, String> {
+    state.with_repo(|repo| crate::graph::find_commit_row(repo, &oid))
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}

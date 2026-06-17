@@ -1,5 +1,6 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 import { useRepoStore } from "../../stores/repoStore";
 import { useGraphStore } from "../../stores/graphStore";
 import { useGithubStore } from "../../stores/githubStore";
@@ -10,6 +11,7 @@ import { CollapsibleSection } from "./CollapsibleSection";
 import { RowMenu } from "./RowMenu";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
+import { GitHubIcon, LaptopIcon } from "../ui/icons";
 import { RemoteActions } from "./RemoteActions";
 import { CloneDialog } from "../GitHub/CloneDialog";
 import { DeviceFlowModal } from "../GitHub/DeviceFlowModal";
@@ -17,6 +19,27 @@ import { DeviceFlowModal } from "../GitHub/DeviceFlowModal";
 const INITIAL_LIMIT = 150;
 
 type View = "history" | "working-tree" | "prs" | "settings";
+
+const branchRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  padding: "var(--space-1) var(--space-3)",
+  gap: "var(--space-1)",
+};
+
+const branchIconStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  color: "var(--color-text-muted)",
+  flexShrink: 0,
+};
+
+const branchEmptyHintStyle: CSSProperties = {
+  padding: "var(--space-1) var(--space-3)",
+  fontSize: "var(--font-size-xs)",
+  color: "var(--color-text-muted)",
+  fontStyle: "italic",
+};
 
 export function Sidebar({
   view,
@@ -29,7 +52,7 @@ export function Sidebar({
 }) {
   const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, loadBranches, checkoutBranch, createBranch, deleteBranch } =
     useRepoStore();
-  const { fetchViewport, selectCommit } = useGraphStore();
+  const { fetchViewport, revealCommit } = useGraphStore();
   const { remoteInfo, authStatus, logout, detectRemote } = useGithubStore();
   const { aheadBehind, loadAheadBehind } = useRemoteStore();
   const { status: operationStatus, startMerge } = useMergeStore();
@@ -93,6 +116,9 @@ export function Sidebar({
   const handleMergeBranch = async (name: string) => {
     await startMerge(name);
   };
+
+  const localBranches = branches.filter((b) => !b.isRemote);
+  const remoteBranches = branches.filter((b) => b.isRemote);
 
   return (
     <div
@@ -251,7 +277,6 @@ export function Sidebar({
         <CollapsibleSection
           id="branches"
           title="Branches"
-          bodyStyle={{ overflowY: "auto", maxHeight: 220 }}
           action={
             <Button size="sm" onClick={() => setShowNewBranch((v) => !v)}>
               + New
@@ -280,73 +305,103 @@ export function Sidebar({
             </div>
           )}
 
-          {branches
-            .filter((b) => !b.isRemote)
-            .map((b) => (
-              <div
-                key={b.name}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  padding: "var(--space-1) var(--space-3)",
-                  gap: "var(--space-1)",
-                }}
-              >
-                <div
-                  onClick={() => selectCommit(b.oid, false)}
-                  title={`Show ${b.name} in the commit graph`}
-                  style={{
-                    flex: 1,
-                    fontSize: "var(--font-size-sm)",
-                    fontFamily: "var(--font-family-mono)",
-                    color: b.isHead
-                      ? "var(--color-accent-primary)"
-                      : "var(--color-text-secondary)",
-                    cursor: "pointer",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                    background: b.isHead ? "var(--color-bg-elevated)" : "transparent",
-                    borderRadius: "var(--radius-sm)",
-                    padding: "1px var(--space-2)",
-                  }}
-                >
-                  {b.isHead ? "▸ " : ""}{b.name}
+          <CollapsibleSection id="branches-local" title="Local" bodyStyle={{ overflowY: "auto", maxHeight: 200 }}>
+            {localBranches.length === 0 ? (
+              <div style={branchEmptyHintStyle}>No local branches</div>
+            ) : (
+              localBranches.map((b) => (
+                <div key={b.name} style={branchRowStyle}>
+                  <span style={branchIconStyle} title="Local branch">
+                    <LaptopIcon />
+                  </span>
+                  <div
+                    onClick={() => revealCommit(b.oid)}
+                    title={`Show ${b.name} in the commit graph`}
+                    style={{
+                      flex: 1,
+                      fontSize: "var(--font-size-sm)",
+                      fontFamily: "var(--font-family-mono)",
+                      color: b.isHead
+                        ? "var(--color-accent-primary)"
+                        : "var(--color-text-secondary)",
+                      cursor: "pointer",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      background: b.isHead ? "var(--color-bg-elevated)" : "transparent",
+                      borderRadius: "var(--radius-sm)",
+                      padding: "1px var(--space-2)",
+                    }}
+                  >
+                    {b.isHead ? "▸ " : ""}{b.name}
+                  </div>
+                  {(() => {
+                    const ab = aheadBehind.find((x) => x.branch === b.name);
+                    if (!ab || (ab.ahead === 0 && ab.behind === 0)) return null;
+                    return (
+                      <span
+                        style={{
+                          fontSize: "var(--font-size-xs)",
+                          color: "var(--color-text-muted)",
+                          fontFamily: "var(--font-family-mono)",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {ab.ahead > 0 && `↑${ab.ahead}`}
+                        {ab.ahead > 0 && ab.behind > 0 && " "}
+                        {ab.behind > 0 && `↓${ab.behind}`}
+                      </span>
+                    );
+                  })()}
+                  <RowMenu
+                    label={`${b.name} actions`}
+                    items={[
+                      ...(b.isHead
+                        ? []
+                        : [{ label: "Checkout branch", onSelect: () => handleCheckoutBranch(b.name) }]),
+                      ...(b.isHead || operationStatus.kind === "merge"
+                        ? []
+                        : [{ label: "Merge into current branch", onSelect: () => handleMergeBranch(b.name) }]),
+                      ...(b.isHead
+                        ? []
+                        : [{ label: "Delete branch", destructive: true, onSelect: () => handleDeleteBranch(b.name) }]),
+                    ]}
+                  />
                 </div>
-                {(() => {
-                  const ab = aheadBehind.find((x) => x.branch === b.name);
-                  if (!ab || (ab.ahead === 0 && ab.behind === 0)) return null;
-                  return (
-                    <span
-                      style={{
-                        fontSize: "var(--font-size-xs)",
-                        color: "var(--color-text-muted)",
-                        fontFamily: "var(--font-family-mono)",
-                        flexShrink: 0,
-                      }}
-                    >
-                      {ab.ahead > 0 && `↑${ab.ahead}`}
-                      {ab.ahead > 0 && ab.behind > 0 && " "}
-                      {ab.behind > 0 && `↓${ab.behind}`}
-                    </span>
-                  );
-                })()}
-                <RowMenu
-                  label={`${b.name} actions`}
-                  items={[
-                    ...(b.isHead
-                      ? []
-                      : [{ label: "Checkout branch", onSelect: () => handleCheckoutBranch(b.name) }]),
-                    ...(b.isHead || operationStatus.kind === "merge"
-                      ? []
-                      : [{ label: "Merge into current branch", onSelect: () => handleMergeBranch(b.name) }]),
-                    ...(b.isHead
-                      ? []
-                      : [{ label: "Delete branch", destructive: true, onSelect: () => handleDeleteBranch(b.name) }]),
-                  ]}
-                />
-              </div>
-            ))}
+              ))
+            )}
+          </CollapsibleSection>
+
+          <CollapsibleSection id="branches-remote" title="Remote" bodyStyle={{ overflowY: "auto", maxHeight: 200 }}>
+            {remoteBranches.length === 0 ? (
+              <div style={branchEmptyHintStyle}>No remote branches</div>
+            ) : (
+              remoteBranches.map((b) => (
+                <div key={b.name} style={branchRowStyle}>
+                  <span style={branchIconStyle} title="Remote branch">
+                    <GitHubIcon />
+                  </span>
+                  <div
+                    onClick={() => revealCommit(b.oid)}
+                    title={`Show ${b.name} in the commit graph`}
+                    style={{
+                      flex: 1,
+                      fontSize: "var(--font-size-sm)",
+                      fontFamily: "var(--font-family-mono)",
+                      color: "var(--color-text-secondary)",
+                      cursor: "pointer",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      padding: "1px var(--space-2)",
+                    }}
+                  >
+                    {b.name}
+                  </div>
+                </div>
+              ))
+            )}
+          </CollapsibleSection>
         </CollapsibleSection>
       )}
 

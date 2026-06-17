@@ -17,7 +17,7 @@ const makeViewport = (): GraphViewport => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useGraphStore.setState({ viewport: null, selection: { anchor: null, focus: null, range: new Set() }, selectedOid: null, lastOffset: null, lastLimit: null });
+  useGraphStore.setState({ viewport: null, selection: { anchor: null, focus: null, range: new Set() }, selectedOid: null, lastOffset: null, lastLimit: null, scrollToRow: null });
 });
 
 describe("graphStore", () => {
@@ -73,6 +73,27 @@ describe("graphStore", () => {
   it("refresh is a no-op before any fetch", async () => {
     await useGraphStore.getState().refresh();
     expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it("revealCommit selects the commit and sets scrollToRow from find_commit_row", async () => {
+    mockInvoke.mockResolvedValueOnce(2);
+
+    await useGraphStore.getState().revealCommit("ccc");
+
+    expect(mockInvoke).toHaveBeenCalledWith("find_commit_row", { oid: "ccc" });
+    const { selection, selectedOid, scrollToRow } = useGraphStore.getState();
+    expect(selectedOid).toBe("ccc");
+    expect(selection.range.has("ccc")).toBe(true);
+    expect(scrollToRow).toBe(2);
+  });
+
+  it("revealCommit still selects when the commit isn't reachable (row null)", async () => {
+    mockInvoke.mockResolvedValueOnce(null);
+
+    await useGraphStore.getState().revealCommit("zzz");
+
+    expect(useGraphStore.getState().selectedOid).toBe("zzz");
+    expect(useGraphStore.getState().scrollToRow).toBeNull();
   });
 
   it("clearSelection resets to empty", () => {

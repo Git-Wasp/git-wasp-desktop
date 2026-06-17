@@ -1,6 +1,6 @@
 mod layout;
 
-pub use layout::compute_layout;
+pub use layout::{compute_layout, find_commit_row};
 
 use serde::{Deserialize, Serialize};
 

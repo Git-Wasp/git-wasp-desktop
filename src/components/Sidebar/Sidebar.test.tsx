@@ -37,6 +37,7 @@ beforeEach(() => {
     selectedOid: null,
     fetchViewport: vi.fn().mockResolvedValue(undefined),
     selectCommit: vi.fn(),
+    revealCommit: vi.fn().mockResolvedValue(undefined),
     clearSelection: vi.fn(),
   });
 
@@ -92,5 +93,23 @@ describe("Sidebar", () => {
     render(<Sidebar view="history" onViewChange={vi.fn()} />);
 
     expect(screen.queryByRole("button", { name: "Workspace" })).toBeNull();
+  });
+
+  it("groups branches into Local and Remote sections with provenance icons", () => {
+    useRepoStore.setState({
+      branches: [
+        { name: "main", isRemote: false, isHead: true, upstream: null, oid: "a", ahead: null, behind: null },
+        { name: "origin/main", isRemote: true, isHead: false, upstream: null, oid: "b", ahead: null, behind: null },
+      ],
+    });
+
+    const { container } = render(<Sidebar view="history" onViewChange={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "Local" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remote" })).toBeInTheDocument();
+    expect(screen.getByText("main")).toBeInTheDocument();
+    expect(screen.getByText("origin/main")).toBeInTheDocument();
+    expect(container.querySelector('[data-icon="laptop"]')).not.toBeNull();
+    expect(container.querySelector('[data-icon="github"]')).not.toBeNull();
   });
 });

@@ -272,6 +272,30 @@ fn assign_lanes(
 
 /// Counts changed files in the working tree (modified/staged/untracked,
 /// excluding ignored) — the badge count for the working-tree graph node.
+/// Find the graph row of a commit by OID, matching the ordering used by
+/// `compute_layout` (HEAD revwalk, topological + time sort, offset by the
+/// synthetic working-tree node when the tree is dirty). Returns `None` if the
+/// commit isn't reachable from HEAD (so it has no row in the graph).
+pub fn find_commit_row(repo: &Repository, oid_str: &str) -> anyhow::Result<Option<usize>> {
+    let target = git2::Oid::from_str(oid_str).context("invalid commit oid")?;
+
+    let head_id = repo.head().ok().and_then(|h| h.target());
+    let wip_offset = if head_id.is_some() && changed_file_count(repo) > 0 { 1 } else { 0 };
+
+    let mut walk = repo.revwalk().context("failed to create revwalk")?;
+    walk.push_head().context("no HEAD — empty repository?")?;
+    walk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME)
+        .context("failed to set sort")?;
+
+    for (i, oid) in walk.enumerate() {
+        let oid = oid.context("revwalk error")?;
+        if oid == target {
+            return Ok(Some(i + wip_offset));
+        }
+    }
+    Ok(None)
+}
+
 fn changed_file_count(repo: &Repository) -> u32 {
     let mut opts = git2::StatusOptions::new();
     opts.include_untracked(true).include_ignored(false);
@@ -335,6 +359,26 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let repo = Repository::init(dir.path()).unwrap();
         (dir, repo)
+    }
+
+    #[test]
+    fn find_commit_row_matches_layout_order() {
+        let (_dir, repo) = init_repo();
+        let c1 = repo.find_commit(make_commit(&repo, "first", &[])).unwrap();
+        let c2 = repo.find_commit(make_commit(&repo, "second", &[&c1])).unwrap();
+        let c3 = make_commit(&repo, "third", &[&c2]);
+
+        // Newest first: third is row 0, first is row 2.
+        assert_eq!(find_commit_row(&repo, &c3.to_string()).unwrap(), Some(0));
+        assert_eq!(find_commit_row(&repo, &c1.id().to_string()).unwrap(), Some(2));
+    }
+
+    #[test]
+    fn find_commit_row_returns_none_for_unknown_commit() {
+        let (_dir, repo) = init_repo();
+        make_commit(&repo, "only", &[]);
+        let missing = "0".repeat(40);
+        assert_eq!(find_commit_row(&repo, &missing).unwrap(), None);
     }
 
     #[test]

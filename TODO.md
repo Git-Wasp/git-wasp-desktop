@@ -21,6 +21,9 @@ between sections, and add new ideas under the right heading. Items marked
 - [ ] **Cherry-pick (single or range)** (v1 scope)
 - [ ] Rebase as a merge strategy with conflict-resolution UI — confirm whether
       it's wired up as a first-class action (v1 scope)
+- [ ] Tooltip for branch name when hovering on branch name pill
+- [ ] Indicator/icon show currently checked out branch clearly (e.g. left arrow by 'circle' icon for commit?)
+- [ ] Improve colour scheme. Colours too bright and "basic"? Allow default branch colours to be specified in colour schemes?
 
 ## Working tree & committing
 
@@ -54,10 +57,12 @@ between sections, and add new ideas under the right heading. Items marked
 - [ ] `.gitconfig` viewer/editor (v1 scope)
 - [ ] Keyboard shortcut configuration (v1 scope)
 - [ ] Embedded terminal pane scoped to the repo working dir, toggleable (Phase 6)
+- [ ] Remove unnecessary "changes" view. That is replaced by the "uncommitted changes" part of the graph view
 
 ## Theming
 
 - [ ] Additional built-in themes (e.g. Cobalt2)
+- [ ] Allow default branch colour palette to be configurable (see pre-req in [Working Tree & Committing](#working-tree--committing))
 
 ## Engineering & tooling
 
@@ -66,3 +71,15 @@ between sections, and add new ideas under the right heading. Items marked
 - [ ] `cargo-deny` / licence audit in CI (Phase 6)
 - [ ] Error-handling audit — every git failure surfaces a clear, actionable message (Phase 6)
 - [ ] Graph performance profiling against large repos (10k+ commits) (Phase 6)
+
+## General UX
+
+- [ ] Toast notification system including options for placement (top/middle/bottom + left/right)
+- [ ] Auto close right panel when commit completed
+- [ ] Progress/spinners for buttons (e.g. when pushing, pulling) to show something is happening
+- [ ] Branch selection highlight obscures the graph lines - z-index issue?
+- [ ] Include section in settings to view open source packages used?
+- [ ] Main buttons "open repository", "history", "prs" to move to menu/tabs
+- [ ] Allow removing items from "recent"
+- [ ] Fetch/pull/push buttons to be removed from left sidebar
+- [ ] Better primary/secondary button design (currently boring!)

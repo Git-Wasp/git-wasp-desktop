@@ -14,9 +14,13 @@ interface GraphStore {
   selectedOid: string | null;
   lastOffset: number | null;
   lastLimit: number | null;
+  // A row the graph should scroll into view (set by revealCommit); the graph
+  // consumes and resets it. Null when there's nothing pending.
+  scrollToRow: number | null;
   fetchViewport: (offset: number, limit: number) => Promise<void>;
   refresh: () => Promise<void>;
   selectCommit: (oid: string, extend: boolean) => void;
+  revealCommit: (oid: string) => Promise<void>;
   clearSelection: () => void;
 }
 
@@ -32,6 +36,7 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   selectedOid: null,
   lastOffset: null,
   lastLimit: null,
+  scrollToRow: null,
 
   fetchViewport: async (offset: number, limit: number) => {
     const viewport = await invoke<GraphViewport>("get_graph_viewport", {
@@ -83,6 +88,23 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
       selection: { anchor: anchorOid, focus: oid, range },
       selectedOid: oid,
     });
+  },
+
+  // Select a commit by oid (e.g. a branch head from the sidebar) and ask the
+  // graph to scroll to it. Selecting happens immediately so the detail panel
+  // updates even if the commit isn't in the loaded slice; the row lookup then
+  // drives the scroll (skipped when the commit isn't reachable from HEAD).
+  revealCommit: async (oid: string) => {
+    set({
+      selection: { anchor: oid, focus: oid, range: new Set([oid]) },
+      selectedOid: oid,
+    });
+    try {
+      const row = await invoke<number | null>("find_commit_row", { oid });
+      if (row !== null) set({ scrollToRow: row });
+    } catch {
+      // No row (detached/unreachable) — selection still stands.
+    }
   },
 
   clearSelection: () => {

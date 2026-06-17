@@ -27,6 +27,7 @@ pub fn run() {
             commands::repo::get_current_repo,
             // Graph
             commands::graph::get_graph_viewport,
+            commands::graph::find_commit_row,
             // Diff (history)
             commands::diff::get_commit_diff,
             commands::diff::get_file_diff,
