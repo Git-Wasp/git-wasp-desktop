@@ -43,6 +43,18 @@
   box-shadow: var(--focus-ring);
 }
 
+/* Indeterminate spinner rotation (see ui/Spinner). */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Tactile press on shared buttons — a subtle nudge down on active. */
+.ui-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
 html,
 body,
 #root {

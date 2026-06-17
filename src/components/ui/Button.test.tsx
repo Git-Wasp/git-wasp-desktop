@@ -43,8 +43,16 @@ describe("Button", () => {
     );
     const btn = screen.getByRole("button");
     expect(btn).toBeDisabled();
+    expect(btn).toHaveAttribute("aria-busy", "true");
     fireEvent.click(btn);
     expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it("renders a spinner alongside its label while loading", () => {
+    const { container } = render(<Button loading>Push</Button>);
+    expect(container.querySelector("[data-spinner]")).toBeInTheDocument();
+    // The label stays visible next to the spinner.
+    expect(screen.getByRole("button", { name: "Push" })).toBeInTheDocument();
   });
 
   it("applies the danger variant colour", () => {

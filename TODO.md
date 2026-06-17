@@ -82,12 +82,18 @@ between sections, and add new ideas under the right heading. Items marked
       uncommitted-changes panel returns to the commit-detail view after a
       successful commit (optional `onCommitted` callback; the standalone Changes
       view is unaffected).
-- [ ] Progress/spinners for buttons (e.g. when pushing, pulling) to show something is happening
+- [x] Progress/spinners for buttons (e.g. when pushing, pulling) — the shared
+      Button shows an animated spinner alongside its label in the `loading`
+      state; wired to push/pull/fetch in the history toolbar.
 - [x] Branch selection highlight obscures the graph lines — fixed by drawing the
       graph canvas in ordered passes (row bands → edges → dots) so connecting
       lines are never painted over by a selected row's highlight band.
 - [ ] Include section in settings to view open source packages used?
 - [ ] Main buttons "open repository", "history", "prs" to move to menu/tabs
 - [ ] Allow removing items from "recent"
-- [ ] Fetch/pull/push buttons to be removed from left sidebar
-- [ ] Better primary/secondary button design (currently boring!)
+- [x] Fetch/pull/push buttons removed from the left sidebar — they were
+      duplicated in the history toolbar (which surfaces in-flight state +
+      errors); the sidebar RemoteActions now keeps only "Clone from GitHub…".
+- [x] Better primary/secondary button design — primary gained a subtle border +
+      shadow for depth; secondary now has a faint fill (reads as a real control,
+      not plain text); both get a tactile press (nudge-down) on `:active`.

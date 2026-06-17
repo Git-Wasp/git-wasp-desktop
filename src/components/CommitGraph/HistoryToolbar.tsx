@@ -92,11 +92,17 @@ export function HistoryToolbar() {
 
   return (
     <div style={barStyle}>
-      <Button type="button" onClick={handlePush} disabled={!hasRemote || busy}>
-        {isPushing ? "Pushing…" : "Push"}
+      <Button type="button" onClick={handlePush} loading={isPushing} disabled={!hasRemote || busy}>
+        Push
       </Button>
-      <Button type="button" ref={pullButtonRef} onClick={openPullMenu} disabled={!hasRemote || busy}>
-        {isPulling || isFetching ? "Pulling…" : "Pull ▾"}
+      <Button
+        type="button"
+        ref={pullButtonRef}
+        onClick={openPullMenu}
+        loading={isPulling || isFetching}
+        disabled={!hasRemote || busy}
+      >
+        Pull ▾
       </Button>
       <Button type="button" onClick={() => setShowNewBranch(true)}>
         New branch
