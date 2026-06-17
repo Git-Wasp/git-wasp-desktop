@@ -55,6 +55,26 @@ describe("CommitForm", () => {
     expect(screen.getByText("bold").tagName).toBe("STRONG");
   });
 
+  it("calls onCommitted after a successful commit", async () => {
+    const onCommitted = vi.fn();
+    render(<CommitForm stagedCount={1} onCommitted={onCommitted} />);
+    fireEvent.change(screen.getByPlaceholderText(/summary/i), { target: { value: "Done" } });
+    fireEvent.click(screen.getByRole("button", { name: /^commit/i }));
+
+    await waitFor(() => expect(onCommitted).toHaveBeenCalledTimes(1));
+  });
+
+  it("does not call onCommitted when the commit fails", async () => {
+    createCommit.mockRejectedValueOnce(new Error("nope"));
+    const onCommitted = vi.fn();
+    render(<CommitForm stagedCount={1} onCommitted={onCommitted} />);
+    fireEvent.change(screen.getByPlaceholderText(/summary/i), { target: { value: "Done" } });
+    fireEvent.click(screen.getByRole("button", { name: /^commit/i }));
+
+    await waitFor(() => expect(createCommit).toHaveBeenCalled());
+    expect(onCommitted).not.toHaveBeenCalled();
+  });
+
   it("Reset opens a confirm dialog and discards all on confirm", async () => {
     render(<CommitForm stagedCount={1} />);
     fireEvent.click(screen.getByRole("button", { name: /^reset/i }));

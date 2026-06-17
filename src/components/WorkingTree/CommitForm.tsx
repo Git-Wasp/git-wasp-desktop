@@ -10,7 +10,14 @@ const INITIAL_LIMIT = 100;
 
 type BodyTab = "write" | "preview";
 
-export function CommitForm({ stagedCount }: { stagedCount: number }) {
+export function CommitForm({
+  stagedCount,
+  onCommitted,
+}: {
+  stagedCount: number;
+  /** Called after a commit succeeds (e.g. to close the panel in the history view). */
+  onCommitted?: () => void;
+}) {
   const { identity, loadIdentity, createCommit, discardAll } = useWorkingTreeStore();
   const { fetchViewport } = useGraphStore();
   const [subject, setSubject] = useState("");
@@ -40,6 +47,7 @@ export function CommitForm({ stagedCount }: { stagedCount: number }) {
       setBody("");
       setTab("write");
       await fetchViewport(0, INITIAL_LIMIT);
+      onCommitted?.();
     } catch (e) {
       setError(String(e));
     } finally {

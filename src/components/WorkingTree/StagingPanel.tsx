@@ -117,7 +117,7 @@ function PanelHeader({
  * history view shows it in the centre graph pane, the standalone Changes view in
  * its own pane). Designed to fill a narrow sidebar column.
  */
-export function StagingPanel() {
+export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {}) {
   const {
     status,
     selectedPath,
@@ -236,7 +236,7 @@ export function StagingPanel() {
         </div>
       </div>
 
-      <CommitForm stagedCount={stagedCount} />
+      <CommitForm stagedCount={stagedCount} onCommitted={onCommitted} />
     </div>
   );
 }
