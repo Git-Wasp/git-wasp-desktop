@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Sidebar } from "./components/Sidebar/Sidebar";
+import { TabBar } from "./components/TabBar/TabBar";
 import { CommitGraph } from "./components/CommitGraph/CommitGraph";
 import { HistoryToolbar } from "./components/CommitGraph/HistoryToolbar";
 import { CommitDetail } from "./components/CommitDetail/CommitDetail";
@@ -21,7 +22,7 @@ import { useWorkingTreeStore } from "./stores/workingTreeStore";
 type View = "history" | "working-tree" | "prs" | "settings";
 
 export default function App() {
-  const { loadCurrentRepo, currentRepo } = useRepoStore();
+  const { loadCurrentRepo, loadOpenRepos, currentRepo } = useRepoStore();
   const { selectedOid } = useGraphStore();
   const { init, setPrDraft } = useGithubStore();
   const { status: operationStatus, loadStatus } = useMergeStore();
@@ -59,7 +60,8 @@ export default function App() {
 
   useEffect(() => {
     loadCurrentRepo();
-  }, [loadCurrentRepo]);
+    loadOpenRepos();
+  }, [loadCurrentRepo, loadOpenRepos]);
 
   useEffect(() => {
     initTheme();
@@ -93,12 +95,15 @@ export default function App() {
     <div
       style={{
         display: "flex",
+        flexDirection: "column",
         height: "100vh",
         overflow: "hidden",
         background: "var(--color-bg-app)",
         color: "var(--color-text-primary)",
       }}
     >
+      <TabBar />
+      <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
       <Sidebar view={view} onViewChange={setView} width={sidebarWidth} />
       <ResizeHandle
         ariaLabel="Resize sidebar"
@@ -165,6 +170,7 @@ export default function App() {
         ) : (
           <SettingsView />
         )}
+      </div>
       </div>
     </div>
   );

@@ -33,6 +33,12 @@ impl GithubHostConfig {
 pub struct AppConfig {
     pub recent_repos: Vec<RepoEntry>,
     pub last_repo_path: Option<PathBuf>,
+    /// Repositories open as tabs, in tab order. Restored on launch.
+    #[serde(default)]
+    pub open_repos: Vec<PathBuf>,
+    /// Which of `open_repos` is the active tab on launch.
+    #[serde(default)]
+    pub active_repo_path: Option<PathBuf>,
     #[serde(default = "default_github_hosts")]
     pub github_hosts: Vec<GithubHostConfig>,
     #[serde(default)]
@@ -48,6 +54,8 @@ impl Default for AppConfig {
         Self {
             recent_repos: Vec::new(),
             last_repo_path: None,
+            open_repos: Vec::new(),
+            active_repo_path: None,
             github_hosts: default_github_hosts(),
             active_theme: None,
         }
@@ -84,6 +92,13 @@ impl AppConfig {
         self.recent_repos.insert(0, entry.clone());
         self.recent_repos.truncate(10);
         self.last_repo_path = Some(entry.path);
+    }
+
+    /// Record the set of open tabs (in order) and which one is active, so the
+    /// session can be restored on next launch.
+    pub fn set_session(&mut self, open_repos: Vec<PathBuf>, active: Option<PathBuf>) {
+        self.open_repos = open_repos;
+        self.active_repo_path = active;
     }
 }
 
@@ -131,6 +146,27 @@ mod tests {
         let json = r#"{"recentRepos":[],"lastRepoPath":null,"workspaces":[{"id":"ws-1","name":"x","repoPaths":[]}],"activeWorkspaceId":"ws-1"}"#;
         let config: AppConfig = serde_json::from_str(json).unwrap();
         assert!(config.recent_repos.is_empty());
+    }
+
+    #[test]
+    fn session_fields_round_trip() {
+        let mut config = AppConfig::default();
+        config.set_session(
+            vec!["/tmp/a".into(), "/tmp/b".into()],
+            Some("/tmp/b".into()),
+        );
+        let restored: AppConfig =
+            serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+        assert_eq!(restored.open_repos, vec![PathBuf::from("/tmp/a"), PathBuf::from("/tmp/b")]);
+        assert_eq!(restored.active_repo_path, Some(PathBuf::from("/tmp/b")));
+    }
+
+    #[test]
+    fn legacy_config_without_session_defaults_to_empty() {
+        let json = r#"{"recentRepos":[],"lastRepoPath":null}"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert!(config.open_repos.is_empty());
+        assert_eq!(config.active_repo_path, None);
     }
 
     #[test]

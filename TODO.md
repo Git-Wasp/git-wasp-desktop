@@ -7,7 +7,10 @@ between sections, and add new ideas under the right heading. Items marked
 
 ## Repository management
 
-- [ ] Multi-tab view for opening multiple repositories at once
+- [x] Multi-tab view for opening multiple repositories at once — backend tracks
+      a set of open repos + an active tab (file watcher + status follow the
+      active one); top TabBar to switch/close/open; tabs persist across restarts.
+      Switching reloads fresh (no per-tab UI-state memory yet).
 - [ ] Add support for worktrees
 - [x] Remove the "workspace" feature — removed entirely, incl. the cross-repo
       features that hung off it (search, bulk fetch/pull, overview). Cross-repo

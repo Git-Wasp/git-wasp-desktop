@@ -31,3 +31,28 @@ pub async fn get_current_repo(
 ) -> Result<Option<RepoInfo>, String> {
     state.get_current_repo().map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub async fn list_open_repos(
+    state: State<'_, AppState>,
+) -> Result<Vec<RepoInfo>, String> {
+    state.list_open_repos().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn activate_repo(
+    path: String,
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<RepoInfo, String> {
+    state.activate_repo(&path, Some(app_handle)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn close_repo(
+    path: String,
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<RepoInfo>, String> {
+    state.close_repo(&path, Some(app_handle)).map_err(|e| e.to_string())
+}

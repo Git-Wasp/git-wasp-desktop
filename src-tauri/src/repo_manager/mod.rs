@@ -8,100 +8,165 @@ use crate::merge_ops::{ConflictSide, ConflictedFile, MergeOutcome};
 use crate::operation_runner::{OperationKind, OperationState, OperationStatus};
 use anyhow::Context;
 use git2::{BranchType, ObjectType, Repository};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use tauri::Manager;
 
+/// A single open repository tab, carrying its own in-progress operation so a
+/// merge (or future rebase) in one tab can't leak into another.
+struct OpenRepo {
+    /// Stable identity = the git2-normalised workdir path. Also the value the
+    /// frontend passes back to `activate`/`close` (it's `RepoInfo.path`).
+    key: String,
+    repo: Repository,
+    operation: Option<OperationState>,
+}
+
 pub struct RepoManager {
-    repo: Mutex<Option<Repository>>,
-    operation: Mutex<Option<OperationState>>,
+    repos: Mutex<Vec<OpenRepo>>,
+    active: Mutex<Option<String>>,
     config: Mutex<AppConfig>,
+}
+
+fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+/// Derive display info from a repo handle. The workdir path doubles as the tab
+/// key — git2 normalises it, so the same repo opened via different path strings
+/// resolves to one tab.
+fn repo_info(repo: &Repository) -> RepoInfo {
+    let path = repo
+        .path()
+        .parent()
+        .and_then(|p| p.to_str())
+        .unwrap_or("")
+        .to_string();
+    let name = Path::new(&path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&path)
+        .to_string();
+    let head_branch = repo.head().ok().and_then(|h| h.shorthand().map(|s| s.to_string()));
+    RepoInfo { name, path, head_branch }
 }
 
 impl RepoManager {
     fn new() -> Self {
         Self {
-            repo: Mutex::new(None),
-            operation: Mutex::new(None),
+            repos: Mutex::new(Vec::new()),
+            active: Mutex::new(None),
             config: Mutex::new(AppConfig::load()),
         }
     }
 
-    fn repo_lock(&self) -> anyhow::Result<MutexGuard<'_, Option<Repository>>> {
-        self.repo.lock().map_err(|_| anyhow::anyhow!("repo lock poisoned"))
+    // Lock order is always active → repos → config; every helper below obeys it.
+    fn repos_lock(&self) -> anyhow::Result<MutexGuard<'_, Vec<OpenRepo>>> {
+        self.repos.lock().map_err(|_| anyhow::anyhow!("repos lock poisoned"))
     }
 
-    fn operation_lock(&self) -> anyhow::Result<MutexGuard<'_, Option<OperationState>>> {
-        self.operation.lock().map_err(|_| anyhow::anyhow!("operation lock poisoned"))
+    fn active_lock(&self) -> anyhow::Result<MutexGuard<'_, Option<String>>> {
+        self.active.lock().map_err(|_| anyhow::anyhow!("active lock poisoned"))
     }
 
     fn config_lock(&self) -> anyhow::Result<MutexGuard<'_, AppConfig>> {
         self.config.lock().map_err(|_| anyhow::anyhow!("config lock poisoned"))
     }
 
-    /// Locks the repo and operation state together as a single critical
-    /// section — the only sanctioned way to touch both, so lock order
-    /// (repo, then operation) stays consistent everywhere and there's no new
-    /// ordering hazard alongside the existing `repo_lock`/`config_lock`.
+    /// Run `f` against the active repo and its operation state under one lock —
+    /// the only sanctioned way to touch both, mirroring how multi-step git ops
+    /// route through a single critical section.
     fn with_repo_and_operation_mut<F, T>(&self, f: F) -> anyhow::Result<T>
     where
         F: FnOnce(&mut Repository, &mut Option<OperationState>) -> anyhow::Result<T>,
     {
-        let mut repo_lock = self.repo_lock()?;
-        let repo = repo_lock.as_mut().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
-        let mut op_lock = self.operation_lock()?;
-        f(repo, &mut op_lock)
+        let key = self.active_lock()?.clone().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        let mut repos = self.repos_lock()?;
+        let entry = repos.iter_mut().find(|r| r.key == key).ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        f(&mut entry.repo, &mut entry.operation)
+    }
+
+    /// Snapshot the open tabs (in order) + active into config and persist, so
+    /// the session is restored on next launch.
+    fn persist_session(&self) -> anyhow::Result<()> {
+        let active = self.active_lock()?.clone().map(PathBuf::from);
+        let open_paths: Vec<PathBuf> = self.repos_lock()?.iter().map(|r| PathBuf::from(&r.key)).collect();
+        let mut config = self.config_lock()?;
+        config.set_session(open_paths, active);
+        let _ = config.save();
+        Ok(())
     }
 
     pub fn open(&self, path: &str) -> anyhow::Result<RepoInfo> {
-        let repo = Repository::open(path)
-            .with_context(|| format!("not a git repository: {path}"))?;
-
-        let name = Path::new(path)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(path)
-            .to_string();
-
-        let head_branch = repo.head().ok().and_then(|h| {
-            h.shorthand().map(|s| s.to_string())
-        });
-
-        let info = RepoInfo { name: name.clone(), path: path.to_string(), head_branch };
-
-        let mut config = self.config_lock()?;
-        config.add_recent(RepoEntry {
-            path: path.into(),
-            name,
-            pinned: false,
-            last_opened: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64,
-        });
-        let _ = config.save();
-        drop(config);
-
-        *self.repo_lock()? = Some(repo);
-
+        let info = {
+            let mut repos = self.repos_lock()?;
+            let repo = Repository::open(path)
+                .with_context(|| format!("not a git repository: {path}"))?;
+            let info = repo_info(&repo);
+            if !repos.iter().any(|r| r.key == info.path) {
+                repos.push(OpenRepo { key: info.path.clone(), repo, operation: None });
+            }
+            info
+        };
+        *self.active_lock()? = Some(info.path.clone());
+        {
+            let mut config = self.config_lock()?;
+            config.add_recent(RepoEntry {
+                path: info.path.clone().into(),
+                name: info.name.clone(),
+                pinned: false,
+                last_opened: now_millis(),
+            });
+        }
+        self.persist_session()?;
         Ok(info)
     }
 
+    /// Make an already-open repo the active tab.
+    pub fn activate(&self, path: &str) -> anyhow::Result<RepoInfo> {
+        let info = {
+            let repos = self.repos_lock()?;
+            let entry = repos
+                .iter()
+                .find(|r| r.key == path)
+                .ok_or_else(|| anyhow::anyhow!("repository not open: {path}"))?;
+            repo_info(&entry.repo)
+        };
+        *self.active_lock()? = Some(info.path.clone());
+        self.persist_session()?;
+        Ok(info)
+    }
+
+    /// Close a tab. If it was active, the active tab falls back to the first
+    /// remaining repo (or `None` when the last tab is closed).
+    pub fn close(&self, path: &str) -> anyhow::Result<Option<RepoInfo>> {
+        let new_active = {
+            let mut active = self.active_lock()?;
+            let mut repos = self.repos_lock()?;
+            repos.retain(|r| r.key != path);
+            if active.as_deref() == Some(path) || active.is_none() {
+                *active = repos.first().map(|r| r.key.clone());
+            }
+            match active.clone() {
+                Some(ak) => repos.iter().find(|r| r.key == ak).map(|r| repo_info(&r.repo)),
+                None => None,
+            }
+        };
+        self.persist_session()?;
+        Ok(new_active)
+    }
+
+    pub fn list_open(&self) -> anyhow::Result<Vec<RepoInfo>> {
+        Ok(self.repos_lock()?.iter().map(|r| repo_info(&r.repo)).collect())
+    }
+
     pub fn get_current(&self) -> anyhow::Result<Option<RepoInfo>> {
-        let lock = self.repo_lock()?;
-        let Some(repo) = lock.as_ref() else { return Ok(None) };
-        let path = repo.path()
-            .parent()
-            .and_then(|p| p.to_str())
-            .unwrap_or("")
-            .to_string();
-        let name = Path::new(&path)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(&path)
-            .to_string();
-        let head_branch = repo.head().ok().and_then(|h| h.shorthand().map(|s| s.to_string()));
-        Ok(Some(RepoInfo { name, path, head_branch }))
+        let Some(key) = self.active_lock()?.clone() else { return Ok(None) };
+        let repos = self.repos_lock()?;
+        Ok(repos.iter().find(|r| r.key == key).map(|r| repo_info(&r.repo)))
     }
 
     pub fn get_recent(&self) -> anyhow::Result<Vec<RepoEntry>> {
@@ -112,26 +177,24 @@ impl RepoManager {
     where
         F: FnOnce(&Repository) -> T,
     {
-        let lock = self.repo_lock()?;
-        let repo = lock.as_ref().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
-        Ok(f(repo))
+        let key = self.active_lock()?.clone().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        let repos = self.repos_lock()?;
+        let entry = repos.iter().find(|r| r.key == key).ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        Ok(f(&entry.repo))
     }
 
     pub fn with_repo_mut<F, T>(&self, f: F) -> anyhow::Result<T>
     where
         F: FnOnce(&mut Repository) -> T,
     {
-        let mut lock = self.repo_lock()?;
-        let repo = lock.as_mut().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
-        Ok(f(repo))
+        let key = self.active_lock()?.clone().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        let mut repos = self.repos_lock()?;
+        let entry = repos.iter_mut().find(|r| r.key == key).ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        Ok(f(&mut entry.repo))
     }
 
     pub fn checkout_branch(&self, branch_name: &str) -> anyhow::Result<RepoInfo> {
-        // All borrows from lock must be dropped before this block exits so
-        // the mutex guard is released before we call get_current() below.
-        {
-            let lock = self.repo_lock()?;
-            let repo = lock.as_ref().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        self.with_repo(|repo| -> anyhow::Result<()> {
             let branch = repo
                 .find_branch(branch_name, BranchType::Local)
                 .with_context(|| format!("branch not found: {branch_name}"))?;
@@ -145,59 +208,56 @@ impl RepoManager {
             repo.checkout_tree(&obj, Some(&mut checkout))
                 .context("checkout failed — working tree has conflicting changes")?;
             repo.set_head(&head_ref).context("could not update HEAD")?;
-            // obj, branch, lock all dropped here in reverse declaration order
-        }
+            Ok(())
+        })??;
         self.get_current()?.ok_or_else(|| anyhow::anyhow!("no repo after checkout"))
     }
 
     pub fn create_branch(&self, name: &str, start_oid: Option<&str>) -> anyhow::Result<BranchInfo> {
-        let lock = self.repo_lock()?;
-        let repo = lock.as_ref().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
-        let commit = match start_oid {
-            Some(oid) => repo.find_commit(git2::Oid::from_str(oid)?)?,
-            None => repo.head()?.peel_to_commit()?,
-        };
-        repo.branch(name, &commit, false)
-            .with_context(|| format!("failed to create branch: {name}"))?;
-        let oid = commit.id().to_string();
-        Ok(BranchInfo {
-            name: name.to_string(),
-            is_remote: false,
-            is_head: false,
-            upstream: None,
-            oid,
-            ahead: None,
-            behind: None,
-        })
+        self.with_repo(|repo| -> anyhow::Result<BranchInfo> {
+            let commit = match start_oid {
+                Some(oid) => repo.find_commit(git2::Oid::from_str(oid)?)?,
+                None => repo.head()?.peel_to_commit()?,
+            };
+            repo.branch(name, &commit, false)
+                .with_context(|| format!("failed to create branch: {name}"))?;
+            let oid = commit.id().to_string();
+            Ok(BranchInfo {
+                name: name.to_string(),
+                is_remote: false,
+                is_head: false,
+                upstream: None,
+                oid,
+                ahead: None,
+                behind: None,
+            })
+        })?
     }
 
     pub fn rename_branch(&self, old_name: &str, new_name: &str) -> anyhow::Result<()> {
-        let lock = self.repo_lock()?;
-        let repo = lock.as_ref().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
-        let mut branch = repo.find_branch(old_name, BranchType::Local)
-            .with_context(|| format!("branch not found: {old_name}"))?;
-        branch.rename(new_name, false)
-            .with_context(|| format!("failed to rename branch to: {new_name}"))?;
-        Ok(())
+        self.with_repo(|repo| -> anyhow::Result<()> {
+            let mut branch = repo.find_branch(old_name, BranchType::Local)
+                .with_context(|| format!("branch not found: {old_name}"))?;
+            branch.rename(new_name, false)
+                .with_context(|| format!("failed to rename branch to: {new_name}"))?;
+            Ok(())
+        })?
     }
 
     pub fn delete_branch(&self, name: &str) -> anyhow::Result<()> {
-        let lock = self.repo_lock()?;
-        let repo = lock.as_ref().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
-        let mut branch = repo.find_branch(name, BranchType::Local)
-            .with_context(|| format!("branch not found: {name}"))?;
-        if branch.is_head() {
-            anyhow::bail!("Cannot delete the currently checked out branch: {name}");
-        }
-        branch.delete().with_context(|| format!("failed to delete branch: {name}"))?;
-        Ok(())
+        self.with_repo(|repo| -> anyhow::Result<()> {
+            let mut branch = repo.find_branch(name, BranchType::Local)
+                .with_context(|| format!("branch not found: {name}"))?;
+            if branch.is_head() {
+                anyhow::bail!("Cannot delete the currently checked out branch: {name}");
+            }
+            branch.delete().with_context(|| format!("failed to delete branch: {name}"))?;
+            Ok(())
+        })?
     }
 
     pub fn operation_status(&self) -> anyhow::Result<OperationStatus> {
-        let repo_lock = self.repo_lock()?;
-        let repo = repo_lock.as_ref().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
-        let mut op_lock = self.operation_lock()?;
-        crate::operation_runner::derive_status(repo, &mut op_lock)
+        self.with_repo_and_operation_mut(|repo, op| crate::operation_runner::derive_status(repo, op))
     }
 
     /// Re-derives and returns the current status. A distinct command from
@@ -210,10 +270,7 @@ impl RepoManager {
     }
 
     pub fn operation_abort(&self) -> anyhow::Result<()> {
-        let kind = {
-            let op_lock = self.operation_lock()?;
-            op_lock.as_ref().map(|s| s.kind)
-        };
+        let kind = self.with_repo_and_operation_mut(|_repo, op| Ok(op.as_ref().map(|s| s.kind)))?;
         match kind {
             Some(OperationKind::Merge) => self.merge_abort(),
             None => match self.operation_status()? {
@@ -230,24 +287,24 @@ impl RepoManager {
     }
 
     pub fn merge_resolve_file(&self, path: &str, content: &str) -> anyhow::Result<Vec<ConflictedFile>> {
-        let repo_lock = self.repo_lock()?;
-        let repo = repo_lock.as_ref().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
-        crate::merge_ops::write_resolution(repo, path, content)?;
-        crate::merge_ops::collect_conflicts(repo)
+        self.with_repo(|repo| -> anyhow::Result<Vec<ConflictedFile>> {
+            crate::merge_ops::write_resolution(repo, path, content)?;
+            crate::merge_ops::collect_conflicts(repo)
+        })?
     }
 
     pub fn merge_resolve_with_side(&self, path: &str, side: ConflictSide) -> anyhow::Result<Vec<ConflictedFile>> {
-        let repo_lock = self.repo_lock()?;
-        let repo = repo_lock.as_ref().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
-        crate::merge_ops::resolve_with_side(repo, path, side)?;
-        crate::merge_ops::collect_conflicts(repo)
+        self.with_repo(|repo| -> anyhow::Result<Vec<ConflictedFile>> {
+            crate::merge_ops::resolve_with_side(repo, path, side)?;
+            crate::merge_ops::collect_conflicts(repo)
+        })?
     }
 
     pub fn merge_resolve_with_deletion(&self, path: &str) -> anyhow::Result<Vec<ConflictedFile>> {
-        let repo_lock = self.repo_lock()?;
-        let repo = repo_lock.as_ref().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
-        crate::merge_ops::resolve_with_deletion(repo, path)?;
-        crate::merge_ops::collect_conflicts(repo)
+        self.with_repo(|repo| -> anyhow::Result<Vec<ConflictedFile>> {
+            crate::merge_ops::resolve_with_deletion(repo, path)?;
+            crate::merge_ops::collect_conflicts(repo)
+        })?
     }
 
     pub fn merge_complete(&self, message: &str) -> anyhow::Result<String> {
@@ -295,18 +352,41 @@ impl AppState {
         Ok(config.github_hosts.iter().map(|h| h.base_url.clone()).collect())
     }
 
+    /// Point the single file watcher at `workdir` (the active tab's working
+    /// tree), or stop it when `None`. Dropping the previous watcher stops it.
+    fn restart_watcher(&self, app_handle: tauri::AppHandle, workdir: Option<&Path>) {
+        let new = workdir.and_then(|w| crate::file_watcher::start(app_handle, w).ok());
+        if let Ok(mut lock) = self.watcher.lock() {
+            *lock = new;
+        }
+    }
+
     pub fn open_repo(&self, path: &str, app_handle: Option<tauri::AppHandle>) -> anyhow::Result<RepoInfo> {
         let info = self.manager.open(path)?;
-        // Start file watcher on the new workdir
         if let Some(handle) = app_handle {
-            let workdir = std::path::PathBuf::from(path);
-            if let Ok(w) = crate::file_watcher::start(handle, &workdir) {
-                if let Ok(mut lock) = self.watcher.lock() {
-                    *lock = Some(w);
-                }
-            }
+            self.restart_watcher(handle, Some(Path::new(&info.path)));
         }
         Ok(info)
+    }
+
+    pub fn activate_repo(&self, path: &str, app_handle: Option<tauri::AppHandle>) -> anyhow::Result<RepoInfo> {
+        let info = self.manager.activate(path)?;
+        if let Some(handle) = app_handle {
+            self.restart_watcher(handle, Some(Path::new(&info.path)));
+        }
+        Ok(info)
+    }
+
+    pub fn close_repo(&self, path: &str, app_handle: Option<tauri::AppHandle>) -> anyhow::Result<Option<RepoInfo>> {
+        let info = self.manager.close(path)?;
+        if let Some(handle) = app_handle {
+            self.restart_watcher(handle, info.as_ref().map(|i| Path::new(i.path.as_str())));
+        }
+        Ok(info)
+    }
+
+    pub fn list_open_repos(&self) -> anyhow::Result<Vec<RepoInfo>> {
+        self.manager.list_open()
     }
 
     pub fn get_current_repo(&self) -> anyhow::Result<Option<RepoInfo>> {
@@ -392,16 +472,35 @@ impl AppState {
     }
 }
 
-pub fn restore_last_repo(app: &tauri::App) -> anyhow::Result<()> {
+/// Reopen the tabs from the last session and activate the saved active tab,
+/// then point the file watcher at it. Falls back to `last_repo_path` for
+/// configs written before multi-tab existed.
+pub fn restore_session(app: &tauri::App) -> anyhow::Result<()> {
     let state = app.state::<AppState>();
-    let config = state.manager.config_lock()?;
-    let last = config.last_repo_path.clone();
-    drop(config);
-    if let Some(path) = last {
+    let (mut open_paths, active) = {
+        let config = state.manager.config_lock()?;
+        (config.open_repos.clone(), config.active_repo_path.clone())
+    };
+    if open_paths.is_empty() {
+        let config = state.manager.config_lock()?;
+        open_paths = config.last_repo_path.clone().into_iter().collect();
+    }
+
+    for path in &open_paths {
         if path.exists() {
-            let handle = app.app_handle().clone();
-            let _ = state.open_repo(path.to_str().unwrap_or(""), Some(handle));
+            let _ = state.manager.open(path.to_str().unwrap_or(""));
         }
+    }
+    // `open` left the last-opened repo active; restore the saved active tab.
+    if let Some(active) = active {
+        if active.exists() {
+            let _ = state.manager.activate(active.to_str().unwrap_or(""));
+        }
+    }
+
+    if let Ok(Some(info)) = state.manager.get_current() {
+        let handle = app.app_handle().clone();
+        state.restart_watcher(handle, Some(Path::new(&info.path)));
     }
     Ok(())
 }
@@ -509,12 +608,75 @@ mod tests {
     fn last_repo_path_updated_on_open() {
         let (dir, _) = make_git_repo_with_commit();
         let manager = RepoManager::new();
-        manager.open(dir.path().to_str().unwrap()).unwrap();
+        let info = manager.open(dir.path().to_str().unwrap()).unwrap();
         let config = manager.config_lock().unwrap();
-        assert_eq!(
-            config.last_repo_path.as_ref().unwrap(),
-            dir.path()
-        );
+        // The recorded path is the git2-normalised workdir (== the tab key),
+        // which may differ from the raw tempdir path by symlink resolution.
+        assert_eq!(config.last_repo_path.as_ref().unwrap(), &PathBuf::from(&info.path));
+    }
+
+    #[test]
+    fn open_two_repos_lists_both_with_second_active() {
+        let (dir_a, _) = make_git_repo_with_commit();
+        let (dir_b, _) = make_git_repo_with_commit();
+        let manager = RepoManager::new();
+        manager.open(dir_a.path().to_str().unwrap()).unwrap();
+        let b = manager.open(dir_b.path().to_str().unwrap()).unwrap();
+        assert_eq!(manager.list_open().unwrap().len(), 2);
+        assert_eq!(manager.get_current().unwrap().unwrap().path, b.path);
+    }
+
+    #[test]
+    fn opening_same_repo_twice_keeps_one_tab() {
+        let (dir, _) = make_git_repo_with_commit();
+        let manager = RepoManager::new();
+        manager.open(dir.path().to_str().unwrap()).unwrap();
+        manager.open(dir.path().to_str().unwrap()).unwrap();
+        assert_eq!(manager.list_open().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn activate_switches_the_active_tab() {
+        let (dir_a, _) = make_git_repo_with_commit();
+        let (dir_b, _) = make_git_repo_with_commit();
+        let manager = RepoManager::new();
+        let a = manager.open(dir_a.path().to_str().unwrap()).unwrap();
+        manager.open(dir_b.path().to_str().unwrap()).unwrap();
+        manager.activate(&a.path).unwrap();
+        assert_eq!(manager.get_current().unwrap().unwrap().path, a.path);
+    }
+
+    #[test]
+    fn close_active_falls_back_to_remaining() {
+        let (dir_a, _) = make_git_repo_with_commit();
+        let (dir_b, _) = make_git_repo_with_commit();
+        let manager = RepoManager::new();
+        let a = manager.open(dir_a.path().to_str().unwrap()).unwrap();
+        let b = manager.open(dir_b.path().to_str().unwrap()).unwrap(); // active
+        let new_active = manager.close(&b.path).unwrap();
+        assert_eq!(new_active.unwrap().path, a.path);
+        assert_eq!(manager.list_open().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn close_last_tab_leaves_no_active_repo() {
+        let (dir, _) = make_git_repo_with_commit();
+        let manager = RepoManager::new();
+        let a = manager.open(dir.path().to_str().unwrap()).unwrap();
+        let new_active = manager.close(&a.path).unwrap();
+        assert!(new_active.is_none());
+        assert!(manager.get_current().unwrap().is_none());
+    }
+
+    #[test]
+    fn freshly_activated_clean_repo_has_no_operation() {
+        let (dir, _) = make_git_repo_with_commit();
+        let manager = RepoManager::new();
+        manager.open(dir.path().to_str().unwrap()).unwrap();
+        assert!(matches!(
+            manager.operation_status().unwrap(),
+            OperationStatus::None
+        ));
     }
 
     #[test]
