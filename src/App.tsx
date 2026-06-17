@@ -157,7 +157,10 @@ export default function App() {
               }}
             >
               {historyRightMode === "uncommitted" ? (
-                <UncommittedPanel branch={currentRepo?.headBranch ?? null} />
+                <UncommittedPanel
+                  branch={currentRepo?.headBranch ?? null}
+                  onCommitted={exitUncommitted}
+                />
               ) : (
                 <CommitDetail oid={selectedOid} />
               )}

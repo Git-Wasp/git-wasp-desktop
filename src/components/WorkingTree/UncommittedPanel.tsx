@@ -8,7 +8,14 @@ import { StagingPanel } from "./StagingPanel";
  * the working-tree store, which the history view renders in the centre graph
  * pane.
  */
-export function UncommittedPanel({ branch }: { branch: string | null }) {
+export function UncommittedPanel({
+  branch,
+  onCommitted,
+}: {
+  branch: string | null;
+  /** Called after a commit succeeds, so the history view can close this panel. */
+  onCommitted?: () => void;
+}) {
   const { status } = useWorkingTreeStore();
 
   const count =
@@ -50,7 +57,7 @@ export function UncommittedPanel({ branch }: { branch: string | null }) {
       </div>
 
       <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-        <StagingPanel />
+        <StagingPanel onCommitted={onCommitted} />
       </div>
     </div>
   );

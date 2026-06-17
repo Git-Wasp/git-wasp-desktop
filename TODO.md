@@ -78,9 +78,14 @@ between sections, and add new ideas under the right heading. Items marked
 ## General UX
 
 - [ ] Toast notification system including options for placement (top/middle/bottom + left/right)
-- [ ] Auto close right panel when commit completed
+- [x] Auto close right panel when commit completed — the history view's
+      uncommitted-changes panel returns to the commit-detail view after a
+      successful commit (optional `onCommitted` callback; the standalone Changes
+      view is unaffected).
 - [ ] Progress/spinners for buttons (e.g. when pushing, pulling) to show something is happening
-- [ ] Branch selection highlight obscures the graph lines - z-index issue?
+- [x] Branch selection highlight obscures the graph lines — fixed by drawing the
+      graph canvas in ordered passes (row bands → edges → dots) so connecting
+      lines are never painted over by a selected row's highlight band.
 - [ ] Include section in settings to view open source packages used?
 - [ ] Main buttons "open repository", "history", "prs" to move to menu/tabs
 - [ ] Allow removing items from "recent"
