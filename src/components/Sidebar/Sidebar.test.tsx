@@ -37,6 +37,7 @@ beforeEach(() => {
     selectedOid: null,
     fetchViewport: vi.fn().mockResolvedValue(undefined),
     selectCommit: vi.fn(),
+    revealCommit: vi.fn().mockResolvedValue(undefined),
     clearSelection: vi.fn(),
   });
 

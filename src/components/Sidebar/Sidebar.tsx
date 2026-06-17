@@ -52,7 +52,7 @@ export function Sidebar({
 }) {
   const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, loadBranches, checkoutBranch, createBranch, deleteBranch } =
     useRepoStore();
-  const { fetchViewport, selectCommit } = useGraphStore();
+  const { fetchViewport, revealCommit } = useGraphStore();
   const { remoteInfo, authStatus, logout, detectRemote } = useGithubStore();
   const { aheadBehind, loadAheadBehind } = useRemoteStore();
   const { status: operationStatus, startMerge } = useMergeStore();
@@ -315,7 +315,7 @@ export function Sidebar({
                     <LaptopIcon />
                   </span>
                   <div
-                    onClick={() => selectCommit(b.oid, false)}
+                    onClick={() => revealCommit(b.oid)}
                     title={`Show ${b.name} in the commit graph`}
                     style={{
                       flex: 1,
@@ -382,7 +382,7 @@ export function Sidebar({
                     <GitHubIcon />
                   </span>
                   <div
-                    onClick={() => selectCommit(b.oid, false)}
+                    onClick={() => revealCommit(b.oid)}
                     title={`Show ${b.name} in the commit graph`}
                     style={{
                       flex: 1,

@@ -94,12 +94,18 @@ export function useCommitGraph(
 
     const laneX = (lane: number) => GRAPH_PAD_LEFT + lane * laneWidth + laneWidth / 2;
 
+    // Drawn in ordered passes so layers never paint over each other: the row
+    // bands (highlights / selection) form the background, then the connecting
+    // edges, then the dots on top. Doing bands and edges in one per-node loop is
+    // wrong — an edge descends into the *next* row's upper half, which a later
+    // iteration's selection band would then paint over, clipping the top of the
+    // line into a selected commit. Separate passes avoid that.
+
+    // Pass 1 — row bands and the right-aligned accent line.
     // row 0 here corresponds to viewport.offset in the full graph.
     viewport.nodes.forEach((node, localRow) => {
-      const y = localRow * rowHeight + rowHeight / 2;
-      const x = laneX(node.lane);
-      const color = laneColors[node.colorIndex % 8] || "#4d9de0";
       const rowTop = localRow * rowHeight;
+      const color = laneColors[node.colorIndex % 8] || "#4d9de0";
 
       // Per-commit highlight band behind the row.
       if (!node.isWorkingTree) {
@@ -119,10 +125,13 @@ export function useCommitGraph(
         ctx.fillStyle = color;
         ctx.fillRect(cssW - 3, rowTop + 5, 3, rowHeight - 10);
       }
+    });
 
-      // Edges connect this row's dot centre to the next row's centre, so the
-      // lines join dot-to-dot (an edge spans the lower half of this row and the
-      // upper half of the next).
+    // Pass 2 — edges, on top of every band so connecting lines stay unbroken
+    // across selected rows. Edges connect this row's dot centre to the next
+    // row's centre (an edge spans the lower half of this row and the upper half
+    // of the next).
+    viewport.nodes.forEach((node, localRow) => {
       const yMid = localRow * rowHeight + rowHeight / 2;
       const yNext = yMid + rowHeight;
       node.edges.forEach((edge) => {
@@ -140,6 +149,13 @@ export function useCommitGraph(
         }
         ctx.stroke();
       });
+    });
+
+    // Pass 3 — dots and the working-tree marker, on top of the edges.
+    viewport.nodes.forEach((node, localRow) => {
+      const y = localRow * rowHeight + rowHeight / 2;
+      const x = laneX(node.lane);
+      const color = laneColors[node.colorIndex % 8] || "#4d9de0";
 
       // Working-tree node: a hollow dashed marker (label lives in the DOM cell).
       if (node.isWorkingTree) {

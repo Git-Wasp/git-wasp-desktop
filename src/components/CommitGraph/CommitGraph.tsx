@@ -93,6 +93,20 @@ export function CommitGraph({
     [fetchViewport],
   );
 
+  // Scroll a revealed commit (a branch head clicked in the sidebar) into view,
+  // centring it, then load the slice around it. Consumes the pending row.
+  useEffect(() => {
+    if (scrollToRow === null) return;
+    const container = containerRef.current;
+    if (!container) return;
+    const target = Math.max(0, scrollToRow * ROW_HEIGHT - container.clientHeight / 2);
+    container.scrollTop = target;
+    const offset = Math.max(0, Math.floor(target / ROW_HEIGHT) - BUFFER_ROWS);
+    const limit = Math.ceil(container.clientHeight / ROW_HEIGHT) + BUFFER_ROWS * 2;
+    fetchViewport(offset, limit);
+    useGraphStore.setState({ scrollToRow: null });
+  }, [scrollToRow, fetchViewport]);
+
   // Merge source into target (auto-checking-out target first), then refresh.
   const handleMerge = useCallback(
     (source: string, target: string) => {
