@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
+    "dev:nowatch": "tauri dev --no-watch",
     "dev:web": "vite",
     "build": "tauri build",
     "build:web": "tsc && vite build",
