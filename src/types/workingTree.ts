@@ -30,6 +30,13 @@ export interface Identity {
   email: string;
 }
 
+export interface HeadCommitInfo {
+  oid: string;
+  message: string;
+  /** True once HEAD is contained in a remote-tracking branch (already pushed). */
+  pushed: boolean;
+}
+
 export interface StashEntry {
   index: number;
   message: string;

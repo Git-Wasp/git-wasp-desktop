@@ -10,6 +10,16 @@ const INITIAL_LIMIT = 100;
 
 type BodyTab = "write" | "preview";
 
+/** Split a commit message into its subject line and (blank-line-separated) body. */
+function splitMessage(message: string): { subject: string; body: string } {
+  const nl = message.indexOf("\n");
+  if (nl === -1) return { subject: message, body: "" };
+  return {
+    subject: message.slice(0, nl),
+    body: message.slice(nl + 1).replace(/^\n+/, "").replace(/\s+$/, ""),
+  };
+}
+
 export function CommitForm({
   stagedCount,
   onCommitted,
@@ -18,21 +28,47 @@ export function CommitForm({
   /** Called after a commit succeeds (e.g. to close the panel in the history view). */
   onCommitted?: () => void;
 }) {
-  const { identity, loadIdentity, createCommit, discardAll } = useWorkingTreeStore();
+  const { identity, headCommit, loadIdentity, loadHeadCommit, createCommit, amendCommitMessage, discardAll } =
+    useWorkingTreeStore();
   const { fetchViewport } = useGraphStore();
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [tab, setTab] = useState<BodyTab>("write");
+  const [amending, setAmending] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadIdentity();
-  }, [loadIdentity]);
+    loadHeadCommit();
+  }, [loadIdentity, loadHeadCommit]);
+
+  // Amend is only offered for a local (not-yet-pushed) tip commit.
+  const canAmend = !!headCommit && !headCommit.pushed;
+
+  const toggleAmend = () => {
+    setError(null);
+    if (!amending) {
+      // Entering amend mode: prefill from the current tip message.
+      const { subject: s, body: b } = splitMessage(headCommit?.message ?? "");
+      setSubject(s);
+      setBody(b);
+      setTab("write");
+      setAmending(true);
+    } else {
+      setSubject("");
+      setBody("");
+      setTab("write");
+      setAmending(false);
+    }
+  };
 
   const previewHtml = useMemo(() => renderMarkdown(body), [body]);
-  const canCommit = stagedCount > 0 && subject.trim().length > 0 && !committing;
+  const hasSubject = subject.trim().length > 0;
+  // Amending the message needs no staged changes; a normal commit does.
+  const canCommit =
+    hasSubject && !committing && (amending || stagedCount > 0);
 
   const handleCommit = async () => {
     if (!canCommit) return;
@@ -42,10 +78,15 @@ export function CommitForm({
       ? `${subject.trim()}\n\n${body.trim()}`
       : subject.trim();
     try {
-      await createCommit(message);
+      if (amending) {
+        await amendCommitMessage(message);
+      } else {
+        await createCommit(message);
+      }
       setSubject("");
       setBody("");
       setTab("write");
+      setAmending(false);
       await fetchViewport(0, INITIAL_LIMIT);
       onCommitted?.();
     } catch (e) {
@@ -102,6 +143,22 @@ export function CommitForm({
         >
           {identity.name} &lt;{identity.email}&gt;
         </div>
+      )}
+
+      {canAmend && (
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--space-2)",
+            fontSize: "var(--font-size-xs)",
+            color: "var(--color-text-secondary)",
+            cursor: "pointer",
+          }}
+        >
+          <input type="checkbox" checked={amending} onChange={toggleAmend} />
+          Amend last commit
+        </label>
       )}
 
       <Input
@@ -183,7 +240,13 @@ export function CommitForm({
           Reset
         </Button>
         <Button variant="primary" fullWidth onClick={handleCommit} disabled={!canCommit}>
-          {committing ? "Committing…" : `Commit${stagedCount > 0 ? ` (${stagedCount})` : ""}`}
+          {amending
+            ? committing
+              ? "Amending…"
+              : "Amend"
+            : committing
+              ? "Committing…"
+              : `Commit${stagedCount > 0 ? ` (${stagedCount})` : ""}`}
         </Button>
       </div>
 

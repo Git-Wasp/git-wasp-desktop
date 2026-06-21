@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { useGraphStore } from "./graphStore";
 import type {
   FileDiffHunks,
+  HeadCommitInfo,
   Identity,
   WorkingTreeStatus,
 } from "../types/workingTree";
@@ -13,6 +14,7 @@ interface WorkingTreeStore {
   selectedPath: string | null;
   selectedDiff: FileDiffHunks | null;
   identity: Identity | null;
+  headCommit: HeadCommitInfo | null;
 
   loadStatus: () => Promise<void>;
   selectFile: (path: string, kind: "staged" | "unstaged") => Promise<void>;
@@ -25,6 +27,8 @@ interface WorkingTreeStore {
   discardHunk: (path: string, hunkIndex: number) => Promise<void>;
   discardAll: () => Promise<void>;
   createCommit: (message: string) => Promise<void>;
+  amendCommitMessage: (message: string) => Promise<void>;
+  loadHeadCommit: () => Promise<void>;
   loadIdentity: () => Promise<void>;
   startWatching: () => Promise<() => void>;
 }
@@ -34,6 +38,7 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
   selectedPath: null,
   selectedDiff: null,
   identity: null,
+  headCommit: null,
 
   loadStatus: async () => {
     const status = await invoke<WorkingTreeStatus>("get_working_tree_status");
@@ -98,6 +103,19 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
   createCommit: async (message: string) => {
     await invoke("create_commit", { message });
     await get().loadStatus();
+    await get().loadHeadCommit();
+  },
+
+  amendCommitMessage: async (message: string) => {
+    await invoke("amend_commit_message", { message });
+    await get().loadHeadCommit();
+    // The reworded commit is a new oid, so refresh the graph too.
+    useGraphStore.getState().refresh();
+  },
+
+  loadHeadCommit: async () => {
+    const headCommit = await invoke<HeadCommitInfo | null>("get_head_commit_info");
+    set({ headCommit });
   },
 
   loadIdentity: async () => {

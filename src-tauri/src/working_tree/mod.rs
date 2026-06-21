@@ -51,6 +51,17 @@ pub struct Identity {
     pub email: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HeadCommitInfo {
+    pub oid: String,
+    pub message: String,
+    /// Whether HEAD is already contained in a remote-tracking branch — i.e. it
+    /// has been pushed. Amending a pushed commit rewrites shared history, so the
+    /// UI guards the amend affordance behind this flag.
+    pub pushed: bool,
+}
+
 pub fn get_working_tree_status(repo: &Repository) -> anyhow::Result<WorkingTreeStatus> {
     let mut opts = StatusOptions::new();
     opts.include_untracked(true).recurse_untracked_dirs(true);
@@ -273,6 +284,59 @@ pub fn create_commit(repo: &Repository, message: &str) -> anyhow::Result<String>
     let oid = repo
         .commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)
         .context("failed to create commit")?;
+    Ok(oid.to_string())
+}
+
+/// True if HEAD is reachable from any remote-tracking branch, meaning the commit
+/// has already been pushed. Returns false for an unborn branch (no HEAD yet).
+pub fn head_commit_is_pushed(repo: &Repository) -> anyhow::Result<bool> {
+    let head_oid = match repo.head() {
+        Ok(head) => head.peel_to_commit().context("HEAD is not a commit")?.id(),
+        Err(_) => return Ok(false),
+    };
+
+    for branch in repo.branches(Some(git2::BranchType::Remote))? {
+        let (branch, _) = branch?;
+        if let Some(target) = branch.get().target() {
+            // The remote contains HEAD if its tip *is* HEAD or descends from it.
+            if target == head_oid || repo.graph_descendant_of(target, head_oid)? {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Details of the tip commit, or `None` on an unborn branch. Used to prefill and
+/// gate the "amend last commit" affordance.
+pub fn head_commit_info(repo: &Repository) -> anyhow::Result<Option<HeadCommitInfo>> {
+    let commit = match repo.head() {
+        Ok(head) => head.peel_to_commit().context("HEAD is not a commit")?,
+        Err(_) => return Ok(None),
+    };
+    Ok(Some(HeadCommitInfo {
+        oid: commit.id().to_string(),
+        message: commit.message().unwrap_or_default().to_string(),
+        pushed: head_commit_is_pushed(repo)?,
+    }))
+}
+
+/// Rewrite the tip commit's message, keeping its tree, parents and author
+/// intact. Refuses if the commit has already been pushed (would rewrite shared
+/// history). Staged changes are deliberately *not* folded in — this amends the
+/// message only. Returns the new commit's oid.
+pub fn amend_commit_message(repo: &Repository, message: &str) -> anyhow::Result<String> {
+    if head_commit_is_pushed(repo)? {
+        anyhow::bail!("Cannot amend a commit that has already been pushed to a remote.");
+    }
+    let head = repo
+        .head()
+        .context("no commit to amend")?
+        .peel_to_commit()
+        .context("HEAD is not a commit")?;
+    let oid = head
+        .amend(Some("HEAD"), None, None, None, Some(message), None)
+        .context("failed to amend commit message")?;
     Ok(oid.to_string())
 }
 
@@ -530,6 +594,106 @@ mod tests {
         assert!(!oid.is_empty());
         let head = repo.head().unwrap().peel_to_commit().unwrap();
         assert_eq!(head.parent_count(), 0);
+    }
+
+    /// Point a remote-tracking ref (refs/remotes/origin/main) at `oid` to
+    /// simulate that commit having been pushed.
+    fn mark_pushed(repo: &Repository, oid: git2::Oid) {
+        repo.reference("refs/remotes/origin/main", oid, true, "test push")
+            .unwrap();
+    }
+
+    #[test]
+    fn amend_changes_head_message_and_oid() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "file.txt", "content");
+        let original = create_commit(&repo, "original message").unwrap();
+
+        let new_oid = amend_commit_message(&repo, "amended message").unwrap();
+
+        assert_ne!(new_oid, original);
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        assert_eq!(head.id().to_string(), new_oid);
+        assert_eq!(head.message().unwrap(), "amended message");
+    }
+
+    #[test]
+    fn amend_preserves_tree_parents_and_author() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "first.txt", "one");
+        create_commit(&repo, "first").unwrap();
+        write_and_stage(&repo, &dir, "second.txt", "two");
+        let original_oid = create_commit(&repo, "second").unwrap();
+        let original = repo.find_commit(original_oid.parse().unwrap()).unwrap();
+        let original_tree = original.tree_id();
+        let original_parent = original.parent_id(0).unwrap();
+        let original_author = original.author().name().unwrap().to_string();
+
+        amend_commit_message(&repo, "second (reworded)").unwrap();
+
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        assert_eq!(head.tree_id(), original_tree);
+        assert_eq!(head.parent_id(0).unwrap(), original_parent);
+        assert_eq!(head.author().name().unwrap(), original_author);
+    }
+
+    #[test]
+    fn amend_refuses_when_commit_is_pushed() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "file.txt", "content");
+        let oid = create_commit(&repo, "pushed commit").unwrap();
+        mark_pushed(&repo, oid.parse().unwrap());
+
+        let err = amend_commit_message(&repo, "should fail").unwrap_err();
+        assert!(err.to_string().contains("pushed"));
+        // Message unchanged.
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        assert_eq!(head.message().unwrap(), "pushed commit");
+    }
+
+    #[test]
+    fn head_is_pushed_reflects_remote_tracking_branch() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "file.txt", "content");
+        let oid = create_commit(&repo, "commit").unwrap();
+
+        assert!(!head_commit_is_pushed(&repo).unwrap());
+        mark_pushed(&repo, oid.parse().unwrap());
+        assert!(head_commit_is_pushed(&repo).unwrap());
+    }
+
+    #[test]
+    fn head_is_pushed_when_remote_is_ahead() {
+        // A remote ref that descends from HEAD still contains HEAD.
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "file.txt", "one");
+        let first = create_commit(&repo, "first").unwrap();
+        write_and_stage(&repo, &dir, "file2.txt", "two");
+        let second = create_commit(&repo, "second").unwrap();
+        // Pretend the remote is at `second`, then reset local HEAD back to `first`.
+        mark_pushed(&repo, second.parse().unwrap());
+        let first_commit = repo.find_commit(first.parse().unwrap()).unwrap();
+        repo.reset(first_commit.as_object(), git2::ResetType::Soft, None).unwrap();
+
+        assert!(head_commit_is_pushed(&repo).unwrap());
+    }
+
+    #[test]
+    fn head_commit_info_returns_message_and_pushed_flag() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "file.txt", "content");
+        let oid = create_commit(&repo, "subject\n\nbody").unwrap();
+
+        let info = head_commit_info(&repo).unwrap().expect("head commit");
+        assert_eq!(info.oid, oid);
+        assert_eq!(info.message, "subject\n\nbody");
+        assert!(!info.pushed);
+    }
+
+    #[test]
+    fn head_commit_info_is_none_on_unborn_branch() {
+        let (_dir, repo) = init_repo();
+        assert!(head_commit_info(&repo).unwrap().is_none());
     }
 
     #[test]

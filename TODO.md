@@ -30,10 +30,14 @@ between sections, and add new ideas under the right heading. Items marked
 
 ## Working tree & committing
 
-- [ ] "Staging" area for files during commit: stage an entire file or a hunk and
+- [x] "Staging" area for files during commit: stage an entire file or a hunk and
       move it to the panel below; support staging deleted and added files; allow
       "unstage"
-- [ ] Ability to amend a commit message before it's been pushed to the remote
+- [x] Ability to amend a commit message before it's been pushed to the remote —
+      "Amend last commit" toggle in the commit form prefills the tip commit's
+      message; reword + Amend rewrites HEAD (message only, tree/parents/author
+      kept). Backend refuses, and the toggle is hidden, once the commit is
+      contained in a remote-tracking branch (already pushed).
 - [x] Improved UX for committing — doesn't need to be a separate "screen"
       (Changes/Staged panels, diff in main view, subject + markdown Write/Preview
       body, Commit / Reset-with-confirm)
@@ -97,3 +101,6 @@ between sections, and add new ideas under the right heading. Items marked
 - [x] Better primary/secondary button design — primary gained a subtle border +
       shadow for depth; secondary now has a faint fill (reads as a real control,
       not plain text); both get a tactile press (nudge-down) on `:active`.
+- [ ] For repositories with lots of commits, tags, or branches the performance
+      of the git graph is poor. Scrolling causes "flashing" and frequent "re-painting".
+- [ ] Add ability to select multiple "unpushed" commits on the same branch and squash them.

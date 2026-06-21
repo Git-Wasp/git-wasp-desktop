@@ -57,6 +57,8 @@ pub fn run() {
             commands::discard::discard_all,
             // Commit
             commands::commit::create_commit,
+            commands::commit::amend_commit_message,
+            commands::commit::get_head_commit_info,
             commands::commit::get_commit_identity,
             // Stash
             commands::stash::stash_save_cmd,
