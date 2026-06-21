@@ -10,6 +10,7 @@ import { HunkDiffViewer } from "./components/WorkingTree/HunkDiffViewer";
 import { PRPanel } from "./components/PRPanel/PRPanel";
 import { MergeEditor } from "./components/Merge/MergeEditor";
 import { SettingsView } from "./components/Settings/SettingsView";
+import { ToastContainer } from "./components/ui/Toast";
 import { ResizeHandle } from "./components/common/ResizeHandle";
 import { usePersistedWidth } from "./lib/usePersistedWidth";
 import { useRepoStore } from "./stores/repoStore";
@@ -175,6 +176,7 @@ export default function App() {
         )}
       </div>
       </div>
+      <ToastContainer />
     </div>
   );
 }

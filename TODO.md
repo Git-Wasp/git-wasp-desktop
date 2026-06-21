@@ -82,7 +82,11 @@ between sections, and add new ideas under the right heading. Items marked
 
 ## General UX
 
-- [ ] Toast notification system including options for placement (top/middle/bottom + left/right)
+- [x] Toast notification system including options for placement (top/middle/bottom + left/right)
+      — `toastStore` (success/error/info/warning, auto-dismiss with errors sticky)
+      drives a `ToastContainer` mounted at the app root; placement (vertical ×
+      horizontal) is chosen in Settings → Notifications and persisted. Wired into
+      push/pull/fetch in the history toolbar (replacing the inline error text).
 - [x] Auto close right panel when commit completed — the history view's
       uncommitted-changes panel returns to the commit-detail view after a
       successful commit (optional `onCommitted` callback; the standalone Changes

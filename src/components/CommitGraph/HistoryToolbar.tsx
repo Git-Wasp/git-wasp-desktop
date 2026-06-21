@@ -4,6 +4,7 @@ import { useGraphStore } from "../../stores/graphStore";
 import { useRepoStore } from "../../stores/repoStore";
 import { useGithubStore } from "../../stores/githubStore";
 import { useMergeStore } from "../../stores/mergeStore";
+import { useToastStore } from "../../stores/toastStore";
 import { ContextMenu, type MenuItem } from "../common/ContextMenu";
 import { PromptDialog } from "../common/PromptDialog";
 import { Button } from "../ui/Button";
@@ -18,12 +19,17 @@ const barStyle: React.CSSProperties = {
   flexShrink: 0,
 };
 
+const PULL_MESSAGE: Record<string, string> = {
+  fastForwarded: "Fast-forwarded to latest",
+  alreadyUpToDate: "Already up to date",
+  merged: "Merged remote changes",
+};
+
 export function HistoryToolbar() {
   const {
     isFetching,
     isPulling,
     isPushing,
-    lastError,
     fetch: fetchRemote,
     pull,
     push,
@@ -32,6 +38,10 @@ export function HistoryToolbar() {
   const { createBranch, checkoutBranch } = useRepoStore();
   const remoteInfo = useGithubStore((s) => s.remoteInfo);
   const loadMergeStatus = useMergeStore((s) => s.loadStatus);
+  // Select the stable action methods so toolbar doesn't re-render on every toast.
+  const toastSuccess = useToastStore((s) => s.success);
+  const toastError = useToastStore((s) => s.error);
+  const toastWarning = useToastStore((s) => s.warning);
 
   const pullButtonRef = useRef<HTMLButtonElement>(null);
   const [pullMenu, setPullMenu] = useState<{ x: number; y: number } | null>(null);
@@ -44,18 +54,21 @@ export function HistoryToolbar() {
     try {
       await push();
       await refresh();
-    } catch {
-      /* error captured in remoteStore.lastError */
+      toastSuccess("Pushed to remote");
+    } catch (e) {
+      toastError(String(e), { title: "Push failed" });
     }
   };
 
   const handleFetch = async () => {
     setPullMenu(null);
     try {
-      await fetchRemote();
+      const result = await fetchRemote();
       await refresh();
-    } catch {
-      /* lastError */
+      const n = result.updatedRefs.length;
+      toastSuccess(n > 0 ? `Fetched — ${n} ref${n === 1 ? "" : "s"} updated` : "Already up to date");
+    } catch (e) {
+      toastError(String(e), { title: "Fetch failed" });
     }
   };
 
@@ -65,10 +78,15 @@ export function HistoryToolbar() {
       const result = await pull(mode);
       // A conflicting merge leaves an in-progress operation; load it so the
       // app swaps in the merge editor.
-      if (result.status === "conflicts") await loadMergeStatus();
+      if (result.status === "conflicts") {
+        await loadMergeStatus();
+        toastWarning("Pull stopped on conflicts — resolve them to continue");
+      } else {
+        toastSuccess(PULL_MESSAGE[result.status] ?? "Pulled changes");
+      }
       await refresh();
-    } catch {
-      /* lastError */
+    } catch (e) {
+      toastError(String(e), { title: "Pull failed" });
     }
   };
 
@@ -107,20 +125,6 @@ export function HistoryToolbar() {
       <Button type="button" onClick={() => setShowNewBranch(true)}>
         New branch
       </Button>
-
-      {lastError && (
-        <span
-          style={{
-            fontSize: "var(--font-size-xs)",
-            color: "var(--color-danger)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {lastError}
-        </span>
-      )}
 
       {pullMenu && (
         <ContextMenu x={pullMenu.x} y={pullMenu.y} items={pullItems} onClose={() => setPullMenu(null)} />

@@ -1,4 +1,5 @@
 import { ThemeManager } from "./ThemeManager";
+import { NotificationSettings } from "./NotificationSettings";
 
 const sectionTitleStyle: React.CSSProperties = {
   fontSize: "var(--font-size-md)",
@@ -22,9 +23,14 @@ export function SettingsView() {
         Settings
       </h1>
 
-      <section style={{ maxWidth: 640 }}>
+      <section style={{ maxWidth: 640, marginBottom: "var(--space-6)" }}>
         <h2 style={sectionTitleStyle}>Themes</h2>
         <ThemeManager />
+      </section>
+
+      <section style={{ maxWidth: 640 }}>
+        <h2 style={sectionTitleStyle}>Notifications</h2>
+        <NotificationSettings />
       </section>
     </div>
   );
