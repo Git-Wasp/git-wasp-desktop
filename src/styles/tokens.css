@@ -1,16 +1,19 @@
 :root {
-  /* === COLOUR — Neutral scale === */
-  --color-neutral-0:   #0d0f12;
-  --color-neutral-50:  #13161a;
-  --color-neutral-100: #1a1d23;
-  --color-neutral-200: #22262e;
-  --color-neutral-300: #2d3240;
-  --color-neutral-400: #3d4454;
-  --color-neutral-500: #5a6278;
-  --color-neutral-600: #7c879a;
-  --color-neutral-700: #a3afc2;
-  --color-neutral-800: #ccd5e0;
-  --color-neutral-900: #eef1f5;
+  /* === COLOUR — Neutral scale ===
+     Warm, Monokai-leaning greys: the app reads as dark grey rather than near
+     black, with an off-white foreground. Surfaces map from the low end, text
+     from the high end (see the Surface/Text groups below). */
+  --color-neutral-0:   #1e1f1c;
+  --color-neutral-50:  #272822;
+  --color-neutral-100: #2d2e28;
+  --color-neutral-200: #3a3a32;
+  --color-neutral-300: #49483e;
+  --color-neutral-400: #5c5b4d;
+  --color-neutral-500: #75715e;
+  --color-neutral-600: #908b78;
+  --color-neutral-700: #bdb9a6;
+  --color-neutral-800: #e2dfd2;
+  --color-neutral-900: #f8f8f2;
   --color-neutral-950: #ffffff;
 
   /* === COLOUR — Brand/accent === */
@@ -18,21 +21,21 @@
   --color-accent-secondary: #3b82c4;
   --color-accent-muted:     #1e3a5f;
 
-  /* === COLOUR — Semantic === */
-  --color-success: #34c759;
-  --color-warning: #ff9f0a;
-  --color-danger:  #ff3b30;
+  /* === COLOUR — Semantic (vivid Monokai hues) === */
+  --color-success: #a6e22e;
+  --color-warning: #fd971f;
+  --color-danger:  #f92672;
   --color-info:    #4d9de0;
 
-  /* === COLOUR — Graph lane rotation (8 colours) === */
+  /* === COLOUR — Graph lane rotation (8 colours, Monokai-leaning) === */
   --color-lane-0: #4d9de0;
-  --color-lane-1: #a855f7;
-  --color-lane-2: #34c759;
-  --color-lane-3: #ff9f0a;
-  --color-lane-4: #f43f5e;
-  --color-lane-5: #14b8a6;
-  --color-lane-6: #f59e0b;
-  --color-lane-7: #6366f1;
+  --color-lane-1: #ae81ff;
+  --color-lane-2: #a6e22e;
+  --color-lane-3: #fd971f;
+  --color-lane-4: #f92672;
+  --color-lane-5: #66d9ef;
+  --color-lane-6: #e6db74;
+  --color-lane-7: #2dd4bf;
 
   /* === COLOUR — Surface === */
   --color-bg-app:      var(--color-neutral-0);
@@ -105,10 +108,10 @@
   --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
 
   /* === COLOUR — Working tree diff === */
-  --color-diff-add:    #34c759;
-  --color-diff-del:    #ff3b30;
-  --color-diff-add-bg: rgba(52, 199, 89, 0.10);
-  --color-diff-del-bg: rgba(255, 59, 48, 0.10);
+  --color-diff-add:    #a6e22e;
+  --color-diff-del:    #f92672;
+  --color-diff-add-bg: rgba(166, 226, 46, 0.12);
+  --color-diff-del-bg: rgba(249, 38, 114, 0.12);
   --color-bg-hunk-header: var(--color-neutral-100);
 
   /* === COLOUR — Interactive === */

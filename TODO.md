@@ -71,8 +71,17 @@ between sections, and add new ideas under the right heading. Items marked
 
 ## Theming
 
-- [ ] Improve dark theme. Think more "monokai" - more grey than black with clear colours for highlights/actions
-- [ ] Additional built-in themes (e.g. Cobalt2)
+- [x] Improve dark theme. Think more "monokai" - more grey than black with clear colours for highlights/actions
+      — retuned the `:root` neutral scale to warm Monokai greys (app reads dark
+      grey, not near-black; off-white #f8f8f2 text) and the semantic/lane/diff
+      colours to vivid Monokai hues (green/pink/orange/purple/cyan/yellow). Blue
+      (#4d9de0) stays the primary action/link colour so buttons read as clickable.
+      Only the default dark theme changed — other themes set their surfaces
+      explicitly, and no component reads the raw neutral scale.
+- [x] Additional built-in themes (e.g. Cobalt2) — Cobalt2 added (deep-blue
+      surfaces, signature yellow accent with dark text-on-accent). The built-in
+      theme machinery now takes any number of `[data-theme=…]` token blocks, so
+      further themes are just a token block + a `BUILT_IN_THEMES` entry.
 - [x] Add a "GitHub" theme pair - dark and light - matching GitHub colour themes.
       — "GitHub Dark" + "GitHub Light" built-in themes (Primer palette) added as
       `[data-theme=github-dark|github-light]` token blocks. `applyTheme` now maps
