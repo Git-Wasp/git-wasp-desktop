@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Sidebar } from "./components/Sidebar/Sidebar";
 import { TabBar } from "./components/TabBar/TabBar";
+import { NavBar } from "./components/NavBar/NavBar";
 import { CommitGraph } from "./components/CommitGraph/CommitGraph";
 import { HistoryToolbar } from "./components/CommitGraph/HistoryToolbar";
 import { CommitDetail } from "./components/CommitDetail/CommitDetail";
@@ -104,8 +105,9 @@ export default function App() {
       }}
     >
       <TabBar />
+      <NavBar view={view} onViewChange={setView} />
       <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
-      <Sidebar view={view} onViewChange={setView} width={sidebarWidth} />
+      <Sidebar width={sidebarWidth} />
       <ResizeHandle
         ariaLabel="Resize sidebar"
         onResize={(dx) => setSidebarWidth((w) => w + dx)}

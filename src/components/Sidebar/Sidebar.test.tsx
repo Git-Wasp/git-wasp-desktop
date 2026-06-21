@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import "@testing-library/jest-dom";
@@ -72,27 +72,13 @@ beforeEach(() => {
 });
 
 describe("Sidebar", () => {
-  it("renders the History, Changes, and PRs nav buttons", () => {
-    render(<Sidebar view="history" onViewChange={vi.fn()} />);
+  it("no longer renders the view-nav buttons (moved to the top NavBar)", () => {
+    render(<Sidebar />);
 
-    expect(screen.getByRole("button", { name: "History" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Changes" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "PRs" })).toBeInTheDocument();
-  });
-
-  it("switches the view when a nav button is clicked", () => {
-    const onViewChange = vi.fn();
-    render(<Sidebar view="history" onViewChange={onViewChange} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Changes" }));
-
-    expect(onViewChange).toHaveBeenCalledWith("working-tree");
-  });
-
-  it("no longer renders a Workspace nav button", () => {
-    render(<Sidebar view="history" onViewChange={vi.fn()} />);
-
-    expect(screen.queryByRole("button", { name: "Workspace" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "History" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Changes" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "PRs" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /open repository/i })).toBeNull();
   });
 
   it("groups branches into Local and Remote sections with provenance icons", () => {
@@ -103,7 +89,7 @@ describe("Sidebar", () => {
       ],
     });
 
-    const { container } = render(<Sidebar view="history" onViewChange={vi.fn()} />);
+    const { container } = render(<Sidebar />);
 
     expect(screen.getByRole("button", { name: "Local" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Remote" })).toBeInTheDocument();

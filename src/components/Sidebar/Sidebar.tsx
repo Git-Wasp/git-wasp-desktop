@@ -1,4 +1,3 @@
-import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { useRepoStore } from "../../stores/repoStore";
@@ -17,8 +16,6 @@ import { CloneDialog } from "../GitHub/CloneDialog";
 import { DeviceFlowModal } from "../GitHub/DeviceFlowModal";
 
 const INITIAL_LIMIT = 150;
-
-type View = "history" | "working-tree" | "prs" | "settings";
 
 const branchRowStyle: CSSProperties = {
   display: "flex",
@@ -41,15 +38,7 @@ const branchEmptyHintStyle: CSSProperties = {
   fontStyle: "italic",
 };
 
-export function Sidebar({
-  view,
-  onViewChange,
-  width = 220,
-}: {
-  view: View;
-  onViewChange: (v: View) => void;
-  width?: number;
-}) {
+export function Sidebar({ width = 220 }: { width?: number }) {
   const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, loadBranches, checkoutBranch, createBranch, deleteBranch } =
     useRepoStore();
   const { fetchViewport, revealCommit } = useGraphStore();
@@ -79,14 +68,6 @@ export function Sidebar({
       detectRemote();
     }
   }, [currentRepo, loadBranches, loadAheadBehind, detectRemote]);
-
-  const handleOpenFolder = async () => {
-    const selected = await open({ directory: true, multiple: false });
-    if (typeof selected === "string") {
-      // openRepo adds the tab and reloads the graph/branches/status itself.
-      await openRepo(selected);
-    }
-  };
 
   const handleRecentClick = async (path: string) => {
     await openRepo(path);
@@ -164,55 +145,6 @@ export function Sidebar({
             {currentRepo.headBranch ?? "detached"}
           </div>
         )}
-        <Button
-          variant="primary"
-          fullWidth
-          onClick={handleOpenFolder}
-          style={{ marginTop: "var(--space-3)" }}
-        >
-          Open Repository…
-        </Button>
-
-        {/* View toggle */}
-        {currentRepo && (
-          <div
-            style={{
-              marginTop: "var(--space-3)",
-              display: "flex",
-              gap: "var(--space-1)",
-            }}
-          >
-            {(["history", "working-tree", "prs"] as View[]).map((v) => (
-              <button
-                key={v}
-                onClick={() => onViewChange(v)}
-                style={{
-                  flex: 1,
-                  padding: "var(--space-1) var(--space-2)",
-                  fontSize: "var(--font-size-xs)",
-                  background:
-                    view === v
-                      ? "var(--color-bg-elevated)"
-                      : "transparent",
-                  color:
-                    view === v
-                      ? "var(--color-text-primary)"
-                      : "var(--color-text-muted)",
-                  border: "1px solid var(--color-border-subtle)",
-                  borderRadius: "var(--radius-sm)",
-                  cursor: "pointer",
-                  fontWeight:
-                    view === v
-                      ? "var(--font-weight-semibold)"
-                      : "var(--font-weight-normal)",
-                }}
-              >
-                {v === "history" ? "History" : v === "working-tree" ? "Changes" : "PRs"}
-              </button>
-            ))}
-          </div>
-        )}
-
         {/* GitHub connection status */}
         <div
           style={{
@@ -442,24 +374,6 @@ export function Sidebar({
 
       <StashPanel />
       </div>
-
-      {/* Settings (always available, pinned to the bottom) */}
-      <button
-        onClick={() => onViewChange("settings")}
-        style={{
-          flexShrink: 0,
-          padding: "var(--space-2) var(--space-4)",
-          textAlign: "left",
-          fontSize: "var(--font-size-sm)",
-          background: view === "settings" ? "var(--color-bg-elevated)" : "transparent",
-          color: view === "settings" ? "var(--color-text-primary)" : "var(--color-text-secondary)",
-          border: "none",
-          borderTop: "1px solid var(--color-border-subtle)",
-          cursor: "pointer",
-        }}
-      >
-        ⚙ Settings
-      </button>
     </div>
   );
 }

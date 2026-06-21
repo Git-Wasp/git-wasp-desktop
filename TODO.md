@@ -70,6 +70,8 @@ between sections, and add new ideas under the right heading. Items marked
 
 - [ ] Additional built-in themes (e.g. Cobalt2)
 - [ ] Allow default branch colour palette to be configurable (see pre-req in [Working Tree & Committing](#working-tree--committing))
+- [ ] Improve dark theme. Think more "monokai" - more grey than black with clear colours for highlights/actions
+- [ ] Add a "GitHub" theme pair - dark and light - matching GitHub colour themes.
 
 ## Engineering & tooling
 
@@ -97,8 +99,14 @@ between sections, and add new ideas under the right heading. Items marked
 - [x] Branch selection highlight obscures the graph lines — fixed by drawing the
       graph canvas in ordered passes (row bands → edges → dots) so connecting
       lines are never painted over by a selected row's highlight band.
+- [x] Main buttons "open repository", "history", "prs" to move to menu/tabs —
+      new top `NavBar` tab strip (under the repo TabBar) holds the History /
+      Changes / PRs / Settings view tabs plus an "Open Repository…" action;
+      always visible so a repo can be opened (and Settings reached) with nothing
+      open yet, with the view tabs appearing only once a repo is open. The
+      sidebar is now pure repo content (branches, recent, stash); its view
+      toggle, Open Repository button, and bottom Settings button were removed.
 - [ ] Include section in settings to view open source packages used?
-- [ ] Main buttons "open repository", "history", "prs" to move to menu/tabs
 - [x] Allow removing items from "recent"
 - [x] Fetch/pull/push buttons removed from the left sidebar — they were
       duplicated in the history toolbar (which surfaces in-flight state +
