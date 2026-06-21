@@ -90,7 +90,7 @@ between sections, and add new ideas under the right heading. Items marked
       lines are never painted over by a selected row's highlight band.
 - [ ] Include section in settings to view open source packages used?
 - [ ] Main buttons "open repository", "history", "prs" to move to menu/tabs
-- [ ] Allow removing items from "recent"
+- [x] Allow removing items from "recent"
 - [x] Fetch/pull/push buttons removed from the left sidebar — they were
       duplicated in the history toolbar (which surfaces in-flight state +
       errors); the sidebar RemoteActions now keeps only "Clone from GitHub…".
