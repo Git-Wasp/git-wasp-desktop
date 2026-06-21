@@ -1,6 +1,7 @@
 import type { BranchLabel, GraphNode } from "../../types/graph";
 import { MAX_BODY_CHARS, type PillHandlers } from "./columnModel";
 import { GitHubIcon, LaptopIcon } from "../ui/icons";
+import { Tooltip } from "../ui/Tooltip";
 
 // --- Branch / Tag cell -------------------------------------------------------
 
@@ -14,10 +15,10 @@ function BranchPill({ label, handlers }: { label: BranchLabel; handlers?: PillHa
   const local = !label.isRemote && !label.isTag;
   const isTarget = handlers?.isDropTarget(label.name) ?? false;
   return (
+    <Tooltip label={label.name}>
     <span
       data-branch={label.name}
       data-local={local ? "true" : "false"}
-      title={label.name}
       onPointerDown={local && handlers ? (e) => handlers.onPointerDown(e, label) : undefined}
       onPointerEnter={handlers ? () => handlers.onPointerEnter(label) : undefined}
       onPointerLeave={handlers ? () => handlers.onPointerLeave() : undefined}
@@ -47,6 +48,7 @@ function BranchPill({ label, handlers }: { label: BranchLabel; handlers?: PillHa
         {label.name}
       </span>
     </span>
+    </Tooltip>
   );
 }
 

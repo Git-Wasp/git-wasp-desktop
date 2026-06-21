@@ -31,7 +31,11 @@ between sections, and add new ideas under the right heading. Items marked
 - [ ] **Cherry-pick (single or range)** (v1 scope)
 - [ ] Rebase as a merge strategy with conflict-resolution UI — confirm whether
       it's wired up as a first-class action (v1 scope)
-- [ ] Tooltip for branch name when hovering on branch name pill
+- [x] Tooltip for branch name/tag when hovering on branch name/tag pill — new
+      reusable token-styled `Tooltip` (hover delay, fixed-positioned above the
+      element like ContextMenu, hides on pointer-down so it doesn't linger during
+      a drag). Applied to the branch/tag pills showing the full ref name (handy
+      since pills truncate), replacing the plain native `title`.
 - [ ] Indicator/icon show currently checked out branch clearly (e.g. left arrow by 'circle' icon for commit?)
 - [ ] Improve colour scheme. Colours too bright and "basic"? Allow default branch colours to be specified in colour schemes?
 - [ ] Open PR as a result of dropping one branch onto another. Include ability to enter title, description, "assign to (default to @me)", tags and then "Open PR" and "Continue on GitHub" options.
