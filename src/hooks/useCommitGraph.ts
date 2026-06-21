@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { GraphViewport } from "../types/graph";
 import { THEME_CHANGE_EVENT } from "../lib/applyTheme";
+import { useAvatarStore } from "../stores/avatarStore";
 
 // Left padding inside the graph column so dots clear the branch|graph divider.
 const GRAPH_PAD_LEFT = 10;
@@ -54,6 +55,8 @@ export function useCommitGraph(
   const configRef = useRef<GraphConfig | null>(null);
   const laneColorsRef = useRef<string[]>([]);
   const [themeTick, setThemeTick] = useState(0);
+  // Redraw when avatars resolve so dots swap from colour to image.
+  const avatarVersion = useAvatarStore((s) => s.version);
 
   // Resolve CSS tokens at mount and on theme change (tokens are read from CSS,
   // so a theme swap must re-resolve colours and redraw).
@@ -169,16 +172,34 @@ export function useCommitGraph(
         return;
       }
 
-      // Commit dot.
-      ctx.beginPath();
-      ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
-      ctx.fillStyle = color;
-      ctx.fill();
-      if (node.isHead) {
-        ctx.strokeStyle = "#ffffff";
-        ctx.lineWidth = 1.5;
+      // Commit dot — the author's gravatar (clipped to a circle) when resolved,
+      // otherwise the lane-coloured dot as a fallback. Either way a ring gives
+      // it definition and marks HEAD.
+      const avatar = useAvatarStore.getState().getImage(node.authorEmail);
+      if (avatar) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(avatar, x - dotRadius, y - dotRadius, dotRadius * 2, dotRadius * 2);
+        ctx.restore();
+        ctx.beginPath();
+        ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = node.isHead ? "#ffffff" : color;
+        ctx.lineWidth = node.isHead ? 1.5 : 1;
         ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        if (node.isHead) {
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
       }
     });
-  }, [viewport, selection, canvasRef, themeTick, width]);
+  }, [viewport, selection, canvasRef, themeTick, width, avatarVersion]);
 }

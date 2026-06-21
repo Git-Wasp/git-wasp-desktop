@@ -20,13 +20,21 @@ between sections, and add new ideas under the right heading. Items marked
 
 - [ ] Right-click actions on commits
 - [ ] Right-click actions on branches (delete local, push, etc.)
-- [ ] Integrate user icons via gravatar (in the commit dots)
+- [x] Integrate user icons via gravatar (in the commit dots) — author gravatars
+      render clipped into the commit dots (lane-coloured dot is the fallback).
+      Rust `get_avatar` command fetches once per email (d=404 to detect "no
+      avatar") and caches to the OS cache dir — hits (`<hash>.png`) and misses
+      (`<hash>.none`) both cached with a 14-day TTL, so it survives restarts and
+      never re-fetches while fresh. Frontend `avatarStore` dedupes per email,
+      requests only authors in view, and bumps a version on resolve so the canvas
+      redraws the dot from colour to image asynchronously.
 - [ ] **Cherry-pick (single or range)** (v1 scope)
 - [ ] Rebase as a merge strategy with conflict-resolution UI — confirm whether
       it's wired up as a first-class action (v1 scope)
 - [ ] Tooltip for branch name when hovering on branch name pill
 - [ ] Indicator/icon show currently checked out branch clearly (e.g. left arrow by 'circle' icon for commit?)
 - [ ] Improve colour scheme. Colours too bright and "basic"? Allow default branch colours to be specified in colour schemes?
+- [ ] Open PR as a result of dropping one branch onto another. Include ability to enter title, description, "assign to (default to @me)", tags and then "Open PR" and "Continue on GitHub" options.
 
 ## Working tree & committing
 
@@ -97,6 +105,7 @@ between sections, and add new ideas under the right heading. Items marked
 - [ ] Error-handling audit — every git failure surfaces a clear, actionable message (Phase 6)
 - [ ] Graph performance profiling against large repos (10k+ commits) (Phase 6)
 - [ ] Implement rustfmt on save + pre-commit hook
+- [ ] Consider implementing a CSP for the frontend (bear in mind we need to support data img or find alternative for user icons)
 
 ## General UX
 

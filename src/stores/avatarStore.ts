@@ -1,0 +1,76 @@
+import { invoke } from "@tauri-apps/api/core";
+import { create } from "zustand";
+
+type AvatarStatus = "loading" | "loaded" | "none";
+
+interface AvatarEntry {
+  status: AvatarStatus;
+  /** A decoded image, ready to draw to the canvas (only when status === "loaded"). */
+  img?: HTMLImageElement;
+}
+
+interface AvatarStore {
+  /** Keyed by normalised (trimmed, lowercased) email. */
+  avatars: Map<string, AvatarEntry>;
+  /** Bumped whenever an avatar resolves, so the canvas graph knows to redraw. */
+  version: number;
+  /** Resolve avatars for the given author emails (deduped; only ones not already requested). */
+  request: (emails: string[]) => void;
+  /** The decoded image for an email, or null if not loaded / no avatar. */
+  getImage: (email: string) => HTMLImageElement | null;
+}
+
+const norm = (email: string) => email.trim().toLowerCase();
+
+/**
+ * Resolves and holds commit-author avatars. Each email is requested at most once
+ * per session (an in-flight/"loading" marker dedupes), and the heavy lifting —
+ * the network fetch and the persistent on-disk cache — lives in the Rust
+ * `get_avatar` command, so this only ever asks for what it hasn't seen. Avatars
+ * arrive asynchronously: when one resolves, `version` bumps and the canvas graph
+ * redraws to swap the coloured dot for the image.
+ */
+export const useAvatarStore = create<AvatarStore>((set, get) => {
+  const settle = (email: string, entry: AvatarEntry) => {
+    const avatars = new Map(get().avatars);
+    avatars.set(email, entry);
+    set({ avatars, version: get().version + 1 });
+  };
+
+  return {
+    avatars: new Map(),
+    version: 0,
+
+    request: (emails) => {
+      const { avatars } = get();
+      const unique = [...new Set(emails.map(norm))].filter((e) => e && !avatars.has(e));
+      if (unique.length === 0) return;
+
+      // Mark as in-flight up front so concurrent/subsequent calls don't refetch.
+      const next = new Map(avatars);
+      unique.forEach((e) => next.set(e, { status: "loading" }));
+      set({ avatars: next });
+
+      unique.forEach(async (email) => {
+        try {
+          const url = await invoke<string | null>("get_avatar", { email });
+          if (!url) {
+            settle(email, { status: "none" });
+            return;
+          }
+          const img = new Image();
+          img.onload = () => settle(email, { status: "loaded", img });
+          img.onerror = () => settle(email, { status: "none" });
+          img.src = url;
+        } catch {
+          settle(email, { status: "none" });
+        }
+      });
+    },
+
+    getImage: (email) => {
+      const entry = get().avatars.get(norm(email));
+      return entry?.status === "loaded" ? entry.img ?? null : null;
+    },
+  };
+});

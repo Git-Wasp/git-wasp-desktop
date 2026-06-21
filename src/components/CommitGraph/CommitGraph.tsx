@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useGraphStore } from "../../stores/graphStore";
 import { useRepoStore } from "../../stores/repoStore";
 import { useMergeStore } from "../../stores/mergeStore";
+import { useAvatarStore } from "../../stores/avatarStore";
 import { useCommitGraph } from "../../hooks/useCommitGraph";
 import { ContextMenu, type MenuItem } from "../common/ContextMenu";
 import { PromptDialog } from "../common/PromptDialog";
@@ -134,6 +135,7 @@ export function CommitGraph({
   const scrollToRow = useGraphStore((s) => s.scrollToRow);
   const { currentRepo, createBranch, checkoutBranch, renameBranch, deleteBranch } = useRepoStore();
   const startMerge = useMergeStore((s) => s.startMerge);
+  const requestAvatars = useAvatarStore((s) => s.request);
 
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [prompt, setPrompt] = useState<PromptState | null>(null);
@@ -155,6 +157,12 @@ export function CommitGraph({
     const limit = Math.ceil(container.clientHeight / ROW_HEIGHT) + BUFFER_ROWS * 2;
     fetchViewport(0, limit);
   }, [fetchViewport]);
+
+  // Resolve gravatars for the authors in view (deduped + cached in the store).
+  useEffect(() => {
+    if (!viewport) return;
+    requestAvatars(viewport.nodes.filter((n) => !n.isWorkingTree).map((n) => n.authorEmail));
+  }, [viewport, requestAvatars]);
 
   // Scroll fetches are throttled to one per animation frame and skipped entirely
   // when the rows already loaded cover the viewport — so most scrolling triggers

@@ -1,3 +1,4 @@
+mod avatar;
 mod commands;
 mod credential_store;
 mod diff_engine;
@@ -60,6 +61,7 @@ pub fn run() {
             commands::commit::amend_commit_message,
             commands::commit::get_head_commit_info,
             commands::commit::get_commit_identity,
+            avatar::get_avatar,
             // Stash
             commands::stash::stash_save_cmd,
             commands::stash::stash_list_cmd,
