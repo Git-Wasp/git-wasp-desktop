@@ -64,7 +64,10 @@ between sections, and add new ideas under the right heading. Items marked
 - [ ] `.gitconfig` viewer/editor (v1 scope)
 - [ ] Keyboard shortcut configuration (v1 scope)
 - [ ] Embedded terminal pane scoped to the repo working dir, toggleable (Phase 6)
-- [ ] Remove unnecessary "changes" view. That is replaced by the "uncommitted changes" part of the graph view
+- [x] Remove unnecessary "changes" view. That is replaced by the "uncommitted changes" part of the graph view
+      — dropped the "Changes" NavBar tab, the `working-tree` view, and the
+      standalone `WorkingTreePanel` (+ its test). The shared `StagingPanel` /
+      `HunkDiffViewer` stay, reused by the history view's uncommitted-changes flow.
 
 ## Theming
 

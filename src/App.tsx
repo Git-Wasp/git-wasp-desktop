@@ -5,7 +5,6 @@ import { NavBar } from "./components/NavBar/NavBar";
 import { CommitGraph } from "./components/CommitGraph/CommitGraph";
 import { HistoryToolbar } from "./components/CommitGraph/HistoryToolbar";
 import { CommitDetail } from "./components/CommitDetail/CommitDetail";
-import { WorkingTreePanel } from "./components/WorkingTree/WorkingTreePanel";
 import { UncommittedPanel } from "./components/WorkingTree/UncommittedPanel";
 import { HunkDiffViewer } from "./components/WorkingTree/HunkDiffViewer";
 import { PRPanel } from "./components/PRPanel/PRPanel";
@@ -21,7 +20,7 @@ import { useMergeStore } from "./stores/mergeStore";
 import { useThemeStore } from "./stores/themeStore";
 import { useWorkingTreeStore } from "./stores/workingTreeStore";
 
-type View = "history" | "working-tree" | "prs" | "settings";
+type View = "history" | "prs" | "settings";
 
 export default function App() {
   const { loadCurrentRepo, loadOpenRepos, currentRepo } = useRepoStore();
@@ -169,8 +168,6 @@ export default function App() {
               )}
             </div>
           </>
-        ) : view === "working-tree" ? (
-          <WorkingTreePanel />
         ) : view === "prs" ? (
           <PRPanel />
         ) : (

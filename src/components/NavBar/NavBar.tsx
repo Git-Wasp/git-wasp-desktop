@@ -3,11 +3,10 @@ import type { CSSProperties } from "react";
 import { useRepoStore } from "../../stores/repoStore";
 import { Button } from "../ui/Button";
 
-export type View = "history" | "working-tree" | "prs" | "settings";
+export type View = "history" | "prs" | "settings";
 
 const VIEW_TABS: { id: View; label: string }[] = [
   { id: "history", label: "History" },
-  { id: "working-tree", label: "Changes" },
   { id: "prs", label: "PRs" },
 ];
 

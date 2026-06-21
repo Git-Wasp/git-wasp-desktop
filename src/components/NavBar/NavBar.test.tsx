@@ -16,12 +16,16 @@ beforeEach(() => {
 });
 
 describe("NavBar", () => {
-  it("renders the History, Changes, PRs, and Settings tabs", () => {
+  it("renders the History, PRs, and Settings tabs", () => {
     render(<NavBar view="history" onViewChange={vi.fn()} />);
     expect(screen.getByRole("tab", { name: "History" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Changes" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "PRs" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /settings/i })).toBeInTheDocument();
+  });
+
+  it("no longer renders a Changes tab (the uncommitted section handles changes)", () => {
+    render(<NavBar view="history" onViewChange={vi.fn()} />);
+    expect(screen.queryByRole("tab", { name: "Changes" })).toBeNull();
   });
 
   it("marks the active view tab as selected", () => {
@@ -33,8 +37,8 @@ describe("NavBar", () => {
   it("switches the view when a tab is clicked", () => {
     const onViewChange = vi.fn();
     render(<NavBar view="history" onViewChange={onViewChange} />);
-    fireEvent.click(screen.getByRole("tab", { name: "Changes" }));
-    expect(onViewChange).toHaveBeenCalledWith("working-tree");
+    fireEvent.click(screen.getByRole("tab", { name: "PRs" }));
+    expect(onViewChange).toHaveBeenCalledWith("prs");
   });
 
   it("hides the repo-specific view tabs when no repo is open, but keeps Settings and Open Repository", () => {
