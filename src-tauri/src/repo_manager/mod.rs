@@ -20,6 +20,9 @@ struct OpenRepo {
     key: String,
     repo: Repository,
     operation: Option<OperationState>,
+    /// Cached commit-graph layout, reused across scroll fetches and rebuilt only
+    /// when HEAD or refs move. `None` until the graph is first requested.
+    graph_cache: Option<crate::graph::GraphCache>,
 }
 
 pub struct RepoManager {
@@ -107,7 +110,7 @@ impl RepoManager {
                 .with_context(|| format!("not a git repository: {path}"))?;
             let info = repo_info(&repo);
             if !repos.iter().any(|r| r.key == info.path) {
-                repos.push(OpenRepo { key: info.path.clone(), repo, operation: None });
+                repos.push(OpenRepo { key: info.path.clone(), repo, operation: None, graph_cache: None });
             }
             info
         };
@@ -191,6 +194,18 @@ impl RepoManager {
         let mut repos = self.repos_lock()?;
         let entry = repos.iter_mut().find(|r| r.key == key).ok_or_else(|| anyhow::anyhow!("no repository open"))?;
         Ok(f(&mut entry.repo))
+    }
+
+    /// Run `f` against the active repo and its (mutable) graph-layout cache. The
+    /// graph command uses this so the cache lives as long as the tab does.
+    pub fn with_repo_graph_cache<F, T>(&self, f: F) -> anyhow::Result<T>
+    where
+        F: FnOnce(&Repository, &mut Option<crate::graph::GraphCache>) -> T,
+    {
+        let key = self.active_lock()?.clone().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        let mut repos = self.repos_lock()?;
+        let entry = repos.iter_mut().find(|r| r.key == key).ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        Ok(f(&entry.repo, &mut entry.graph_cache))
     }
 
     pub fn checkout_branch(&self, branch_name: &str) -> anyhow::Result<RepoInfo> {
@@ -409,6 +424,13 @@ impl AppState {
         F: FnOnce(&mut Repository) -> T,
     {
         self.manager.with_repo_mut(f)
+    }
+
+    pub fn with_repo_graph_cache<F, T>(&self, f: F) -> anyhow::Result<T>
+    where
+        F: FnOnce(&Repository, &mut Option<crate::graph::GraphCache>) -> T,
+    {
+        self.manager.with_repo_graph_cache(f)
     }
 
     pub fn checkout_branch(&self, branch_name: &str) -> anyhow::Result<RepoInfo> {

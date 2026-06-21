@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useGraphStore } from "../../stores/graphStore";
 import { useRepoStore } from "../../stores/repoStore";
 import { useMergeStore } from "../../stores/mergeStore";
@@ -33,6 +33,79 @@ interface MenuState {
 type PromptState =
   | { kind: "new-branch"; oid: string }
   | { kind: "rename-branch"; branch: string };
+
+/**
+ * A single graph row (branch cell · graph gap the canvas shows through · message
+ * cell). Memoized and keyed by commit oid so that, when only the selection
+ * changes, just the rows whose `selected` flips re-render — not the whole list.
+ */
+const GraphRow = memo(function GraphRow({
+  node,
+  rowIndex,
+  selected,
+  branchWidth,
+  graphWidth,
+  pillHandlers,
+  onRowClick,
+  onRowContextMenu,
+}: {
+  node: GraphNode;
+  rowIndex: number;
+  selected: boolean;
+  branchWidth: number;
+  graphWidth: number;
+  pillHandlers: PillHandlers;
+  onRowClick: (node: GraphNode, shiftKey: boolean) => void;
+  onRowContextMenu: (e: React.MouseEvent, node: GraphNode) => void;
+}) {
+  const cellBg = selected ? "var(--color-bg-selected)" : "transparent";
+  return (
+    <div
+      onClick={(e) => onRowClick(node, e.shiftKey)}
+      onContextMenu={(e) => onRowContextMenu(e, node)}
+      style={{
+        position: "absolute",
+        top: rowIndex * ROW_HEIGHT,
+        left: 0,
+        right: 0,
+        height: ROW_HEIGHT,
+        display: "flex",
+        alignItems: "center",
+        cursor: "pointer",
+      }}
+    >
+      <div
+        style={{
+          width: branchWidth,
+          flexShrink: 0,
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "flex-end",
+          padding: "0 var(--space-2)",
+          background: cellBg,
+        }}
+      >
+        <BranchCell node={node} handlers={pillHandlers} />
+      </div>
+      {/* graph gap — canvas shows through */}
+      <div style={{ width: graphWidth, flexShrink: 0, height: "100%" }} />
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          padding: "0 var(--space-3)",
+          background: cellBg,
+        }}
+      >
+        <MessageCell node={node} />
+      </div>
+    </div>
+  );
+});
 
 const headerCellStyle: React.CSSProperties = {
   padding: "0 var(--space-3)",
@@ -83,15 +156,47 @@ export function CommitGraph({
     fetchViewport(0, limit);
   }, [fetchViewport]);
 
+  // Scroll fetches are throttled to one per animation frame and skipped entirely
+  // when the rows already loaded cover the viewport — so most scrolling triggers
+  // no IPC at all, and the rest at most once per frame.
+  const scrollRaf = useRef<number | null>(null);
+  const pendingScroll = useRef<{ scrollTop: number; clientHeight: number } | null>(null);
+
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
-      const container = e.currentTarget;
-      const offset = Math.max(0, Math.floor(container.scrollTop / ROW_HEIGHT) - BUFFER_ROWS);
-      const limit = Math.ceil(container.clientHeight / ROW_HEIGHT) + BUFFER_ROWS * 2;
-      fetchViewport(offset, limit);
+      pendingScroll.current = {
+        scrollTop: e.currentTarget.scrollTop,
+        clientHeight: e.currentTarget.clientHeight,
+      };
+      if (scrollRaf.current !== null) return;
+      scrollRaf.current = requestAnimationFrame(() => {
+        scrollRaf.current = null;
+        const m = pendingScroll.current;
+        if (!m) return;
+        const offset = Math.max(0, Math.floor(m.scrollTop / ROW_HEIGHT) - BUFFER_ROWS);
+        const limit = Math.ceil(m.clientHeight / ROW_HEIGHT) + BUFFER_ROWS * 2;
+
+        // Already-loaded coverage: skip the fetch unless we'd reveal unloaded
+        // rows (loadedEnd reaching totalCount means everything below is present).
+        const vp = useGraphStore.getState().viewport;
+        if (vp) {
+          const loadedStart = vp.offset;
+          const loadedEnd = vp.offset + vp.nodes.length;
+          const covered =
+            offset >= loadedStart && (offset + limit <= loadedEnd || loadedEnd >= vp.totalCount);
+          if (covered) return;
+        }
+        fetchViewport(offset, limit);
+      });
     },
     [fetchViewport],
   );
+
+  useEffect(() => {
+    return () => {
+      if (scrollRaf.current !== null) cancelAnimationFrame(scrollRaf.current);
+    };
+  }, []);
 
   // Scroll a revealed commit (a branch head clicked in the sidebar) into view,
   // centring it, then load the slice around it. Consumes the pending row.
@@ -129,12 +234,17 @@ export function CommitGraph({
     onStartPullRequest: onStartPullRequest ?? (() => {}),
   });
 
-  const pillHandlers: PillHandlers = {
-    onPointerDown: drag.onPillPointerDown,
-    onPointerEnter: drag.onPillPointerEnter,
-    onPointerLeave: drag.onPillPointerLeave,
-    isDropTarget: (name) => drag.dropTarget === name,
-  };
+  // Stable across renders (so memoized rows don't re-render) except while a drag
+  // is changing the drop target.
+  const pillHandlers: PillHandlers = useMemo(
+    () => ({
+      onPointerDown: drag.onPillPointerDown,
+      onPointerEnter: drag.onPillPointerEnter,
+      onPointerLeave: drag.onPillPointerLeave,
+      isDropTarget: (name) => drag.dropTarget === name,
+    }),
+    [drag.onPillPointerDown, drag.onPillPointerEnter, drag.onPillPointerLeave, drag.dropTarget],
+  );
 
   const handleRowClick = useCallback(
     (node: GraphNode, shiftKey: boolean) => {
@@ -276,58 +386,19 @@ export function CommitGraph({
             }}
           />
 
-          {viewport?.nodes.map((node, i) => {
-            const rowIndex = offset + i;
-            const selected = selection.range.has(node.oid);
-            const cellBg = selected ? "var(--color-bg-selected)" : "transparent";
-            return (
-              <div
-                key={`${node.oid}-${rowIndex}`}
-                onClick={(e) => handleRowClick(node, e.shiftKey)}
-                onContextMenu={(e) => handleRowContextMenu(e, node)}
-                style={{
-                  position: "absolute",
-                  top: rowIndex * ROW_HEIGHT,
-                  left: 0,
-                  right: 0,
-                  height: ROW_HEIGHT,
-                  display: "flex",
-                  alignItems: "center",
-                  cursor: "pointer",
-                }}
-              >
-                <div
-                  style={{
-                    width: branchWidth,
-                    flexShrink: 0,
-                    height: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "flex-end",
-                    padding: "0 var(--space-2)",
-                    background: cellBg,
-                  }}
-                >
-                  <BranchCell node={node} handlers={pillHandlers} />
-                </div>
-                {/* graph gap — canvas shows through */}
-                <div style={{ width: graphWidth, flexShrink: 0, height: "100%" }} />
-                <div
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    height: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    padding: "0 var(--space-3)",
-                    background: cellBg,
-                  }}
-                >
-                  <MessageCell node={node} />
-                </div>
-              </div>
-            );
-          })}
+          {viewport?.nodes.map((node, i) => (
+            <GraphRow
+              key={node.oid}
+              node={node}
+              rowIndex={offset + i}
+              selected={selection.range.has(node.oid)}
+              branchWidth={branchWidth}
+              graphWidth={graphWidth}
+              pillHandlers={pillHandlers}
+              onRowClick={handleRowClick}
+              onRowContextMenu={handleRowContextMenu}
+            />
+          ))}
         </div>
       </div>
 

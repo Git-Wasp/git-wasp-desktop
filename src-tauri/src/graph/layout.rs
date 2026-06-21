@@ -1,46 +1,88 @@
 use crate::graph::{BranchLabel, EdgeKind, GraphEdge, GraphNode, GraphViewport};
 use anyhow::Context;
-use git2::{ObjectType, Repository, Sort};
+use git2::{ObjectType, Oid, Repository, Sort};
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
-const LOOKAHEAD: usize = 200;
+/// Slice-independent layout for the active repo, cached across viewport fetches.
+/// The whole HEAD-reachable history is laid out once (lanes, colours, edges,
+/// branch labels); only the cheap working-tree node and the final slicing happen
+/// per request. Invalidated whenever HEAD or any ref changes — see [`cache_key`].
+///
+/// This is what makes scrolling cheap: without it, every scroll tick re-walked
+/// the entire history (twice) and re-scanned the working tree.
+pub struct GraphCache {
+    key: CacheKey,
+    /// All commits, newest-first; `row` equals the index. No working-tree node.
+    nodes: Vec<GraphNode>,
+}
 
-pub fn compute_layout(
+#[derive(PartialEq)]
+struct CacheKey {
+    head: Option<Oid>,
+    refs_fingerprint: u64,
+}
+
+fn cache_key(repo: &Repository) -> CacheKey {
+    CacheKey {
+        head: repo.head().ok().and_then(|h| h.target()),
+        refs_fingerprint: refs_fingerprint(repo),
+    }
+}
+
+/// Order-independent fingerprint of all refs (name + direct target). Flips when a
+/// branch/tag is created, deleted, renamed or moved — including remote-tracking
+/// refs updated by fetch. Cheap: O(refs), no tag peeling.
+fn refs_fingerprint(repo: &Repository) -> u64 {
+    let mut acc: u64 = 0;
+    if let Ok(refs) = repo.references() {
+        for r in refs.flatten() {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            if let Some(name) = r.name() {
+                name.hash(&mut h);
+            }
+            if let Some(target) = r.target() {
+                target.as_bytes().hash(&mut h);
+            }
+            acc ^= h.finish();
+        }
+    }
+    acc
+}
+
+/// Lay out the entire HEAD-reachable history. Expensive (one full revwalk + lane
+/// assignment); only called on a cache miss.
+fn build_full_layout(repo: &Repository) -> anyhow::Result<Vec<GraphNode>> {
+    let head_id = repo.head().ok().and_then(|h| h.target());
+    let label_map = build_label_map(repo);
+    let commits = walk_commits(repo, usize::MAX)?;
+    Ok(assign_lanes(&commits, &label_map, head_id))
+}
+
+/// Carve a viewport out of already-laid-out nodes, layering in the synthetic
+/// working-tree node when the tree is dirty and row 0 is in view. Cheap enough to
+/// run on every request (the only per-call git work is the status scan).
+fn slice_viewport(
     repo: &Repository,
+    full: &[GraphNode],
     offset: usize,
     limit: usize,
-) -> anyhow::Result<GraphViewport> {
-    let head_id = repo.head().ok().and_then(|h| h.target());
-
-    // Build branch/tag label map keyed by OID.
-    let label_map = build_label_map(repo);
-
+) -> GraphViewport {
     // A dirty working tree adds a synthetic node at row 0 (above HEAD). It is
     // always counted in total_count so the scroll height is offset-independent,
-    // but only emitted when row 0 is in view (offset == 0).
-    let change_count = if head_id.is_some() { changed_file_count(repo) } else { 0 };
+    // but only emitted when row 0 is in view (offset == 0). It needs a commit to
+    // anchor to, hence the non-empty check.
+    let change_count = if full.is_empty() { 0 } else { changed_file_count(repo) };
     let wip_offset = if change_count > 0 { 1 } else { 0 };
-
-    // Walk the full graph to count total commits (needed for scroll height).
-    let total_count = count_commits(repo)? + wip_offset;
-
-    // Walk offset + limit + LOOKAHEAD commits for lane computation accuracy.
-    let walk_limit = offset + limit + LOOKAHEAD;
-    let commits = walk_commits(repo, walk_limit)?;
-
-    // Compute lane layout over the full walked slice.
-    let laid_out = assign_lanes(&commits, &label_map, head_id);
+    let total_count = full.len() + wip_offset;
 
     // Commit rows are shifted down by the working-tree node when present.
     let commit_start = offset.saturating_sub(wip_offset);
-    let commit_end = (offset + limit).saturating_sub(wip_offset);
-    let mut commit_nodes: Vec<GraphNode> = laid_out
-        .into_iter()
-        .skip(commit_start)
-        .take(commit_end - commit_start)
-        .collect();
-    for node in &mut commit_nodes {
-        node.row += wip_offset;
+    let commit_end = (offset + limit).saturating_sub(wip_offset).min(full.len());
+    let mut commit_nodes: Vec<GraphNode> =
+        full.get(commit_start..commit_end).unwrap_or(&[]).to_vec();
+    for (i, node) in commit_nodes.iter_mut().enumerate() {
+        node.row = commit_start + i + wip_offset;
     }
 
     let mut nodes: Vec<GraphNode> = Vec::new();
@@ -51,15 +93,40 @@ pub fn compute_layout(
     }
     nodes.append(&mut commit_nodes);
 
-    Ok(GraphViewport { nodes, total_count, offset })
+    GraphViewport { nodes, total_count, offset }
 }
 
-fn count_commits(repo: &Repository) -> anyhow::Result<usize> {
-    let mut walk = repo.revwalk().context("failed to create revwalk")?;
-    walk.push_head().context("no HEAD — empty repository?")?;
-    walk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME)
-        .context("failed to set sort")?;
-    Ok(walk.count())
+/// Cache-free layout. Lays out the whole history every call — the cache-free
+/// reference the cached path is checked against; production goes through
+/// [`compute_layout_cached`].
+#[cfg(test)]
+pub fn compute_layout(
+    repo: &Repository,
+    offset: usize,
+    limit: usize,
+) -> anyhow::Result<GraphViewport> {
+    let full = build_full_layout(repo)?;
+    Ok(slice_viewport(repo, &full, offset, limit))
+}
+
+/// Layout that reuses a cached full-history layout while HEAD and refs are
+/// unchanged, rebuilding only when they move. This is the path the viewport
+/// command uses, so repeated scroll fetches are cheap.
+pub fn compute_layout_cached(
+    repo: &Repository,
+    cache: &mut Option<GraphCache>,
+    offset: usize,
+    limit: usize,
+) -> anyhow::Result<GraphViewport> {
+    let key = cache_key(repo);
+    let stale = cache.as_ref().map(|c| c.key != key).unwrap_or(true);
+    if stale {
+        let nodes = build_full_layout(repo)?;
+        *cache = Some(GraphCache { key, nodes });
+    }
+    // `stale` guarantees the cache is populated here.
+    let full = &cache.as_ref().expect("cache populated above").nodes;
+    Ok(slice_viewport(repo, full, offset, limit))
 }
 
 struct CommitRaw {
@@ -523,6 +590,67 @@ mod tests {
         assert_eq!(sliced.offset, 1);
         assert_eq!(sliced.nodes.len(), 2);
         assert_eq!(sliced.nodes[0].oid, full.nodes[1].oid);
+    }
+
+    #[test]
+    fn cached_layout_matches_uncached_and_reflects_new_commits() {
+        let (_dir, repo) = init_repo();
+        let c1 = repo.find_commit(make_commit(&repo, "c1", &[])).unwrap();
+        make_commit(&repo, "c2", &[&c1]);
+
+        let mut cache = None;
+        let cached = compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+        let uncached = compute_layout(&repo, 0, 10).unwrap();
+        assert_eq!(cached.total_count, uncached.total_count);
+        assert_eq!(cached.nodes.len(), uncached.nodes.len());
+        assert_eq!(cached.nodes[0].oid, uncached.nodes[0].oid);
+
+        // A second call with no change returns the same slice (cache hit path).
+        let again = compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+        assert_eq!(again.nodes[0].oid, cached.nodes[0].oid);
+
+        // A new commit moves HEAD → the cache key changes → rebuild.
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        make_commit(&repo, "c3", &[&head]);
+        let after = compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+        assert_eq!(after.total_count, 3);
+        assert_eq!(after.nodes[0].summary, "c3");
+    }
+
+    #[test]
+    fn cached_layout_invalidates_on_branch_change() {
+        let (_dir, repo) = init_repo();
+        make_commit(&repo, "c1", &[]);
+
+        let mut cache = None;
+        let before = compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+        assert!(before.nodes[0].branch_labels.iter().all(|l| l.name != "feature"));
+
+        // Create a branch at HEAD without moving HEAD — only refs change.
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("feature", &head, false).unwrap();
+
+        let after = compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+        assert!(after.nodes[0].branch_labels.iter().any(|l| l.name == "feature"));
+    }
+
+    #[test]
+    fn cached_layout_reflects_working_tree_node_without_rebuild() {
+        let (dir, repo) = init_repo();
+        let c1 = repo.find_commit(make_commit(&repo, "c1", &[])).unwrap();
+        make_commit(&repo, "c2", &[&c1]);
+
+        let mut cache = None;
+        let clean = compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+        assert_eq!(clean.total_count, 2);
+        assert!(clean.nodes.iter().all(|n| !n.is_working_tree));
+
+        // Dirtying the tree doesn't change HEAD/refs, but the per-call slice must
+        // still surface the working-tree node (status is re-read each call).
+        std::fs::write(dir.path().join("new.txt"), "hi").unwrap();
+        let dirty = compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+        assert_eq!(dirty.total_count, 3);
+        assert!(dirty.nodes[0].is_working_tree);
     }
 
     #[test]

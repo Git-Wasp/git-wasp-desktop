@@ -78,6 +78,7 @@ between sections, and add new ideas under the right heading. Items marked
 - [ ] `cargo-deny` / licence audit in CI (Phase 6)
 - [ ] Error-handling audit — every git failure surfaces a clear, actionable message (Phase 6)
 - [ ] Graph performance profiling against large repos (10k+ commits) (Phase 6)
+- [ ] Implement rustfmt on save + pre-commit hook
 
 ## General UX
 
@@ -101,6 +102,14 @@ between sections, and add new ideas under the right heading. Items marked
 - [x] Better primary/secondary button design — primary gained a subtle border +
       shadow for depth; secondary now has a faint fill (reads as a real control,
       not plain text); both get a tactile press (nudge-down) on `:active`.
-- [ ] For repositories with lots of commits, tags, or branches the performance
+- [x] For repositories with lots of commits, tags, or branches the performance
       of the git graph is poor. Scrolling causes "flashing" and frequent "re-painting".
+      — Backend now caches the full laid-out history per tab (keyed by HEAD +
+      a refs fingerprint), so scroll fetches no longer re-walk the whole history,
+      re-scan the working tree, or rebuild the label map; rebuild happens only
+      when HEAD/refs move. Frontend: scroll fetches are rAF-throttled and skipped
+      when the loaded slice already covers the viewport, a fetch-id guard drops
+      stale out-of-order responses, and rows are keyed by oid + memoized so a
+      selection change re-renders only the affected rows. (Canvas keeps the
+      selection band so graph lines stay unobscured — see earlier ordered-pass fix.)
 - [ ] Add ability to select multiple "unpushed" commits on the same branch and squash them.

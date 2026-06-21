@@ -8,8 +8,8 @@ pub async fn get_graph_viewport(
     limit: usize,
     state: State<'_, AppState>,
 ) -> Result<GraphViewport, String> {
-    state.with_repo(|repo| {
-        crate::graph::compute_layout(repo, offset, limit)
+    state.with_repo_graph_cache(|repo, cache| {
+        crate::graph::compute_layout_cached(repo, cache, offset, limit)
     })
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())

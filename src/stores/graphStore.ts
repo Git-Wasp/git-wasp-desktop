@@ -30,7 +30,13 @@ const emptySelection = (): Selection => ({
   range: new Set(),
 });
 
-export const useGraphStore = create<GraphStore>((set, get) => ({
+export const useGraphStore = create<GraphStore>((set, get) => {
+  // Monotonic id so only the newest in-flight viewport fetch is applied. Rapid
+  // scrolling fires overlapping fetches; without this, an older slice resolving
+  // late could clobber a newer one and make the graph jump ("flash").
+  let fetchId = 0;
+
+  return {
   viewport: null,
   selection: emptySelection(),
   selectedOid: null,
@@ -39,10 +45,12 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   scrollToRow: null,
 
   fetchViewport: async (offset: number, limit: number) => {
+    const id = ++fetchId;
     const viewport = await invoke<GraphViewport>("get_graph_viewport", {
       offset,
       limit,
     });
+    if (id !== fetchId) return; // superseded by a newer fetch
     set({ viewport, lastOffset: offset, lastLimit: limit });
   },
 
@@ -110,4 +118,5 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   clearSelection: () => {
     set({ selection: emptySelection(), selectedOid: null });
   },
-}));
+  };
+});

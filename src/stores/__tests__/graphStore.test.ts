@@ -31,6 +31,27 @@ describe("graphStore", () => {
     expect(useGraphStore.getState().viewport).toEqual(vp);
   });
 
+  it("fetchViewport drops a stale response when a newer fetch supersedes it", async () => {
+    const older: GraphViewport = { ...makeViewport(), offset: 0 };
+    const newer: GraphViewport = { ...makeViewport(), offset: 50 };
+
+    // First call stays pending; the second resolves immediately.
+    let resolveOlder: (v: GraphViewport) => void = () => {};
+    mockInvoke
+      .mockImplementationOnce(() => new Promise((res) => { resolveOlder = res as (v: GraphViewport) => void; }))
+      .mockResolvedValueOnce(newer);
+
+    const p1 = useGraphStore.getState().fetchViewport(0, 10); // id 1, pending
+    const p2 = useGraphStore.getState().fetchViewport(50, 10); // id 2, resolves now
+    await p2;
+    expect(useGraphStore.getState().viewport?.offset).toBe(50);
+
+    // The superseded older fetch resolves late — it must not overwrite.
+    resolveOlder(older);
+    await p1;
+    expect(useGraphStore.getState().viewport?.offset).toBe(50);
+  });
+
   it("selectCommit sets anchor, focus, range, and selectedOid", () => {
     useGraphStore.setState({ viewport: makeViewport() });
     useGraphStore.getState().selectCommit("bbb", false);
