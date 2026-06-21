@@ -22,6 +22,16 @@ describe("applyTheme", () => {
     expect(getEditorAppearance()).toBe("dark");
   });
 
+  it("sets data-theme to the id for other built-in themes", () => {
+    applyTheme({ id: "github-dark", appearance: "dark", builtin: true });
+    expect(document.documentElement.getAttribute("data-theme")).toBe("github-dark");
+    expect(getEditorAppearance()).toBe("dark");
+
+    applyTheme({ id: "github-light", appearance: "light", builtin: true });
+    expect(document.documentElement.getAttribute("data-theme")).toBe("github-light");
+    expect(getEditorAppearance()).toBe("light");
+  });
+
   it("injects custom CSS into a style element and clears data-theme", () => {
     applyTheme({ id: "light", appearance: "light", builtin: true });
     applyTheme({

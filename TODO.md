@@ -71,10 +71,14 @@ between sections, and add new ideas under the right heading. Items marked
 
 ## Theming
 
-- [ ] Additional built-in themes (e.g. Cobalt2)
-- [ ] Allow default branch colour palette to be configurable (see pre-req in [Working Tree & Committing](#working-tree--committing))
 - [ ] Improve dark theme. Think more "monokai" - more grey than black with clear colours for highlights/actions
-- [ ] Add a "GitHub" theme pair - dark and light - matching GitHub colour themes.
+- [ ] Additional built-in themes (e.g. Cobalt2)
+- [x] Add a "GitHub" theme pair - dark and light - matching GitHub colour themes.
+      — "GitHub Dark" + "GitHub Light" built-in themes (Primer palette) added as
+      `[data-theme=github-dark|github-light]` token blocks. `applyTheme` now maps
+      any built-in id to its `data-theme` value (dark stays the `:root` default),
+      so further built-ins (e.g. Cobalt2) just need a token block + registry entry.
+- [ ] Allow default branch colour palette to be configurable (see pre-req in [Working Tree & Committing](#working-tree--committing))
 
 ## Engineering & tooling
 

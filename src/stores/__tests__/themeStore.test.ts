@@ -49,7 +49,7 @@ describe("themeStore", () => {
     await useThemeStore.getState().loadThemes();
 
     const ids = useThemeStore.getState().themes.map((t) => t.id);
-    expect(ids).toEqual(["dark", "light", "solar"]);
+    expect(ids).toEqual(["dark", "light", "github-dark", "github-light", "solar"]);
   });
 
   it("setActiveTheme applies and persists", async () => {

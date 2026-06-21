@@ -22,18 +22,19 @@ function customStyleElement(): HTMLStyleElement {
 }
 
 /**
- * Applies a theme to the document. Built-in themes toggle the `data-theme`
- * attribute (which the bundled token layer keys off); custom themes inject their
- * CSS into a single `<style>` element appended after the token layer so the
- * later cascade wins. Editor syntax appearance is updated to match.
+ * Applies a theme to the document. Built-in themes select a `data-theme` block
+ * in the bundled token layer by id (e.g. "light", "github-dark"); "dark" is the
+ * `:root` default, so it clears the attribute instead. Custom themes inject their
+ * CSS into a single `<style>` element appended after the token layer so the later
+ * cascade wins. Editor syntax appearance is updated to match.
  */
 export function applyTheme(theme: AppliedTheme): void {
   const root = document.documentElement;
 
   if (theme.builtin) {
     document.getElementById(CUSTOM_STYLE_ID)?.remove();
-    if (theme.id === "light") root.setAttribute("data-theme", "light");
-    else root.removeAttribute("data-theme");
+    if (theme.id === "dark") root.removeAttribute("data-theme");
+    else root.setAttribute("data-theme", theme.id);
   } else {
     root.removeAttribute("data-theme");
     customStyleElement().textContent = theme.css ?? "";

@@ -26,6 +26,8 @@ interface ThemeManifest {
 export const BUILT_IN_THEMES: ThemeInfo[] = [
   { id: "dark", name: "Dark", author: null, version: null, appearance: "dark", builtin: true },
   { id: "light", name: "Light", author: null, version: null, appearance: "light", builtin: true },
+  { id: "github-dark", name: "GitHub Dark", author: null, version: null, appearance: "dark", builtin: true },
+  { id: "github-light", name: "GitHub Light", author: null, version: null, appearance: "light", builtin: true },
 ];
 
 const toThemeInfo = (m: ThemeManifest): ThemeInfo => ({
