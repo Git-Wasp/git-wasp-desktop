@@ -28,6 +28,7 @@ export const BUILT_IN_THEMES: ThemeInfo[] = [
   { id: "light", name: "Light", author: null, version: null, appearance: "light", builtin: true },
   { id: "github-dark", name: "GitHub Dark", author: null, version: null, appearance: "dark", builtin: true },
   { id: "github-light", name: "GitHub Light", author: null, version: null, appearance: "light", builtin: true },
+  { id: "cobalt2", name: "Cobalt2", author: null, version: null, appearance: "dark", builtin: true },
 ];
 
 const toThemeInfo = (m: ThemeManifest): ThemeInfo => ({

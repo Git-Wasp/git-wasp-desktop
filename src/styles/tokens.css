@@ -285,3 +285,56 @@
   --color-accent-hover:  var(--color-accent-secondary);
   --color-graph-node-bg: rgba(0, 0, 0, 0.04);
 }
+
+/* === Cobalt2 =============================================================
+   Built-in theme inspired by Wes Bos's Cobalt2: deep blue surfaces with a
+   signature yellow accent. Dark appearance; colour tokens only. Note the dark
+   text-on-accent, so the yellow primary buttons stay legible. */
+[data-theme="cobalt2"] {
+  --color-accent-primary:   #ffc600;
+  --color-accent-secondary: #ff9d00;
+  --color-accent-muted:     #1f4662;
+
+  --color-success: #3ad900;
+  --color-warning: #ff9d00;
+  --color-danger:  #ff628c;
+  --color-info:    #0088ff;
+
+  --color-lane-0: #ffc600;
+  --color-lane-1: #ff9d00;
+  --color-lane-2: #3ad900;
+  --color-lane-3: #0088ff;
+  --color-lane-4: #ff628c;
+  --color-lane-5: #80fcff;
+  --color-lane-6: #fb94ff;
+  --color-lane-7: #a5ff90;
+
+  --color-bg-app:      #122738;
+  --color-bg-panel:    #193549;
+  --color-bg-surface:  #193549;
+  --color-bg-elevated: #1f4662;
+  --color-bg-overlay:  rgba(8, 20, 30, 0.8);
+
+  --color-text-primary:   #ffffff;
+  --color-text-secondary: #a3c0d8;
+  --color-text-muted:     #6c8ba5;
+  --color-text-inverse:   #15232d;
+
+  --color-border-subtle:  #15394f;
+  --color-border-default: #1f4662;
+  --color-border-strong:  #2d5a7c;
+
+  --color-diff-add:    #3ad900;
+  --color-diff-del:    #ff628c;
+  --color-diff-add-bg: rgba(58, 217, 0, 0.12);
+  --color-diff-del-bg: rgba(255, 98, 140, 0.12);
+  --color-bg-hunk-header: #15232d;
+
+  --color-bg-selected:   #1f4662;
+  --color-bg-input:      #122738;
+  /* Dark text reads on the yellow accent (primary buttons). */
+  --color-text-on-accent: #193549;
+  --color-bg-hover:      #1f4662;
+  --color-accent-hover:  #ffd84d;
+  --color-graph-node-bg: rgba(255, 255, 255, 0.04);
+}
