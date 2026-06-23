@@ -78,9 +78,11 @@ describe("CloneDialog", () => {
     fireEvent.click(await screen.findByText("mike/gitclient"));
     fireEvent.click(screen.getByRole("button", { name: /choose folder/i }));
 
-    await waitFor(() => {
-      expect(mockOpen).toHaveBeenCalledWith({ directory: true, multiple: false });
-    });
+    expect(mockOpen).toHaveBeenCalledWith({ directory: true, multiple: false });
+
+    // Wait for the chosen folder to land in state (async setDestDir) so the
+    // destination path is computed and the Clone button becomes enabled.
+    await screen.findByText("/Users/mike/code/gitclient");
 
     fireEvent.click(screen.getByRole("button", { name: /^clone$/i }));
 
