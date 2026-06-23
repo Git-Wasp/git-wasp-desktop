@@ -17,7 +17,7 @@ beforeEach(() => {
   useWorkingTreeStore.setState({
     status,
     selectedPath: null,
-    selectedDiff: null,
+    stageDiff: null,
     identity: { name: "A", email: "a@a" },
     loadStatus: vi.fn().mockResolvedValue(undefined),
     startWatching: vi.fn().mockResolvedValue(() => {}),
@@ -45,19 +45,19 @@ describe("UncommittedPanel", () => {
     expect(screen.getByText("src/c.ts")).toBeInTheDocument();
   });
 
-  it("selects a staged file with the staged kind", async () => {
+  it("selects a staged file for the staging editor", async () => {
     render(<UncommittedPanel branch="main" />);
     fireEvent.click(screen.getByText("src/a.ts"));
     await waitFor(() =>
-      expect(useWorkingTreeStore.getState().selectFile).toHaveBeenCalledWith("src/a.ts", "staged"),
+      expect(useWorkingTreeStore.getState().selectFile).toHaveBeenCalledWith("src/a.ts"),
     );
   });
 
-  it("selects an unstaged file with the unstaged kind", async () => {
+  it("selects an unstaged file for the staging editor", async () => {
     render(<UncommittedPanel branch="main" />);
     fireEvent.click(screen.getByText("src/b.ts"));
     await waitFor(() =>
-      expect(useWorkingTreeStore.getState().selectFile).toHaveBeenCalledWith("src/b.ts", "unstaged"),
+      expect(useWorkingTreeStore.getState().selectFile).toHaveBeenCalledWith("src/b.ts"),
     );
   });
 

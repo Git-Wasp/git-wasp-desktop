@@ -6,7 +6,7 @@ import { CommitGraph } from "./components/CommitGraph/CommitGraph";
 import { HistoryToolbar } from "./components/CommitGraph/HistoryToolbar";
 import { CommitDetail } from "./components/CommitDetail/CommitDetail";
 import { UncommittedPanel } from "./components/WorkingTree/UncommittedPanel";
-import { HunkDiffViewer } from "./components/WorkingTree/HunkDiffViewer";
+import { StageFileEditor } from "./components/WorkingTree/StageFileEditor";
 import { PRPanel } from "./components/PRPanel/PRPanel";
 import { MergeEditor } from "./components/Merge/MergeEditor";
 import { SettingsView } from "./components/Settings/SettingsView";
@@ -29,11 +29,12 @@ export default function App() {
   const { status: operationStatus, loadStatus } = useMergeStore();
   const { initTheme } = useThemeStore();
   const {
-    status: wtStatus,
     selectedPath: wtSelectedPath,
-    selectedDiff: wtSelectedDiff,
+    stageDiff: wtStageDiff,
     clearSelectedFile,
     discardFile,
+    stageFile,
+    applyStagedContent,
   } = useWorkingTreeStore();
   const [view, setView] = useState<View>("history");
   // In the history view, the right panel shows commit details or the
@@ -51,8 +52,8 @@ export default function App() {
     setHistoryRightMode("commit");
   };
 
-  const showingUncommittedDiff = historyRightMode === "uncommitted" && wtSelectedDiff != null;
-  const diffKind = wtStatus?.staged.some((e) => e.path === wtSelectedPath) ? "staged" : "unstaged";
+  const showingUncommittedDiff =
+    historyRightMode === "uncommitted" && wtSelectedPath != null && wtStageDiff != null;
 
   const handleStartPullRequest = (head: string, base: string) => {
     setPrDraft({ head, base });
@@ -126,15 +127,13 @@ export default function App() {
             >
               <HistoryToolbar />
               <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-                {showingUncommittedDiff && wtSelectedDiff ? (
-                  <HunkDiffViewer
-                    diffHunks={wtSelectedDiff}
-                    kind={diffKind}
-                    onDiscardFile={
-                      diffKind === "unstaged" && wtSelectedPath
-                        ? () => discardFile(wtSelectedPath)
-                        : undefined
-                    }
+                {showingUncommittedDiff && wtSelectedPath && wtStageDiff ? (
+                  <StageFileEditor
+                    path={wtSelectedPath}
+                    contents={wtStageDiff}
+                    onStage={applyStagedContent}
+                    onStageWholeFile={stageFile}
+                    onDiscardFile={discardFile}
                     onClose={clearSelectedFile}
                   />
                 ) : (

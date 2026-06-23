@@ -51,6 +51,22 @@ pub struct Identity {
     pub email: String,
 }
 
+/// The two sides of a file's pending change, for the line-level staging editor:
+/// `head_content` is the committed (HEAD) version, `worktree_content` is the
+/// file on disk. The frontend computes the line alignment between them and lets
+/// the user pick which changes land in the staged result. `is_binary` signals
+/// the frontend to fall back to whole-file staging.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StageFileContents {
+    pub head_content: String,
+    pub worktree_content: String,
+    pub is_binary: bool,
+    /// Whether the file still exists on disk. False means a deletion (the editor
+    /// falls back to whole-file staging rather than writing an empty blob).
+    pub worktree_exists: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HeadCommitInfo {
@@ -143,6 +159,77 @@ pub fn unstage_file(repo: &Repository, path: &str) -> anyhow::Result<WorkingTree
             .with_context(|| format!("failed to remove from index: {path}"))?;
         index.write().context("failed to write index")?;
     }
+
+    get_working_tree_status(repo)
+}
+
+/// Read the HEAD-blob and working-tree content for `path`, for the line-level
+/// staging editor. `head_content` is empty when the path isn't in HEAD (a newly
+/// added file). Marks `is_binary` when either side contains a NUL byte so the
+/// frontend can fall back to whole-file staging.
+pub fn get_stage_file_contents(repo: &Repository, path: &str) -> anyhow::Result<StageFileContents> {
+    let workdir = repo.workdir().context("bare repository has no working directory")?;
+    let full_path = workdir.join(path);
+    let worktree_exists = full_path.is_file();
+    let worktree_bytes = std::fs::read(&full_path).unwrap_or_default();
+
+    let head_bytes = match repo.head() {
+        Ok(head) => {
+            let tree = head.peel_to_tree().context("HEAD has no tree")?;
+            match tree.get_path(Path::new(path)) {
+                Ok(entry) => repo
+                    .find_blob(entry.id())
+                    .context("HEAD entry is not a blob")?
+                    .content()
+                    .to_vec(),
+                Err(_) => Vec::new(),
+            }
+        }
+        Err(_) => Vec::new(),
+    };
+
+    let is_binary = head_bytes.contains(&0) || worktree_bytes.contains(&0);
+
+    Ok(StageFileContents {
+        head_content: String::from_utf8_lossy(&head_bytes).into_owned(),
+        worktree_content: String::from_utf8_lossy(&worktree_bytes).into_owned(),
+        is_binary,
+        worktree_exists,
+    })
+}
+
+/// Stage exactly `content` for `path`: write it as a blob and point the index
+/// entry at it, preserving the existing file mode. This is how the line-level
+/// staging editor persists its (possibly hand-edited) result buffer — the buffer
+/// is the source of truth, mirroring the merge editor's result pane.
+///
+/// NOTE: writing the blob directly bypasses git's clean filters (autocrlf,
+/// `.gitattributes` filters). Acceptable for v1; revisit if it causes trouble.
+pub fn stage_file_content(repo: &Repository, path: &str, content: &str) -> anyhow::Result<WorkingTreeStatus> {
+    let mut index = repo.index().context("failed to get index")?;
+
+    // Preserve the current index entry's mode where present; otherwise use a
+    // regular non-executable blob mode.
+    let mode = index.get_path(Path::new(path), 0).map(|e| e.mode).unwrap_or(0o100644);
+
+    let entry = git2::IndexEntry {
+        ctime: git2::IndexTime::new(0, 0),
+        mtime: git2::IndexTime::new(0, 0),
+        dev: 0,
+        ino: 0,
+        mode,
+        uid: 0,
+        gid: 0,
+        file_size: 0,
+        id: git2::Oid::zero(),
+        flags: 0,
+        flags_extended: 0,
+        path: path.as_bytes().to_vec(),
+    };
+    index
+        .add_frombuffer(&entry, content.as_bytes())
+        .with_context(|| format!("failed to stage content for {path}"))?;
+    index.write().context("failed to write index")?;
 
     get_working_tree_status(repo)
 }
@@ -702,5 +789,129 @@ mod tests {
         let identity = get_commit_identity(&repo).unwrap();
         assert_eq!(identity.name, "Test User");
         assert_eq!(identity.email, "test@test.com");
+    }
+
+    /// The content of the index (staged) blob for a path, or None if absent.
+    fn staged_blob(repo: &Repository, path: &str) -> Option<String> {
+        let index = repo.index().unwrap();
+        let entry = index.get_path(Path::new(path), 0)?;
+        let blob = repo.find_blob(entry.id).unwrap();
+        Some(String::from_utf8_lossy(blob.content()).into_owned())
+    }
+
+    #[test]
+    fn get_stage_file_contents_returns_head_and_worktree() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "f.txt", "a\nb\nc\n");
+        make_initial_commit(&repo);
+        fs::write(dir.path().join("f.txt"), "a\nB\nc\n").unwrap();
+
+        let c = get_stage_file_contents(&repo, "f.txt").unwrap();
+        assert_eq!(c.head_content, "a\nb\nc\n");
+        assert_eq!(c.worktree_content, "a\nB\nc\n");
+        assert!(!c.is_binary);
+    }
+
+    #[test]
+    fn get_stage_file_contents_empty_head_for_new_file() {
+        let (dir, repo) = init_repo();
+        make_initial_commit(&repo);
+        fs::write(dir.path().join("new.txt"), "hello\n").unwrap();
+
+        let c = get_stage_file_contents(&repo, "new.txt").unwrap();
+        assert_eq!(c.head_content, "");
+        assert_eq!(c.worktree_content, "hello\n");
+    }
+
+    #[test]
+    fn get_stage_file_contents_flags_a_deletion() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "f.txt", "a\nb\n");
+        make_initial_commit(&repo);
+        fs::remove_file(dir.path().join("f.txt")).unwrap();
+
+        let c = get_stage_file_contents(&repo, "f.txt").unwrap();
+        assert!(!c.worktree_exists);
+        assert_eq!(c.head_content, "a\nb\n");
+    }
+
+    #[test]
+    fn get_stage_file_contents_flags_binary() {
+        let (dir, repo) = init_repo();
+        make_initial_commit(&repo);
+        fs::write(dir.path().join("bin"), b"a\0b").unwrap();
+
+        let c = get_stage_file_contents(&repo, "bin").unwrap();
+        assert!(c.is_binary);
+    }
+
+    #[test]
+    fn get_stage_file_contents_preserves_missing_trailing_newline() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "f.txt", "a\nb\n");
+        make_initial_commit(&repo);
+        fs::write(dir.path().join("f.txt"), "a\nb").unwrap(); // dropped final newline
+
+        let c = get_stage_file_contents(&repo, "f.txt").unwrap();
+        assert_eq!(c.head_content, "a\nb\n");
+        assert_eq!(c.worktree_content, "a\nb");
+    }
+
+    #[test]
+    fn stage_file_content_stages_the_exact_buffer() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "f.txt", "a\nb\nc\n");
+        make_initial_commit(&repo);
+        fs::write(dir.path().join("f.txt"), "a\nB\nc\n").unwrap();
+
+        let status = stage_file_content(&repo, "f.txt", "a\nB\nc\n").unwrap();
+
+        assert_eq!(staged_blob(&repo, "f.txt").as_deref(), Some("a\nB\nc\n"));
+        assert!(status.staged.iter().any(|e| e.path == "f.txt"));
+        assert!(status.unstaged.iter().all(|e| e.path != "f.txt"));
+    }
+
+    #[test]
+    fn stage_file_content_can_stage_a_partial_buffer() {
+        // Two changed lines in the worktree; stage a buffer that keeps only one
+        // of the changes (the other line reverted to its HEAD version).
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "f.txt", "a\nb\nc\n");
+        make_initial_commit(&repo);
+        fs::write(dir.path().join("f.txt"), "A\nb\nC\n").unwrap();
+
+        // Stage only the first line's change.
+        let status = stage_file_content(&repo, "f.txt", "A\nb\nc\n").unwrap();
+
+        assert_eq!(staged_blob(&repo, "f.txt").as_deref(), Some("A\nb\nc\n"));
+        // Still has both a staged change (vs HEAD) and an unstaged change (vs worktree).
+        assert!(status.staged.iter().any(|e| e.path == "f.txt"));
+        assert!(status.unstaged.iter().any(|e| e.path == "f.txt"));
+    }
+
+    #[test]
+    fn stage_file_content_with_head_content_leaves_nothing_staged() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "f.txt", "a\nb\nc\n");
+        make_initial_commit(&repo);
+        fs::write(dir.path().join("f.txt"), "a\nB\nc\n").unwrap();
+
+        let status = stage_file_content(&repo, "f.txt", "a\nb\nc\n").unwrap();
+
+        assert!(status.staged.iter().all(|e| e.path != "f.txt"));
+        assert!(status.unstaged.iter().any(|e| e.path == "f.txt"));
+    }
+
+    #[test]
+    fn stage_file_content_preserves_file_mode() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "f.txt", "a\n");
+        make_initial_commit(&repo);
+        let mode_before = repo.index().unwrap().get_path(Path::new("f.txt"), 0).unwrap().mode;
+
+        stage_file_content(&repo, "f.txt", "a\nb\n").unwrap();
+
+        let mode_after = repo.index().unwrap().get_path(Path::new("f.txt"), 0).unwrap().mode;
+        assert_eq!(mode_before, mode_after);
     }
 }

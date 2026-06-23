@@ -52,6 +52,8 @@ pub fn run() {
             commands::staging::unstage_file,
             commands::staging::stage_hunk,
             commands::staging::unstage_hunk,
+            commands::staging::get_stage_file_contents,
+            commands::staging::stage_file_content,
             // Discard
             commands::discard::discard_file,
             commands::discard::discard_hunk,

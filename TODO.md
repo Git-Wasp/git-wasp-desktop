@@ -39,6 +39,7 @@ between sections, and add new ideas under the right heading. Items marked
 - [ ] Indicator/icon show currently checked out branch clearly (e.g. left arrow by 'circle' icon for commit?)
 - [x] Improve colour scheme. Colours too bright and "basic"? Allow default branch colours to be specified in colour schemes?
 - [ ] Open PR as a result of dropping one branch onto another. Include ability to enter title, description, "assign to (default to @me)", tags and then "Open PR" and "Continue on GitHub" options.
+- [ ] When clicking on the details of a commit (i.e. already committed) clicking on a file shows the changes in a side by side diff view that opens in the main panel of the app. It is possible to change the view from side by side to "inline"
 
 ## Working tree & committing
 
@@ -53,13 +54,42 @@ between sections, and add new ideas under the right heading. Items marked
 - [x] Improved UX for committing — doesn't need to be a separate "screen"
       (Changes/Staged panels, diff in main view, subject + markdown Write/Preview
       body, Commit / Reset-with-confirm)
+- [x] Merge-editor-style staging: selecting a modified file opens a three-pane
+      `StageFileEditor` — HEAD (left) / working tree (right) read-only on top, an
+      editable "Staged result" buffer on the bottom — with per-line `+`/`−`
+      gutter toggles (`−` = staged, click to unstage). Replaced the hunk-based
+      `HunkDiffViewer`. Backend `get_stage_file_contents` returns exact
+      HEAD/worktree bytes (+ binary/deletion flags); `stage_file_content` writes
+      the result buffer straight to the index as a blob (bypasses clean filters —
+      noted limitation). Line alignment + result composition live in a tested TS
+      util (`lib/lineDiff.ts`); binary/deleted files fall back to whole-file
+      staging. Follow-ups: (a) char-level intra-line diff decoration on the
+      staging panes (only line-level red/green so far — the merge editor already
+      has char-level); (b) remove the now-dead backend hunk commands
+      (`stage_hunk`/`unstage_hunk`/`discard_hunk` + `build_hunk_patch`) and the
+      `get_staged_diff`/`get_unstaged_diff` diff commands if no future feature
+      needs them.
 - [ ] Execute git hooks (pre-commit, pre-push) and show output in a built-in pane
+- [ ] Add file-type-aware syntax highlighting in diff viewer
+- [ ] Add "removed" line to gutter in diff view when merging
+- [ ] Allow changing view when merging from side-by-side/split view to "inline" view
+- [ ] Remove unnecessary bottom panel in diff view when staging files (but not when handling merge conflicts!)
 
 ## Merge editor (v2 refinements)
 
-- [ ] Per-line (sub-block) selection of source vs current via gutter checkboxes (Phase 6)
-- [ ] Current-line highlighting across the source/current/result panes (Phase 6)
-- [ ] Red/green changed-line plus intra-line (character-level) diff decoration (Phase 6)
+- [x] Per-line (sub-block) selection of source vs current via gutter checkboxes
+      (Phase 6) — `selectionGutter` renders controlled checkboxes on each
+      conflict block's lines; toggles compose the result via `lineSelection`
+      (`composeBlockText`). Whole-block "Accept source/current" chips remain,
+      now implemented as select-all-lines-of-one-side.
+- [x] Current-line highlighting across the source/current/result panes (Phase 6)
+      — shared `highlightActiveLine`/`highlightActiveLineGutter` on all three
+      panes (read-only panes still track a cursor, so clicking highlights).
+- [x] Red/green changed-line plus intra-line (character-level) diff decoration
+      (Phase 6) — `mergeDecorations` emits line-level (`cm-diff-add/del-line`)
+      and char-level (`cm-diff-add/del` marks) decorations from a per-block
+      char diff (`diffSides`). Source reads as added (green), current as
+      removed (red).
 
 ## GitHub integration
 
