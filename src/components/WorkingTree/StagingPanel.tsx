@@ -188,7 +188,7 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
                 entry={entry}
                 actionLabel="Stage"
                 action={() => stageFile(entry.path)}
-                onSelect={() => selectFile(entry.path, "unstaged")}
+                onSelect={() => selectFile(entry.path)}
                 isSelected={selectedPath === entry.path}
               />
             ))
@@ -228,7 +228,7 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
                 entry={entry}
                 actionLabel="Unstage"
                 action={() => unstageFile(entry.path)}
-                onSelect={() => selectFile(entry.path, "staged")}
+                onSelect={() => selectFile(entry.path)}
                 isSelected={selectedPath === entry.path}
               />
             ))

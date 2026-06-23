@@ -12,17 +12,14 @@ export interface WorkingTreeStatus {
   untracked: StatusEntry[];
 }
 
-export interface Hunk {
-  index: number;
-  header: string;
-  content: string;
-  oldStart: number;
-  newStart: number;
-}
-
-export interface FileDiffHunks {
-  path: string;
-  hunks: Hunk[];
+/** HEAD vs working-tree content for the line-level staging editor. */
+export interface StageFileContents {
+  headContent: string;
+  worktreeContent: string;
+  /** Either side contains a NUL byte — fall back to whole-file staging. */
+  isBinary: boolean;
+  /** False when the file is a deletion (absent on disk). */
+  worktreeExists: boolean;
 }
 
 export interface Identity {

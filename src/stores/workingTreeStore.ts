@@ -3,28 +3,26 @@ import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import { useGraphStore } from "./graphStore";
 import type {
-  FileDiffHunks,
   HeadCommitInfo,
   Identity,
+  StageFileContents,
   WorkingTreeStatus,
 } from "../types/workingTree";
 
 interface WorkingTreeStore {
   status: WorkingTreeStatus | null;
   selectedPath: string | null;
-  selectedDiff: FileDiffHunks | null;
+  stageDiff: StageFileContents | null;
   identity: Identity | null;
   headCommit: HeadCommitInfo | null;
 
   loadStatus: () => Promise<void>;
-  selectFile: (path: string, kind: "staged" | "unstaged") => Promise<void>;
+  selectFile: (path: string) => Promise<void>;
   clearSelectedFile: () => void;
   stageFile: (path: string) => Promise<void>;
   unstageFile: (path: string) => Promise<void>;
-  stageHunk: (path: string, hunkIndex: number) => Promise<void>;
-  unstageHunk: (path: string, hunkIndex: number) => Promise<void>;
+  applyStagedContent: (path: string, content: string) => Promise<void>;
   discardFile: (path: string) => Promise<void>;
-  discardHunk: (path: string, hunkIndex: number) => Promise<void>;
   discardAll: () => Promise<void>;
   createCommit: (message: string) => Promise<void>;
   amendCommitMessage: (message: string) => Promise<void>;
@@ -36,7 +34,7 @@ interface WorkingTreeStore {
 export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
   status: null,
   selectedPath: null,
-  selectedDiff: null,
+  stageDiff: null,
   identity: null,
   headCommit: null,
 
@@ -45,14 +43,16 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
     set({ status });
   },
 
-  selectFile: async (path: string, kind: "staged" | "unstaged") => {
+  // Selecting a file opens it in the line-level staging editor: load its HEAD vs
+  // working-tree content. The editor is a single surface for staging/unstaging,
+  // so it doesn't matter which list the file was selected from.
+  selectFile: async (path: string) => {
     set({ selectedPath: path });
-    const command = kind === "staged" ? "get_staged_diff" : "get_unstaged_diff";
-    const diff = await invoke<FileDiffHunks>(command, { path });
-    set({ selectedDiff: diff });
+    const stageDiff = await invoke<StageFileContents>("get_stage_file_contents", { path });
+    set({ stageDiff });
   },
 
-  clearSelectedFile: () => set({ selectedPath: null, selectedDiff: null }),
+  clearSelectedFile: () => set({ selectedPath: null, stageDiff: null }),
 
   stageFile: async (path: string) => {
     const status = await invoke<WorkingTreeStatus>("stage_file", { path });
@@ -64,38 +64,26 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
     set({ status });
   },
 
-  stageHunk: async (path: string, hunkIndex: number) => {
-    await invoke("stage_hunk", { path, hunkIndex });
-    await get().loadStatus();
+  // Stage exactly `content` for `path` (the staging editor's result buffer),
+  // then refresh status. The selected file's stage diff is reloaded so the
+  // editor reflects the new HEAD↔worktree state.
+  applyStagedContent: async (path: string, content: string) => {
+    const status = await invoke<WorkingTreeStatus>("stage_file_content", { path, content });
+    set({ status });
     if (get().selectedPath === path) {
-      await get().selectFile(path, "unstaged");
-    }
-  },
-
-  unstageHunk: async (path: string, hunkIndex: number) => {
-    await invoke("unstage_hunk", { path, hunkIndex });
-    await get().loadStatus();
-    if (get().selectedPath === path) {
-      await get().selectFile(path, "staged");
+      const stageDiff = await invoke<StageFileContents>("get_stage_file_contents", { path });
+      set({ stageDiff });
     }
   },
 
   discardFile: async (path: string) => {
     const status = await invoke<WorkingTreeStatus>("discard_file", { path });
-    set({ status, selectedPath: null, selectedDiff: null });
-  },
-
-  discardHunk: async (path: string, hunkIndex: number) => {
-    await invoke("discard_hunk", { path, hunkIndex });
-    await get().loadStatus();
-    if (get().selectedPath === path) {
-      await get().selectFile(path, "unstaged");
-    }
+    set({ status, selectedPath: null, stageDiff: null });
   },
 
   discardAll: async () => {
     const status = await invoke<WorkingTreeStatus>("discard_all");
-    set({ status, selectedPath: null, selectedDiff: null });
+    set({ status, selectedPath: null, stageDiff: null });
     // Keep the graph's working-tree node in sync after a bulk discard.
     useGraphStore.getState().refresh();
   },
