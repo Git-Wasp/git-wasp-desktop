@@ -3,6 +3,33 @@ use anyhow::Context;
 use git2::{ObjectType, Oid, Repository, Sort};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::time::Instant;
+
+/// Append a line to the graph diagnostics log (`<cache>/gitclient/graph-diagnostics.log`)
+/// and mirror it to the standard logger. Best-effort and a no-op in tests; this
+/// exists to debug graph-walk issues (e.g. histories that look truncated) from a
+/// packaged build where stderr isn't visible.
+pub(crate) fn diag_log(line: &str) {
+    log::info!(target: "graph", "{line}");
+    if cfg!(test) {
+        return;
+    }
+    use std::io::Write;
+    let Some(base) = dirs::cache_dir() else { return };
+    let dir = base.join("gitclient");
+    let _ = std::fs::create_dir_all(&dir);
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("graph-diagnostics.log"))
+    {
+        let ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let _ = writeln!(f, "[{ms}] {line}");
+    }
+}
 
 /// Slice-independent layout for the active repo, cached across viewport fetches.
 /// The whole HEAD-reachable history is laid out once (lanes, colours, edges,
@@ -53,10 +80,52 @@ fn refs_fingerprint(repo: &Repository) -> u64 {
 /// Lay out the entire HEAD-reachable history. Expensive (one full revwalk + lane
 /// assignment); only called on a cache miss.
 fn build_full_layout(repo: &Repository) -> anyhow::Result<Vec<GraphNode>> {
+    let started = Instant::now();
     let head_id = repo.head().ok().and_then(|h| h.target());
     let label_map = build_label_map(repo);
+
+    let walk_started = Instant::now();
     let commits = walk_commits(repo, usize::MAX)?;
-    Ok(assign_lanes(&commits, &label_map, head_id))
+    let walk_ms = walk_started.elapsed().as_millis();
+
+    let nodes = assign_lanes(&commits, &label_map, head_id);
+    log_full_build(repo, &commits, &nodes, walk_ms, started.elapsed().as_millis());
+    Ok(nodes)
+}
+
+/// Emit a one-line structural snapshot of the repo whenever the full layout is
+/// (re)built. The flags here distinguish the likely causes of a "history looks
+/// truncated" report: a shallow clone, or a history stitched via replace refs /
+/// grafts (which libgit2 ignores by default). `commits` is the number our walk
+/// actually reached — compare it to `git rev-list --count HEAD`.
+fn log_full_build(
+    repo: &Repository,
+    commits: &[CommitRaw],
+    nodes: &[GraphNode],
+    walk_ms: u128,
+    total_ms: u128,
+) {
+    let git_dir = repo.path();
+    let is_shallow = git_dir.join("shallow").exists();
+    let has_grafts = git_dir.join("info").join("grafts").exists();
+    let replace_refs = repo
+        .references_glob("refs/replace/*")
+        .map(|r| r.count())
+        .unwrap_or(0);
+    let roots = commits.iter().filter(|c| c.parents.is_empty()).count();
+    let max_lane = nodes.iter().map(|n| n.lane).max().unwrap_or(0);
+    let head = repo
+        .head()
+        .ok()
+        .and_then(|h| h.target())
+        .map(|o| o.to_string())
+        .unwrap_or_else(|| "none".into());
+
+    diag_log(&format!(
+        "FULL BUILD commits={} roots={roots} max_lane={max_lane} shallow={is_shallow} \
+         grafts={has_grafts} replace_refs={replace_refs} head={head} walk_ms={walk_ms} total_ms={total_ms}",
+        commits.len(),
+    ));
 }
 
 /// Carve a viewport out of already-laid-out nodes, layering in the synthetic
@@ -551,6 +620,62 @@ mod tests {
         assert_eq!(viewport.total_count, 7); // 6 commits + working-tree node
         assert!(viewport.nodes.iter().all(|n| !n.is_working_tree));
         assert_eq!(viewport.nodes[0].row, 2); // rows stay shifted by the WIP node
+    }
+
+    #[test]
+    fn merge_of_unrelated_histories_includes_all_ancestors() {
+        let (_dir, repo) = init_repo();
+        // History A — on HEAD.
+        let a1 = repo.find_commit(make_commit(&repo, "a1", &[])).unwrap();
+        let a2 = repo.find_commit(make_commit(&repo, "a2", &[&a1])).unwrap();
+        // History B — an unrelated root (no common ancestor with A), off HEAD.
+        let b1 = {
+            let sig = sig();
+            let tree = repo.find_tree(empty_tree(&repo)).unwrap();
+            repo.find_commit(repo.commit(None, &sig, &sig, "b1", &tree, &[]).unwrap()).unwrap()
+        };
+        let b2 = {
+            let sig = sig();
+            let tree = repo.find_tree(empty_tree(&repo)).unwrap();
+            repo.find_commit(repo.commit(None, &sig, &sig, "b2", &tree, &[&b1]).unwrap()).unwrap()
+        };
+        // Merge B into A (HEAD moves to the merge commit).
+        make_commit(&repo, "merge", &[&a2, &b2]);
+
+        let viewport = compute_layout(&repo, 0, 100).unwrap();
+        let summaries: Vec<String> = viewport.nodes.iter().map(|n| n.summary.clone()).collect();
+
+        assert_eq!(viewport.total_count, 5, "all five commits should be laid out");
+        for expected in ["merge", "a2", "a1", "b2", "b1"] {
+            assert!(summaries.contains(&expected.to_string()), "missing {expected}: {summaries:?}");
+        }
+    }
+
+    #[test]
+    fn merge_of_histories_with_out_of_order_times_keeps_all() {
+        // History B is much OLDER than history A, and merged into A. With a
+        // TOPOLOGICAL|TIME walk this is the case most likely to misbehave.
+        let (_dir, repo) = init_repo();
+        fn at(repo: &Repository, msg: &str, secs: i64, parents: &[&git2::Commit], head: bool) -> git2::Oid {
+            let sig = git2::Signature::new("T", "t@t", &git2::Time::new(secs, 0)).unwrap();
+            let tree = repo.find_tree(empty_tree(repo)).unwrap();
+            let target = if head { Some("HEAD") } else { None };
+            repo.commit(target, &sig, &sig, msg, &tree, parents).unwrap()
+        }
+
+        let a1 = repo.find_commit(at(&repo, "a1", 1_000, &[], true)).unwrap();
+        let a2 = repo.find_commit(at(&repo, "a2", 2_000, &[&a1], true)).unwrap();
+        // Older, unrelated history.
+        let b1 = repo.find_commit(at(&repo, "b1", 10, &[], false)).unwrap();
+        let b2 = repo.find_commit(at(&repo, "b2", 20, &[&b1], false)).unwrap();
+        at(&repo, "merge", 3_000, &[&a2, &b2], true);
+
+        let viewport = compute_layout(&repo, 0, 100).unwrap();
+        let summaries: Vec<String> = viewport.nodes.iter().map(|n| n.summary.clone()).collect();
+        assert_eq!(viewport.total_count, 5, "got: {summaries:?}");
+        for expected in ["merge", "a2", "a1", "b2", "b1"] {
+            assert!(summaries.contains(&expected.to_string()), "missing {expected}: {summaries:?}");
+        }
     }
 
     #[test]

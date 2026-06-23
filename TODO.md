@@ -37,7 +37,7 @@ between sections, and add new ideas under the right heading. Items marked
       a drag). Applied to the branch/tag pills showing the full ref name (handy
       since pills truncate), replacing the plain native `title`.
 - [ ] Indicator/icon show currently checked out branch clearly (e.g. left arrow by 'circle' icon for commit?)
-- [ ] Improve colour scheme. Colours too bright and "basic"? Allow default branch colours to be specified in colour schemes?
+- [x] Improve colour scheme. Colours too bright and "basic"? Allow default branch colours to be specified in colour schemes?
 - [ ] Open PR as a result of dropping one branch onto another. Include ability to enter title, description, "assign to (default to @me)", tags and then "Open PR" and "Continue on GitHub" options.
 
 ## Working tree & committing
