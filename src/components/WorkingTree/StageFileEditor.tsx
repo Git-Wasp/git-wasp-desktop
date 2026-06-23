@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { EditorState } from "@codemirror/state";
+import { EditorState, type Extension } from "@codemirror/state";
 import {
   Decoration,
   EditorView,
@@ -9,6 +9,7 @@ import {
   type DecorationSet,
 } from "@codemirror/view";
 import { editorThemeExtension, registerEditorView } from "../../lib/editorTheme";
+import { languageForPath } from "../../lib/editorLanguage";
 import type { StageFileContents } from "../../types/workingTree";
 import {
   changedRowIndices,
@@ -99,6 +100,7 @@ function ReadOnlyStagePane({
   stagedLines,
   onToggle,
   decorations,
+  language,
   onView,
   onScroll,
 }: {
@@ -108,6 +110,7 @@ function ReadOnlyStagePane({
   stagedLines: Set<number>;
   onToggle: (lineNo: number) => void;
   decorations: DecorationSet;
+  language: Extension | null;
   onView?: (view: EditorView | null) => void;
   onScroll?: () => void;
 }) {
@@ -122,6 +125,7 @@ function ReadOnlyStagePane({
         extensions: [
           lineNumbers(),
           ...activeLineExtensions,
+          ...(language ? [language] : []),
           editorThemeExtension(),
           paneTheme,
           EditorState.readOnly.of(true),
@@ -147,7 +151,7 @@ function ReadOnlyStagePane({
       viewRef.current = null;
       onView?.(null);
     };
-  }, [content, changedLines, onToggle, decorations, onView, onScroll]);
+  }, [content, changedLines, onToggle, decorations, language, onView, onScroll]);
 
   // Push the controlled staged-line set into the gutter markers.
   useEffect(() => {
@@ -171,6 +175,8 @@ export function StageFileEditor({
   onClose,
 }: StageFileEditorProps) {
   const lineEditable = !contents.isBinary && contents.worktreeExists;
+
+  const language = useMemo(() => languageForPath(path), [path]);
 
   const rows = useMemo(
     () => diffLines(contents.headContent, contents.worktreeContent),
@@ -257,6 +263,7 @@ export function StageFileEditor({
         extensions: [
           lineNumbers(),
           ...activeLineExtensions,
+          ...(language ? [language] : []),
           editorThemeExtension(),
           paneTheme,
           EditorView.lineWrapping,
@@ -274,7 +281,7 @@ export function StageFileEditor({
       view.destroy();
       resultViewRef.current = null;
     };
-  }, [worktreeText, lineEditable, rows, toggleRow]);
+  }, [worktreeText, lineEditable, rows, toggleRow, language]);
 
   // Keep the two top panes vertically (and horizontally) in sync as you scroll.
   const syncingRef = useRef(false);
@@ -428,6 +435,7 @@ export function StageFileEditor({
               stagedLines={headStagedLineNos}
               onToggle={onToggleHead}
               decorations={headDecorations}
+              language={language}
               onView={registerHeadView}
               onScroll={onScrollHead}
             />
@@ -438,6 +446,7 @@ export function StageFileEditor({
               stagedLines={worktreeStagedLineNos}
               onToggle={onToggleWorktree}
               decorations={worktreeDecorations}
+              language={language}
               onView={registerWorktreeView}
               onScroll={onScrollWorktree}
             />

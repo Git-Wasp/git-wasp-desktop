@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { EditorState, StateField } from "@codemirror/state";
+import { EditorState, StateField, type Extension } from "@codemirror/state";
 import {
   EditorView,
   lineNumbers,
@@ -8,6 +8,7 @@ import {
   type DecorationSet,
 } from "@codemirror/view";
 import { editorThemeExtension, registerEditorView } from "../../lib/editorTheme";
+import { languageForPath } from "../../lib/editorLanguage";
 import type { ConflictedFile } from "../../types/merge";
 import { isBlockResolved } from "../../lib/conflictBlocks";
 import {
@@ -110,6 +111,7 @@ function ReadOnlyPane({
   selectionRanges,
   selectedLines,
   onToggleLine,
+  language,
 }: {
   label: string;
   content: string;
@@ -117,6 +119,7 @@ function ReadOnlyPane({
   selectionRanges?: BlockLineRange[];
   selectedLines?: Set<number>;
   onToggleLine?: (lineNo: number) => void;
+  language?: Extension | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -127,6 +130,7 @@ function ReadOnlyPane({
     const extensions = [
       lineNumbers(),
       ...activeLineExtensions,
+      ...(language ? [language] : []),
       editorThemeExtension(),
       paneTheme,
       EditorState.readOnly.of(true),
@@ -149,7 +153,7 @@ function ReadOnlyPane({
       view.destroy();
       viewRef.current = null;
     };
-  }, [content, decorations, selectionRanges, onToggleLine]);
+  }, [content, decorations, selectionRanges, onToggleLine, language]);
 
   // Push the controlled selection into the gutter checkboxes.
   useEffect(() => {
@@ -173,6 +177,8 @@ export function ConflictFileEditor({ file, onMarkResolved }: ConflictFileEditorP
   const [resultContent, setResultContent] = useState(seeded);
   const [selections, setSelections] = useState<Selections>({});
   const selectionsRef = useRef<Selections>({});
+
+  const language = useMemo(() => languageForPath(file.path), [file.path]);
 
   const sourceDecorations = useMemo(
     () => buildPaneDecorations(file.theirsContent ?? "", file.conflictBlocks, "theirs"),
@@ -216,6 +222,7 @@ export function ConflictFileEditor({ file, onMarkResolved }: ConflictFileEditorP
         extensions: [
           lineNumbers(),
           ...activeLineExtensions,
+          ...(language ? [language] : []),
           editorThemeExtension(),
           paneTheme,
           EditorView.lineWrapping,
@@ -335,6 +342,7 @@ export function ConflictFileEditor({ file, onMarkResolved }: ConflictFileEditorP
           selectionRanges={sourceRanges}
           selectedLines={sourceSelectedLines}
           onToggleLine={onToggleSource}
+          language={language}
         />
         <ReadOnlyPane
           label="Current"
@@ -343,6 +351,7 @@ export function ConflictFileEditor({ file, onMarkResolved }: ConflictFileEditorP
           selectionRanges={currentRanges}
           selectedLines={currentSelectedLines}
           onToggleLine={onToggleCurrent}
+          language={language}
         />
       </div>
       <div style={{ display: "flex", flexDirection: "column", height: "50%", minHeight: 0 }}>

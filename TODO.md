@@ -69,11 +69,24 @@ between sections, and add new ideas under the right heading. Items marked
       (`stage_hunk`/`unstage_hunk`/`discard_hunk` + `build_hunk_patch`) and the
       `get_staged_diff`/`get_unstaged_diff` diff commands if no future feature
       needs them.
-- [ ] Execute git hooks (pre-commit, pre-push) and show output in a built-in pane
-- [ ] Add file-type-aware syntax highlighting in diff viewer
+- [x] Add file-type-aware syntax highlighting in diff viewer — shared
+      `lib/editorLanguage.ts` maps a file path (extension, plus a few
+      extension-less names like `Dockerfile`) to a CodeMirror `StreamLanguage`
+      from the already-bundled `@codemirror/legacy-modes` (no new deps; covers
+      JS/TS/JSX, Python, Rust, Go, C/C++/Java/C#/Kotlin/Swift, CSS/SCSS/LESS,
+      Ruby, shell, SQL, YAML/TOML, XML/HTML, etc.). Applied to the file-content
+      panes of `StageFileEditor` (HEAD / Working Tree / Result) and the merge
+      `ConflictFileEditor` (Source / Current / Result); unknown types render
+      plain. The unified `DiffViewer` (commit detail) keeps diff-mode — per-line
+      code tokenisation of a `+`/`-`-prefixed unified diff would be wrong; it'll
+      gain highlighting when the side-by-side commit diff lands. Follow-up: the
+      highlight palette comes from oneDark (dark) / defaultHighlightStyle (light)
+      rather than the active app theme's tokens — a theme-matched highlight style
+      would be a nice polish.
 - [ ] Add "removed" line to gutter in diff view when merging
 - [ ] Allow changing view when merging from side-by-side/split view to "inline" view
 - [ ] Remove unnecessary bottom panel in diff view when staging files (but not when handling merge conflicts!)
+- [ ] Execute git hooks (pre-commit, pre-push) and show output in a built-in pane
 
 ## Merge editor (v2 refinements)
 
