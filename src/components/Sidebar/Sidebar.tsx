@@ -13,7 +13,6 @@ import { Input } from "../ui/Input";
 import { BranchIcon, GitHubIcon, LaptopIcon } from "../ui/icons";
 import { RemoteActions } from "./RemoteActions";
 import { CloneDialog } from "../GitHub/CloneDialog";
-import { DeviceFlowModal } from "../GitHub/DeviceFlowModal";
 
 const INITIAL_LIMIT = 150;
 
@@ -42,17 +41,17 @@ export function Sidebar({ width = 220 }: { width?: number }) {
   const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, loadBranches, checkoutBranch, createBranch, deleteBranch } =
     useRepoStore();
   const { fetchViewport, revealCommit } = useGraphStore();
-  const { remoteInfo, authStatus, logout, detectRemote } = useGithubStore();
+  const { remoteInfo, detectRemote } = useGithubStore();
   const { aheadBehind, loadAheadBehind } = useRemoteStore();
   const { status: operationStatus, startMerge } = useMergeStore();
   const [newBranchName, setNewBranchName] = useState("");
   const [showNewBranch, setShowNewBranch] = useState(false);
   const [showCloneDialog, setShowCloneDialog] = useState(false);
-  const [showConnectFlow, setShowConnectFlow] = useState(false);
   const [selectedRecentPath, setSelectedRecentPath] = useState<string | null>(null);
 
+  // GitHub connection is managed in Settings now; the host is still needed for
+  // the "Clone from GitHub…" dialog.
   const githubHost = remoteInfo?.host ?? "github.com";
-  const isConnected = authStatus[githubHost] ?? false;
 
   useEffect(() => {
     loadRecentRepos();
@@ -145,58 +144,12 @@ export function Sidebar({ width = 220 }: { width?: number }) {
             {currentRepo.headBranch ?? "detached"}
           </div>
         )}
-        {/* GitHub connection status */}
-        <div
-          style={{
-            marginTop: "var(--space-3)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "var(--space-2)",
-          }}
-        >
-          <span
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "var(--space-1)",
-              fontSize: "var(--font-size-xs)",
-              color: "var(--color-text-muted)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            <span
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: "50%",
-                background: isConnected ? "var(--color-success)" : "var(--color-text-muted)",
-                flexShrink: 0,
-              }}
-            />
-            {isConnected ? `Connected · ${githubHost}` : `Not connected · ${githubHost}`}
-          </span>
-          {isConnected ? (
-            <Button size="sm" onClick={() => logout(githubHost)} style={{ flexShrink: 0 }}>
-              Disconnect
-            </Button>
-          ) : (
-            <Button size="sm" onClick={() => setShowConnectFlow(true)} style={{ flexShrink: 0 }}>
-              Connect
-            </Button>
-          )}
-        </div>
       </div>
 
       {/* Scrollable middle region */}
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
       <RemoteActions onOpenClone={() => setShowCloneDialog(true)} />
 
-      {showConnectFlow && (
-        <DeviceFlowModal host={githubHost} onClose={() => setShowConnectFlow(false)} />
-      )}
       {showCloneDialog && (
         <CloneDialog host={githubHost} onClose={() => setShowCloneDialog(false)} />
       )}

@@ -11,7 +11,7 @@ const mockInvoke = vi.mocked(invoke);
 beforeEach(() => {
   vi.clearAllMocks();
   useGithubStore.setState({
-    authStatus: { "github.com": true },
+    connections: {},
     remoteInfo: { host: "github.com", owner: "mike", repo: "gitclient", protocol: "https" },
     pullRequests: [],
     githubRepos: [],

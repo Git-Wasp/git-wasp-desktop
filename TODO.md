@@ -140,7 +140,17 @@ between sections, and add new ideas under the right heading. Items marked
 
 ## GitHub integration
 
-- [ ] Move GitHub connection into settings
+- [x] Move GitHub connection into settings — connect/disconnect + status moved
+      out of the sidebar into a new Settings → GitHub section (`GithubSettings`).
+      Status is now *validated*, not "is there a token": new backend
+      `github_connection_status` command calls `check_token` (GET /user) and
+      returns `connected` (with the login), `expired` (401 → reconnect),
+      `disconnected` (no token), or `error` (transient/network, with message).
+      Frontend `githubStore` replaced the boolean `authStatus` map with a
+      `connections` map + `checkConnection`; the Settings section re-validates on
+      mount, on window focus, and every 60s, so a token revoked elsewhere is
+      caught. Shows "Connected as <login>", Reconnect on expiry, Retry on error.
+      Removed the now-dead `github_auth_status` command.
 - [ ] Issue reference linking in commit messages (v1 scope)
 - [x] Attempting to manage PRs shows error "failed to parse PRs" — root cause was
       the GitHub REST helpers calling `.json()` without checking HTTP status, so an
@@ -186,7 +196,11 @@ between sections, and add new ideas under the right heading. Items marked
       `[data-theme=github-dark|github-light]` token blocks. `applyTheme` now maps
       any built-in id to its `data-theme` value (dark stays the `:root` default),
       so further built-ins (e.g. Cobalt2) just need a token block + registry entry.
+- [ ] Further theming improvements - the current grey colours feel "brown" and need to be more "grey"
+- [ ] Allow choice of fonts, customization of default UI font size, default code editor font (monospace).
+      Changes to be configurable from "settings" section and to persist between app reloads.
 - [ ] Allow default branch colour palette to be configurable (see pre-req in [Working Tree & Committing](#working-tree--committing))
+
 
 ## Engineering & tooling
 

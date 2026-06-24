@@ -7,7 +7,7 @@ const mockInvoke = vi.mocked(invoke);
 beforeEach(() => {
   vi.clearAllMocks();
   useGithubStore.setState({
-    authStatus: {},
+    connections: {},
     remoteInfo: null,
     pullRequests: [],
     githubRepos: [],
@@ -16,29 +16,43 @@ beforeEach(() => {
   });
 });
 
+const connected = { state: "connected" as const, login: "mike", message: null };
+
 describe("githubStore", () => {
-  it("init checks github.com auth status even when no repo is open", async () => {
-    mockInvoke.mockResolvedValueOnce(true); // github_auth_status("github.com")
+  it("init validates the github.com connection even when no repo is open", async () => {
+    mockInvoke.mockResolvedValueOnce(connected); // github_connection_status("github.com")
     mockInvoke.mockRejectedValueOnce(new Error("no 'origin' remote configured")); // detect_remote_info
 
     await useGithubStore.getState().init();
 
-    expect(mockInvoke).toHaveBeenCalledWith("github_auth_status", { host: "github.com" });
-    expect(useGithubStore.getState().authStatus["github.com"]).toBe(true);
+    expect(mockInvoke).toHaveBeenCalledWith("github_connection_status", { host: "github.com" });
+    expect(useGithubStore.getState().connections["github.com"].state).toBe("connected");
     expect(useGithubStore.getState().remoteInfo).toBeNull();
   });
 
-  it("detectRemote populates remoteInfo and checks auth status", async () => {
+  it("detectRemote populates remoteInfo and validates the connection", async () => {
     const remoteInfo = { host: "github.com", owner: "mike", repo: "gitclient", protocol: "https" as const };
     mockInvoke.mockResolvedValueOnce(remoteInfo); // detect_remote_info
-    mockInvoke.mockResolvedValueOnce(true); // github_auth_status
+    mockInvoke.mockResolvedValueOnce(connected); // github_connection_status
 
     await useGithubStore.getState().detectRemote();
 
     expect(mockInvoke).toHaveBeenCalledWith("detect_remote_info");
-    expect(mockInvoke).toHaveBeenCalledWith("github_auth_status", { host: "github.com" });
+    expect(mockInvoke).toHaveBeenCalledWith("github_connection_status", { host: "github.com" });
     expect(useGithubStore.getState().remoteInfo).toEqual(remoteInfo);
-    expect(useGithubStore.getState().authStatus["github.com"]).toBe(true);
+    expect(useGithubStore.getState().connections["github.com"]).toEqual(connected);
+  });
+
+  it("checkConnection stores the validated status, and reports a failure as 'error'", async () => {
+    mockInvoke.mockResolvedValueOnce({ state: "expired", login: null, message: null });
+    await useGithubStore.getState().checkConnection("github.com");
+    expect(useGithubStore.getState().connections["github.com"].state).toBe("expired");
+
+    mockInvoke.mockRejectedValueOnce(new Error("network down"));
+    await useGithubStore.getState().checkConnection("github.com");
+    const conn = useGithubStore.getState().connections["github.com"];
+    expect(conn.state).toBe("error");
+    expect(conn.message).toContain("network down");
   });
 
   it("detectRemote clears remoteInfo when no GitHub remote is configured", async () => {
@@ -137,24 +151,25 @@ describe("githubStore", () => {
       },
       isAuthenticating: true,
     });
-    mockInvoke.mockResolvedValueOnce({ done: true, token: "gho_secret" });
+    mockInvoke.mockResolvedValueOnce({ done: true, token: "gho_secret" }); // poll
+    mockInvoke.mockResolvedValueOnce(connected); // checkConnection after success
 
     const result = await useGithubStore.getState().pollDeviceFlow("github.com");
 
     expect(result.done).toBe(true);
     expect(useGithubStore.getState().deviceFlowInit).toBeNull();
     expect(useGithubStore.getState().isAuthenticating).toBe(false);
-    expect(useGithubStore.getState().authStatus["github.com"]).toBe(true);
+    expect(useGithubStore.getState().connections["github.com"].state).toBe("connected");
   });
 
-  it("logout calls github_logout and clears auth status for that host", async () => {
-    useGithubStore.setState({ authStatus: { "github.com": true } });
+  it("logout calls github_logout and marks the host disconnected", async () => {
+    useGithubStore.setState({ connections: { "github.com": connected } });
     mockInvoke.mockResolvedValueOnce(undefined);
 
     await useGithubStore.getState().logout("github.com");
 
     expect(mockInvoke).toHaveBeenCalledWith("github_logout", { host: "github.com" });
-    expect(useGithubStore.getState().authStatus["github.com"]).toBe(false);
+    expect(useGithubStore.getState().connections["github.com"].state).toBe("disconnected");
   });
 
   it("loadPullRequests populates pullRequests", async () => {

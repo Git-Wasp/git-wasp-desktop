@@ -206,6 +206,41 @@ async fn poll_device_flow_at(url: &str, device_code: &str) -> anyhow::Result<Dev
     }
 }
 
+// ----- Auth check -----
+
+#[derive(Deserialize)]
+struct GhAuthUser {
+    login: String,
+}
+
+/// Result of validating a stored token against the API.
+#[derive(Debug)]
+pub enum AuthCheck {
+    /// Token works; carries the authenticated user's login.
+    Valid(String),
+    /// Token was rejected (401) — the user must reconnect.
+    Invalid,
+}
+
+/// Validate a token by calling `GET /user`. A 401 means the token is no longer
+/// valid (revoked/expired). Other non-2xx responses or network failures bubble
+/// up as errors, so a transient blip isn't mistaken for a revoked token.
+pub async fn check_token(base: &str, token: &str) -> anyhow::Result<AuthCheck> {
+    let client = http_client()?;
+    let response = client
+        .get(format!("{base}/user"))
+        .bearer_auth(token)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .context("auth check request failed")?;
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Ok(AuthCheck::Invalid);
+    }
+    let user: GhAuthUser = github_json(response, "the authenticated user").await?;
+    Ok(AuthCheck::Valid(user.login))
+}
+
 // ----- Repos -----
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -705,6 +740,51 @@ mod tests {
     #[test]
     fn github_error_message_falls_back_to_raw_body() {
         assert_eq!(github_error_message("  not json  "), "not json");
+    }
+
+    #[tokio::test]
+    async fn check_token_valid_returns_login() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::GET)
+                .path("/user")
+                .header("authorization", "Bearer good-token");
+            then.status(200).json_body(serde_json::json!({ "login": "mike" }));
+        });
+
+        let result = check_token(&server.base_url(), "good-token").await.unwrap();
+
+        mock.assert();
+        assert!(matches!(result, AuthCheck::Valid(login) if login == "mike"));
+    }
+
+    #[tokio::test]
+    async fn check_token_unauthorized_is_invalid_not_an_error() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::GET).path("/user");
+            then.status(401).json_body(serde_json::json!({ "message": "Bad credentials" }));
+        });
+
+        let result = check_token(&server.base_url(), "stale-token").await.unwrap();
+
+        mock.assert();
+        assert!(matches!(result, AuthCheck::Invalid));
+    }
+
+    #[tokio::test]
+    async fn check_token_other_failure_bubbles_up_as_error() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::GET).path("/user");
+            then.status(500).body("upstream boom");
+        });
+
+        let err = check_token(&server.base_url(), "good-token").await.unwrap_err();
+
+        mock.assert();
+        // A 500 is transient — surfaced as an error, not a revoked token.
+        assert!(format!("{err:#}").contains("500"));
     }
 
     #[tokio::test]

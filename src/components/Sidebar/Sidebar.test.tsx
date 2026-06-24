@@ -42,7 +42,7 @@ beforeEach(() => {
   });
 
   useGithubStore.setState({
-    authStatus: {},
+    connections: {},
     remoteInfo: null,
     pullRequests: [],
     githubRepos: [],

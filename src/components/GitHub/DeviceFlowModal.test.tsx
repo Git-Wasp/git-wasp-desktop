@@ -25,7 +25,7 @@ const fakeInit = {
 beforeEach(() => {
   vi.clearAllMocks();
   useGithubStore.setState({
-    authStatus: {},
+    connections: {},
     remoteInfo: null,
     pullRequests: [],
     githubRepos: [],

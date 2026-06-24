@@ -33,7 +33,7 @@ const fakeRepos = [
 beforeEach(() => {
   vi.clearAllMocks();
   useGithubStore.setState({
-    authStatus: { "github.com": true },
+    connections: {},
     remoteInfo: null,
     pullRequests: [],
     githubRepos: [],

@@ -88,7 +88,7 @@ pub fn run() {
             commands::remote::push_branch,
             commands::remote::clone_repo,
             // GitHub auth & API
-            commands::github::github_auth_status,
+            commands::github::github_connection_status,
             commands::github::github_logout,
             commands::github::github_start_device_flow,
             commands::github::github_poll_device_flow,

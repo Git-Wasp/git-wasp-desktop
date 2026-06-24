@@ -3,13 +3,14 @@ import { create } from "zustand";
 import type {
   DeviceFlowInit,
   DeviceFlowPollResult,
+  GithubConnection,
   GithubRepo,
   PullRequest,
   RemoteInfo,
 } from "../types/github";
 
 interface GithubStore {
-  authStatus: Record<string, boolean>;
+  connections: Record<string, GithubConnection>;
   remoteInfo: RemoteInfo | null;
   pullRequests: PullRequest[];
   githubRepos: GithubRepo[];
@@ -19,7 +20,7 @@ interface GithubStore {
 
   init: () => Promise<void>;
   detectRemote: () => Promise<void>;
-  checkAuthStatus: (host: string) => Promise<void>;
+  checkConnection: (host: string) => Promise<void>;
   startDeviceFlow: (host: string) => Promise<void>;
   pollDeviceFlow: (host: string) => Promise<DeviceFlowPollResult>;
   cancelDeviceFlow: () => void;
@@ -37,7 +38,7 @@ interface GithubStore {
 }
 
 export const useGithubStore = create<GithubStore>((set, get) => ({
-  authStatus: {},
+  connections: {},
   remoteInfo: null,
   pullRequests: [],
   githubRepos: [],
@@ -46,11 +47,11 @@ export const useGithubStore = create<GithubStore>((set, get) => ({
   prDraft: null,
 
   init: async () => {
-    // Check the default host's auth status up front — detectRemote only
+    // Validate the default host's connection up front — detectRemote only
     // checks a host once a repo with a matching remote is open, which would
     // otherwise leave a freshly-launched app showing "Not connected" even
     // though a token from a previous session is sitting in the keychain.
-    await get().checkAuthStatus("github.com");
+    await get().checkConnection("github.com");
     await get().detectRemote();
   },
 
@@ -58,15 +59,33 @@ export const useGithubStore = create<GithubStore>((set, get) => ({
     try {
       const remoteInfo = await invoke<RemoteInfo>("detect_remote_info");
       set({ remoteInfo });
-      await get().checkAuthStatus(remoteInfo.host);
+      await get().checkConnection(remoteInfo.host);
     } catch {
       set({ remoteInfo: null });
     }
   },
 
-  checkAuthStatus: async (host: string) => {
-    const authenticated = await invoke<boolean>("github_auth_status", { host });
-    set((state) => ({ authStatus: { ...state.authStatus, [host]: authenticated } }));
+  // Validate the stored token against the API (GET /user) so the status reflects
+  // a *working* connection, catching a revoked/expired token. Keeps the previous
+  // login visible while a re-check is in flight so it doesn't flicker.
+  checkConnection: async (host: string) => {
+    set((state) => ({
+      connections: {
+        ...state.connections,
+        [host]: { state: "checking", login: state.connections[host]?.login ?? null, message: null },
+      },
+    }));
+    try {
+      const status = await invoke<GithubConnection>("github_connection_status", { host });
+      set((state) => ({ connections: { ...state.connections, [host]: status } }));
+    } catch (e) {
+      set((state) => ({
+        connections: {
+          ...state.connections,
+          [host]: { state: "error", login: null, message: String(e) },
+        },
+      }));
+    }
   },
 
   startDeviceFlow: async (host: string) => {
@@ -91,11 +110,9 @@ export const useGithubStore = create<GithubStore>((set, get) => ({
       deviceCode: init.deviceCode,
     });
     if (result.done) {
-      set((state) => ({
-        deviceFlowInit: null,
-        isAuthenticating: false,
-        authStatus: { ...state.authStatus, [host]: true },
-      }));
+      set({ deviceFlowInit: null, isAuthenticating: false });
+      // Validate the fresh token to populate the connected user (login).
+      await get().checkConnection(host);
     }
     return result;
   },
@@ -106,7 +123,12 @@ export const useGithubStore = create<GithubStore>((set, get) => ({
 
   logout: async (host: string) => {
     await invoke("github_logout", { host });
-    set((state) => ({ authStatus: { ...state.authStatus, [host]: false } }));
+    set((state) => ({
+      connections: {
+        ...state.connections,
+        [host]: { state: "disconnected", login: null, message: null },
+      },
+    }));
   },
 
   loadGithubRepos: async (host: string) => {

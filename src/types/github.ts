@@ -12,6 +12,24 @@ export interface DeviceFlowPollResult {
   slowDown: boolean;
 }
 
+/**
+ * A validated GitHub connection state for a host. `connected`/`expired`/`error`
+ * come from a real `GET /user` check; `checking` is a transient client state
+ * while that request is in flight.
+ */
+export type GithubConnectionState =
+  | "disconnected"
+  | "connected"
+  | "expired"
+  | "error"
+  | "checking";
+
+export interface GithubConnection {
+  state: GithubConnectionState;
+  login: string | null;
+  message: string | null;
+}
+
 export interface RemoteInfo {
   host: string;
   owner: string;
