@@ -230,8 +230,30 @@ between sections, and add new ideas under the right heading. Items marked
       stale out-of-order responses, and rows are keyed by oid + memoized so a
       selection change re-renders only the affected rows. (Canvas keeps the
       selection band so graph lines stay unobscured — see earlier ordered-pass fix.)
+- [x] Add icons to key buttons like "push", "pull", and "new branch" — new
+      `PushIcon` (up-arrow-to-bar), `PullIcon` (down-arrow-from-bar) and
+      `BranchIcon` (git-branch) in `ui/icons.tsx`, added to the history toolbar's
+      Push / Pull / New branch buttons and the sidebar's "New" branch button. The
+      icon is hidden while the button is loading (the spinner takes its place);
+      icons are `aria-hidden` so button accessible names are unchanged.
 - [ ] Add ability to select multiple "unpushed" commits on the same branch and squash them.
 - [ ] Add the top left (under the tab) show a the current repo name and make it a "repo picker" to choose from 
       recent repositories. Next to it show the current checked out branch, and also make that
-      a picker to choose from the available branches (local only)
-- [ ] Make the left side bar collapsible
+      a picker to choose from the available branches (local only). Remove the unnecessary "open repository" button
+- [x] Make the left side bar collapsible — a sidebar toggle (panel icon) at the
+      far left of the `NavBar` hides/shows the left `Sidebar` (and its resize
+      handle); collapsed state persists via `usePersistedBoolean`
+      ("sidebarCollapsed"). When collapsed the main content takes the full width;
+      the toggle stays visible to expand again (aria-label/title flip between
+      "Hide sidebar" / "Show sidebar"). New `SidebarIcon` in `ui/icons.tsx`.
+- [x] Improve "new tab" experience. Don't just open file explorer/finder, instead
+      create a "new" view where the user can choose functionality like "open a
+      repository", "clone", and a list of "recent" repos to re-open — new
+      `WelcomeView` (open folder / clone from GitHub / clickable recent list)
+      shown in the main area whenever there's no active repo (`!currentRepo` and
+      not on Settings): initial launch, after closing the last repo, or a "new
+      tab". The TabBar "+" now calls a frontend-only `repoStore.newTab()` (nulls
+      the active repo without closing others) instead of jumping straight to the
+      OS picker; clicking an existing tab re-activates it.
+- [ ] Remember screen size when re-opening app. If it was full screen when closed,
+      it should be full screen again when re-opened.

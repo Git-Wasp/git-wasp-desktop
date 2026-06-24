@@ -10,7 +10,7 @@ import { CollapsibleSection } from "./CollapsibleSection";
 import { RowMenu } from "./RowMenu";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
-import { GitHubIcon, LaptopIcon } from "../ui/icons";
+import { BranchIcon, GitHubIcon, LaptopIcon } from "../ui/icons";
 import { RemoteActions } from "./RemoteActions";
 import { CloneDialog } from "../GitHub/CloneDialog";
 import { DeviceFlowModal } from "../GitHub/DeviceFlowModal";
@@ -208,7 +208,8 @@ export function Sidebar({ width = 220 }: { width?: number }) {
           title="Branches"
           action={
             <Button size="sm" onClick={() => setShowNewBranch((v) => !v)}>
-              + New
+              <BranchIcon size={12} />
+              New
             </Button>
           }
         >

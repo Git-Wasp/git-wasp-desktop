@@ -18,6 +18,7 @@ interface RepoStore {
   loadOpenRepos: () => Promise<void>;
   activateRepo: (path: string) => Promise<void>;
   closeRepo: (path: string) => Promise<void>;
+  newTab: () => void;
   loadRecentRepos: () => Promise<void>;
   loadBranches: () => Promise<void>;
   checkoutBranch: (name: string) => Promise<void>;
@@ -77,6 +78,15 @@ export const useRepoStore = create<RepoStore>((set, get) => {
         set({ currentRepo: null, activeRepoPath: null, branches: [] });
         useGraphStore.getState().clearSelection();
       }
+    },
+
+    // A "new tab": deselect the active repo (without closing any) so the app
+    // shows the welcome/landing view. Existing tabs stay open; clicking one
+    // re-activates it. Frontend-only — the backend's active repo is re-synced on
+    // the next activate/open.
+    newTab: () => {
+      set({ currentRepo: null, activeRepoPath: null, branches: [] });
+      useGraphStore.getState().clearSelection();
     },
 
     loadRecentRepos: async () => {

@@ -51,6 +51,106 @@ export function SplitViewIcon({ size = 14, title }: IconProps) {
   );
 }
 
+/** Up arrow to a bar — push (send commits up to the remote). */
+export function PushIcon({ size = 14, title }: IconProps) {
+  return (
+    <svg
+      data-icon="push"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      style={{ flexShrink: 0 }}
+    >
+      {title && <title>{title}</title>}
+      <path d="M5 4h14" />
+      <path d="M12 20V8" />
+      <path d="M6 14l6-6 6 6" />
+    </svg>
+  );
+}
+
+/** Down arrow from a bar — pull (bring remote commits down). */
+export function PullIcon({ size = 14, title }: IconProps) {
+  return (
+    <svg
+      data-icon="pull"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      style={{ flexShrink: 0 }}
+    >
+      {title && <title>{title}</title>}
+      <path d="M5 20h14" />
+      <path d="M12 4v12" />
+      <path d="M6 10l6 6 6-6" />
+    </svg>
+  );
+}
+
+/** Git-branch glyph — create / new branch. */
+export function BranchIcon({ size = 14, title }: IconProps) {
+  return (
+    <svg
+      data-icon="branch"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      style={{ flexShrink: 0 }}
+    >
+      {title && <title>{title}</title>}
+      <line x1="6" y1="3" x2="6" y2="15" />
+      <circle cx="18" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+      <path d="M18 9a9 9 0 0 1-9 9" />
+    </svg>
+  );
+}
+
+/** A panel with a left column — the collapsible left sidebar. */
+export function SidebarIcon({ size = 16, title }: IconProps) {
+  return (
+    <svg
+      data-icon="sidebar"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      style={{ flexShrink: 0 }}
+    >
+      {title && <title>{title}</title>}
+      <rect x="3" y="4" width="18" height="16" rx="1.5" />
+      <path d="M9 4v16" />
+    </svg>
+  );
+}
+
 /** Stacked rows — the inline / unified diff view. */
 export function InlineViewIcon({ size = 14, title }: IconProps) {
   return (

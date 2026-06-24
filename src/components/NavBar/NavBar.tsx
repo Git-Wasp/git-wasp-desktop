@@ -2,6 +2,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type { CSSProperties } from "react";
 import { useRepoStore } from "../../stores/repoStore";
 import { Button } from "../ui/Button";
+import { IconButton } from "../ui/IconButton";
+import { SidebarIcon } from "../ui/icons";
 
 export type View = "history" | "prs" | "settings";
 
@@ -47,9 +49,13 @@ function tabStyle(active: boolean): CSSProperties {
 export function NavBar({
   view,
   onViewChange,
+  sidebarCollapsed,
+  onToggleSidebar,
 }: {
   view: View;
   onViewChange: (v: View) => void;
+  sidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
 }) {
   const currentRepo = useRepoStore((s) => s.currentRepo);
   const openRepo = useRepoStore((s) => s.openRepo);
@@ -63,6 +69,18 @@ export function NavBar({
 
   return (
     <div style={barStyle} role="tablist" aria-label="Views">
+      {onToggleSidebar && (
+        <div style={{ display: "flex", alignItems: "center", paddingRight: "var(--space-1)" }}>
+          <IconButton
+            aria-label={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+            title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+            aria-pressed={!sidebarCollapsed}
+            onClick={onToggleSidebar}
+          >
+            <SidebarIcon />
+          </IconButton>
+        </div>
+      )}
       {currentRepo &&
         VIEW_TABS.map((tab) => (
           <button

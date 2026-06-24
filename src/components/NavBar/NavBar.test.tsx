@@ -49,6 +49,30 @@ describe("NavBar", () => {
     expect(screen.getByRole("button", { name: /open repository/i })).toBeInTheDocument();
   });
 
+  it("shows the sidebar toggle only when an onToggleSidebar handler is given", () => {
+    const { rerender } = render(<NavBar view="history" onViewChange={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /sidebar/i })).toBeNull();
+
+    rerender(
+      <NavBar view="history" onViewChange={vi.fn()} sidebarCollapsed={false} onToggleSidebar={vi.fn()} />,
+    );
+    expect(screen.getByRole("button", { name: "Hide sidebar" })).toBeInTheDocument();
+  });
+
+  it("toggles the sidebar and reflects collapsed state in the label", () => {
+    const onToggleSidebar = vi.fn();
+    const { rerender } = render(
+      <NavBar view="history" onViewChange={vi.fn()} sidebarCollapsed={false} onToggleSidebar={onToggleSidebar} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
+    expect(onToggleSidebar).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <NavBar view="history" onViewChange={vi.fn()} sidebarCollapsed={true} onToggleSidebar={onToggleSidebar} />,
+    );
+    expect(screen.getByRole("button", { name: "Show sidebar" })).toBeInTheDocument();
+  });
+
   it("opens a chosen folder as a repo", async () => {
     mockOpen.mockResolvedValueOnce("/picked/repo");
     render(<NavBar view="history" onViewChange={vi.fn()} />);

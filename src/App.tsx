@@ -10,9 +10,11 @@ import { StageFileEditor } from "./components/WorkingTree/StageFileEditor";
 import { PRPanel } from "./components/PRPanel/PRPanel";
 import { MergeEditor } from "./components/Merge/MergeEditor";
 import { SettingsView } from "./components/Settings/SettingsView";
+import { WelcomeView } from "./components/Welcome/WelcomeView";
 import { ToastContainer } from "./components/ui/Toast";
 import { ResizeHandle } from "./components/common/ResizeHandle";
 import { usePersistedWidth } from "./lib/usePersistedWidth";
+import { usePersistedBoolean } from "./lib/usePersistedBoolean";
 import { useRepoStore } from "./stores/repoStore";
 import { useGraphStore } from "./stores/graphStore";
 import { useGithubStore } from "./stores/githubStore";
@@ -42,6 +44,7 @@ export default function App() {
   const [historyRightMode, setHistoryRightMode] = useState<"commit" | "uncommitted">("commit");
   const [sidebarWidth, setSidebarWidth] = usePersistedWidth("sidebarWidth", 220, 160, 400);
   const [detailWidth, setDetailWidth] = usePersistedWidth("detailWidth", 380, 280, 720);
+  const [sidebarCollapsed, setSidebarCollapsed] = usePersistedBoolean("sidebarCollapsed", false);
 
   const enterUncommitted = () => {
     clearSelectedFile();
@@ -54,6 +57,10 @@ export default function App() {
 
   const showingUncommittedDiff =
     historyRightMode === "uncommitted" && wtSelectedPath != null && wtStageDiff != null;
+
+  // No active repo (initial launch, a "new tab", or the last repo closed) lands
+  // on the welcome view — except in Settings, which stands alone.
+  const showWelcome = !currentRepo && view !== "settings";
 
   const handleStartPullRequest = (head: string, base: string) => {
     setPrDraft({ head, base });
@@ -105,16 +112,27 @@ export default function App() {
       }}
     >
       <TabBar />
-      <NavBar view={view} onViewChange={setView} />
-      <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
-      <Sidebar width={sidebarWidth} />
-      <ResizeHandle
-        ariaLabel="Resize sidebar"
-        onResize={(dx) => setSidebarWidth((w) => w + dx)}
+      <NavBar
+        view={view}
+        onViewChange={setView}
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleSidebar={() => setSidebarCollapsed((c) => !c)}
       />
+      <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
+      {!sidebarCollapsed && (
+        <>
+          <Sidebar width={sidebarWidth} />
+          <ResizeHandle
+            ariaLabel="Resize sidebar"
+            onResize={(dx) => setSidebarWidth((w) => w + dx)}
+          />
+        </>
+      )}
 
       <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
-        {view === "history" ? (
+        {showWelcome ? (
+          <WelcomeView />
+        ) : view === "history" ? (
           <>
             <div
               style={{

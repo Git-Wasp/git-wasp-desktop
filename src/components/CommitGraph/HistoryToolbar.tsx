@@ -8,6 +8,7 @@ import { useToastStore } from "../../stores/toastStore";
 import { ContextMenu, type MenuItem } from "../common/ContextMenu";
 import { PromptDialog } from "../common/PromptDialog";
 import { Button } from "../ui/Button";
+import { BranchIcon, PullIcon, PushIcon } from "../ui/icons";
 
 const barStyle: React.CSSProperties = {
   display: "flex",
@@ -111,6 +112,7 @@ export function HistoryToolbar() {
   return (
     <div style={barStyle}>
       <Button type="button" onClick={handlePush} loading={isPushing} disabled={!hasRemote || busy}>
+        {!isPushing && <PushIcon />}
         Push
       </Button>
       <Button
@@ -120,9 +122,11 @@ export function HistoryToolbar() {
         loading={isPulling || isFetching}
         disabled={!hasRemote || busy}
       >
+        {!(isPulling || isFetching) && <PullIcon />}
         Pull ▾
       </Button>
       <Button type="button" onClick={() => setShowNewBranch(true)}>
+        <BranchIcon />
         New branch
       </Button>
 

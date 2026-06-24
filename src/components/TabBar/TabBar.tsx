@@ -1,4 +1,3 @@
-import { open } from "@tauri-apps/plugin-dialog";
 import type { CSSProperties } from "react";
 import { useRepoStore } from "../../stores/repoStore";
 import { IconButton } from "../ui/IconButton";
@@ -26,16 +25,9 @@ const tabBaseStyle: CSSProperties = {
 };
 
 export function TabBar() {
-  const { openRepos, activeRepoPath, activateRepo, closeRepo, openRepo } = useRepoStore();
+  const { openRepos, activeRepoPath, activateRepo, closeRepo, newTab } = useRepoStore();
 
   if (openRepos.length === 0) return null;
-
-  const handleAdd = async () => {
-    const selected = await open({ directory: true, multiple: false });
-    if (typeof selected === "string") {
-      await openRepo(selected);
-    }
-  };
 
   return (
     <div style={barStyle} role="tablist" aria-label="Open repositories">
@@ -77,9 +69,10 @@ export function TabBar() {
         );
       })}
       <IconButton
-        aria-label="Open another repository"
+        aria-label="New tab"
+        title="New tab"
         size="md"
-        onClick={handleAdd}
+        onClick={newTab}
         style={{ alignSelf: "center", marginLeft: "var(--space-1)", flexShrink: 0 }}
       >
         +
