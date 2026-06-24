@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { StageFileEditor } from "./StageFileEditor";
 import type { StageFileContents } from "../../types/workingTree";
@@ -19,6 +19,18 @@ const removed: StageFileContents = {
   isBinary: false,
   worktreeExists: true,
 };
+
+// A modification: "b" → "B" (a removed + an added line).
+const modified: StageFileContents = {
+  headContent: "a\nb\nc\n",
+  worktreeContent: "a\nB\nc\n",
+  isBinary: false,
+  worktreeExists: true,
+};
+
+// The view-mode preference persists to localStorage; reset it between tests so
+// each starts from the default (split) view.
+beforeEach(() => localStorage.clear());
 
 function pane(container: HTMLElement, testId: string): HTMLElement {
   const el = container.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
@@ -122,6 +134,70 @@ describe("StageFileEditor", () => {
     await waitFor(() =>
       expect(container.querySelector<HTMLButtonElement>(".cm-stage-toggle")?.textContent).toBe("−"),
     );
+  });
+
+  it("defaults to the split view with both panes and a view-mode toggle", () => {
+    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+
+    expect(pane(container, "head-pane")).toBeInTheDocument();
+    expect(pane(container, "worktree-pane")).toBeInTheDocument();
+    expect(container.querySelector('[data-testid="inline-pane"]')).toBeNull();
+    expect(screen.getByRole("button", { name: "Side-by-side view" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Inline view" })).toBeInTheDocument();
+  });
+
+  it("switches to a single unified pane in inline view", () => {
+    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Inline view" }));
+
+    expect(pane(container, "inline-pane")).toBeInTheDocument();
+    expect(container.querySelector('[data-testid="head-pane"]')).toBeNull();
+    expect(container.querySelector('[data-testid="worktree-pane"]')).toBeNull();
+  });
+
+  it("shows added and removed lines together in the inline pane", async () => {
+    const { container } = render(<StageFileEditor path="f.txt" contents={modified} onStage={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Inline view" }));
+
+    await waitFor(() => {
+      const inline = pane(container, "inline-pane");
+      expect(inline.querySelector(".cm-diff-add-line")).not.toBeNull();
+      expect(inline.querySelector(".cm-diff-del-line")).not.toBeNull();
+      // No hatched placeholders in the unified view.
+      expect(inline.querySelector(".cm-diff-placeholder-line")).toBeNull();
+    });
+  });
+
+  it("stages line-by-line from the inline view", async () => {
+    const onStage = vi.fn();
+    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={onStage} />);
+    fireEvent.click(screen.getByRole("button", { name: "Inline view" }));
+
+    const toggle = await waitFor(() => {
+      const button = container.querySelector<HTMLButtonElement>('[data-testid="inline-pane"] .cm-stage-toggle');
+      expect(button).not.toBeNull();
+      return button!;
+    });
+    expect(toggle.textContent).toBe("−");
+    fireEvent.click(toggle); // unstage the only change
+    await waitFor(() =>
+      expect(
+        container.querySelector<HTMLButtonElement>('[data-testid="inline-pane"] .cm-stage-toggle')?.textContent,
+      ).toBe("+"),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Stage" }));
+    expect(onStage.mock.calls[0]).toEqual(["f.txt", "a\nc\n"]);
+  });
+
+  it("remembers the chosen view mode across remounts", () => {
+    const first = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Inline view" }));
+    first.unmount();
+
+    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+    expect(pane(container, "inline-pane")).toBeInTheDocument();
   });
 
   it("renders the change overview ruler", () => {

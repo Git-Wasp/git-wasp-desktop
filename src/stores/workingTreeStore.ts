@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import { useGraphStore } from "./graphStore";
+import { nextSelectionAfterStaging, unstagedPaths } from "../lib/stagingSelection";
 import type {
   HeadCommitInfo,
   Identity,
@@ -31,6 +32,22 @@ interface WorkingTreeStore {
   startWatching: () => Promise<() => void>;
 }
 
+// After staging `path` (which was the file open in the diff view), move the
+// selection to the next file that still needs staging and load its diff. If
+// `path` was only partially staged, or it was the last file, the helper keeps it
+// selected (it slots back into `target`). See `nextSelectionAfterStaging`.
+async function reselectAfterStaging(
+  set: (partial: Partial<WorkingTreeStore>) => void,
+  path: string,
+  prevChanges: string[],
+  status: WorkingTreeStatus,
+) {
+  const target = nextSelectionAfterStaging(prevChanges, unstagedPaths(status), path);
+  set({ selectedPath: target });
+  const stageDiff = await invoke<StageFileContents>("get_stage_file_contents", { path: target });
+  set({ stageDiff });
+}
+
 export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
   status: null,
   selectedPath: null,
@@ -55,8 +72,12 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
   clearSelectedFile: () => set({ selectedPath: null, stageDiff: null }),
 
   stageFile: async (path: string) => {
+    const prevChanges = unstagedPaths(get().status);
+    const wasSelected = get().selectedPath === path;
     const status = await invoke<WorkingTreeStatus>("stage_file", { path });
     set({ status });
+    // If the diff view was open on this file, advance to the next unstaged one.
+    if (wasSelected) await reselectAfterStaging(set, path, prevChanges, status);
   },
 
   unstageFile: async (path: string) => {
@@ -65,15 +86,14 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
   },
 
   // Stage exactly `content` for `path` (the staging editor's result buffer),
-  // then refresh status. The selected file's stage diff is reloaded so the
-  // editor reflects the new HEAD↔worktree state.
+  // then refresh status. When the diff view was open on this file, advance to the
+  // next file that still needs staging (a partial stage keeps it selected).
   applyStagedContent: async (path: string, content: string) => {
+    const prevChanges = unstagedPaths(get().status);
+    const wasSelected = get().selectedPath === path;
     const status = await invoke<WorkingTreeStatus>("stage_file_content", { path, content });
     set({ status });
-    if (get().selectedPath === path) {
-      const stageDiff = await invoke<StageFileContents>("get_stage_file_contents", { path });
-      set({ stageDiff });
-    }
+    if (wasSelected) await reselectAfterStaging(set, path, prevChanges, status);
   },
 
   discardFile: async (path: string) => {

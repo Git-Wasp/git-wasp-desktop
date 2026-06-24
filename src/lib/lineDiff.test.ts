@@ -10,6 +10,7 @@ import {
   diffLines,
   headChangedLines,
   headPaneText,
+  inlineText,
   worktreeChangedLines,
   worktreePaneText,
 } from "./lineDiff";
@@ -139,6 +140,13 @@ describe("aligned panes", () => {
     const rows = diffLines("a\nb\nc\n", "a\nB\nc\nd\n");
     expect(alignedHeadText(rows).split("\n").length).toBe(rows.length);
     expect(alignedWorktreeText(rows).split("\n").length).toBe(rows.length);
+  });
+
+  it("lays out a unified inline text with one line per row", () => {
+    // A modification: "b" → "B". Removed sits directly above added.
+    const rows = diffLines("a\nb\nc\n", "a\nB\nc\n");
+    expect(inlineText(rows)).toBe("a\nb\nB\nc\n");
+    expect(inlineText(rows).split("\n").length).toBe(rows.length);
   });
 
   it("numbers real lines and leaves placeholders blank (null)", () => {

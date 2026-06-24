@@ -3,6 +3,8 @@ import { EditorState, type Extension } from "@codemirror/state";
 import {
   Decoration,
   EditorView,
+  GutterMarker,
+  gutter,
   lineNumbers,
   highlightActiveLine,
   highlightActiveLineGutter,
@@ -19,11 +21,24 @@ import {
   changedRowIndices,
   composeStagedText,
   diffLines,
+  inlineText as buildInlineText,
 } from "../../lib/lineDiff";
 import { stageGutter, setStagedLines } from "./stageGutter";
 import { ChangeOverview } from "./ChangeOverview";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
+import { InlineViewIcon, SplitViewIcon } from "../ui/icons";
+
+type ViewMode = "split" | "inline";
+const VIEW_MODE_KEY = "stageFileEditor.viewMode";
+
+function loadViewMode(): ViewMode {
+  try {
+    return localStorage.getItem(VIEW_MODE_KEY) === "inline" ? "inline" : "split";
+  } catch {
+    return "split";
+  }
+}
 
 interface StageFileEditorProps {
   path: string;
@@ -55,6 +70,15 @@ const paneTheme = EditorView.theme({
     backgroundColor: "var(--color-bg-surface)",
     backgroundImage:
       "repeating-linear-gradient(45deg, var(--color-border-default) 0, var(--color-border-default) 1px, transparent 1px, transparent 7px)",
+  },
+  // Inline view: a single gutter showing both the old (HEAD) and new
+  // (working-tree) line numbers; either side is blank on a row that side lacks.
+  ".cm-dual-old, .cm-dual-new": {
+    display: "inline-block",
+    minWidth: "2.5ch",
+    padding: "0 var(--space-1)",
+    textAlign: "right",
+    color: "var(--color-text-muted)",
   },
   ".cm-stage-gutter": { paddingLeft: "var(--space-1)", paddingRight: "var(--space-1)" },
   ".cm-stage-toggle": {
@@ -107,6 +131,84 @@ function buildLineDecorations(content: string, entries: LineDecoration[]): Decor
   return Decoration.set(ranges);
 }
 
+// One gutter element rendering an old + new line number side by side (either may
+// be blank). Used by the inline/unified view in place of the single-column
+// line-number gutter the split panes use.
+class DualLineNumberMarker extends GutterMarker {
+  constructor(
+    readonly oldNo: string,
+    readonly newNo: string,
+  ) {
+    super();
+  }
+
+  eq(other: DualLineNumberMarker) {
+    return other.oldNo === this.oldNo && other.newNo === this.newNo;
+  }
+
+  toDOM() {
+    const wrap = document.createElement("span");
+    const old = wrap.appendChild(document.createElement("span"));
+    old.className = "cm-dual-old";
+    old.textContent = this.oldNo;
+    const next = wrap.appendChild(document.createElement("span"));
+    next.className = "cm-dual-new";
+    next.textContent = this.newNo;
+    return wrap;
+  }
+}
+
+function dualNumberGutter(oldMap: (number | null)[], newMap: (number | null)[]): Extension {
+  const label = (v: number | null) => (v == null ? "" : String(v));
+  return gutter({
+    class: "cm-dual-gutter",
+    lineMarker(view, line) {
+      const n = view.state.doc.lineAt(line.from).number;
+      return new DualLineNumberMarker(label(oldMap[n - 1]), label(newMap[n - 1]));
+    },
+  });
+}
+
+const viewModeButtonBase: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: "var(--control-height-sm)",
+  height: "var(--control-height-sm)",
+  border: "none",
+  padding: 0,
+  cursor: "pointer",
+};
+
+function ViewModeButton({
+  active,
+  label,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      aria-pressed={active}
+      style={{
+        ...viewModeButtonBase,
+        background: active ? "var(--color-bg-selected)" : "transparent",
+        color: active ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 function ReadOnlyStagePane({
   label,
   content,
@@ -115,12 +217,13 @@ function ReadOnlyStagePane({
   onToggle,
   decorations,
   lineNumberMap,
+  oldLineNumberMap,
   language,
   testId,
   onView,
   onScroll,
 }: {
-  label: string;
+  label?: string;
   content: string;
   changedLines: Set<number>;
   stagedLines: Set<number>;
@@ -128,6 +231,9 @@ function ReadOnlyStagePane({
   decorations: DecorationSet;
   /** Real file line number per 1-based pane line; `null` renders a blank gutter. */
   lineNumberMap: (number | null)[];
+  /** When set, shows a dual old/new number gutter (inline view); `lineNumberMap`
+   *  is then the *new* column and this the *old* column. */
+  oldLineNumberMap?: (number | null)[];
   language: Extension | null;
   testId?: string;
   onView?: (view: EditorView | null) => void;
@@ -138,18 +244,21 @@ function ReadOnlyStagePane({
 
   useEffect(() => {
     if (!containerRef.current) return;
+    const numberGutter = oldLineNumberMap
+      ? dualNumberGutter(oldLineNumberMap, lineNumberMap)
+      : lineNumbers({
+          // Aligned panes pad the opposite side with blank rows; those carry no
+          // real file line, so leave their gutter empty.
+          formatNumber: (n) => {
+            const real = lineNumberMap[n - 1];
+            return real == null ? "" : String(real);
+          },
+        });
     const view = new EditorView({
       state: EditorState.create({
         doc: content,
         extensions: [
-          lineNumbers({
-            // Aligned panes pad the opposite side with blank rows; those carry no
-            // real file line, so leave their gutter empty.
-            formatNumber: (n) => {
-              const real = lineNumberMap[n - 1];
-              return real == null ? "" : String(real);
-            },
-          }),
+          numberGutter,
           ...activeLineExtensions,
           ...(language ? [language] : []),
           editorThemeExtension(),
@@ -177,7 +286,17 @@ function ReadOnlyStagePane({
       viewRef.current = null;
       onView?.(null);
     };
-  }, [content, changedLines, onToggle, decorations, lineNumberMap, language, onView, onScroll]);
+  }, [
+    content,
+    changedLines,
+    onToggle,
+    decorations,
+    lineNumberMap,
+    oldLineNumberMap,
+    language,
+    onView,
+    onScroll,
+  ]);
 
   // Push the controlled staged-line set into the gutter markers.
   useEffect(() => {
@@ -189,7 +308,7 @@ function ReadOnlyStagePane({
       data-testid={testId}
       style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}
     >
-      <div style={paneLabelStyle}>{label}</div>
+      {label !== undefined && <div style={paneLabelStyle}>{label}</div>}
       <div ref={containerRef} style={{ flex: 1, minHeight: 0, overflow: "hidden" }} />
     </div>
   );
@@ -206,6 +325,16 @@ export function StageFileEditor({
   const lineEditable = !contents.isBinary && contents.worktreeExists;
 
   const language = useMemo(() => languageForPath(path), [path]);
+
+  const [viewMode, setViewMode] = useState<ViewMode>(loadViewMode);
+  const changeViewMode = useCallback((mode: ViewMode) => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem(VIEW_MODE_KEY, mode);
+    } catch {
+      // Persistence is best-effort; ignore storage failures.
+    }
+  }, []);
 
   const rows = useMemo(
     () => diffLines(contents.headContent, contents.worktreeContent),
@@ -279,12 +408,36 @@ export function StageFileEditor({
     [worktreeText, worktreeDecorationEntries],
   );
 
+  // Inline (unified) view: one editor, every row on its own line. Removed reads
+  // red, added green; a change carries a single toggle (line i+1 ⇔ row i).
+  const inlineText = useMemo(() => buildInlineText(rows), [rows]);
+  const inlineDecorationEntries = useMemo(
+    () =>
+      rows.flatMap((r, i) =>
+        r.kind === "added"
+          ? [{ lineNo: i + 1, className: "cm-diff-add-line" }]
+          : r.kind === "removed"
+            ? [{ lineNo: i + 1, className: "cm-diff-del-line" }]
+            : [],
+      ),
+    [rows],
+  );
+  const inlineDecorations = useMemo(
+    () => buildLineDecorations(inlineText, inlineDecorationEntries),
+    [inlineText, inlineDecorationEntries],
+  );
+  const inlineChangedLineNos = useMemo(
+    () => new Set(rows.flatMap((r, i) => (r.kind === "context" ? [] : [i + 1]))),
+    [rows],
+  );
+
   // Row indices whose change is staged. Seeded to "everything staged", so the
   // panes open with every change marked "−" (Stage commits the whole file).
   const [stagedRows, setStagedRows] = useState<Set<number>>(() => new Set(changedRowIndices(rows)));
   const stagedRowsRef = useRef(stagedRows);
   const headViewRef = useRef<EditorView | null>(null);
   const worktreeViewRef = useRef<EditorView | null>(null);
+  const inlineViewRef = useRef<EditorView | null>(null);
 
   const applyStaged = useCallback((next: Set<number>) => {
     stagedRowsRef.current = next;
@@ -335,12 +488,16 @@ export function StageFileEditor({
   const registerWorktreeView = useCallback((v: EditorView | null) => {
     worktreeViewRef.current = v;
   }, []);
+  const registerInlineView = useCallback((v: EditorView | null) => {
+    inlineViewRef.current = v;
+  }, []);
   const onScrollHead = useCallback(() => syncScroll("head"), [syncScroll]);
   const onScrollWorktree = useCallback(() => syncScroll("worktree"), [syncScroll]);
 
-  // Scroll both panes to a fraction of their scrollable height (overview click).
+  // Scroll the live pane(s) to a fraction of their scrollable height (overview
+  // click). Only the current view mode's editors are mounted.
   const seek = useCallback((fraction: number) => {
-    for (const view of [headViewRef.current, worktreeViewRef.current]) {
+    for (const view of [headViewRef.current, worktreeViewRef.current, inlineViewRef.current]) {
       if (!view) continue;
       const max = view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight;
       view.scrollDOM.scrollTop = fraction * max;
@@ -362,6 +519,9 @@ export function StageFileEditor({
     [worktreeLineToRow, toggleRow],
   );
 
+  // Inline view: line i+1 maps straight back to row i.
+  const onToggleInline = useCallback((lineNo: number) => toggleRow(lineNo - 1), [toggleRow]);
+
   const headStagedLineNos = useMemo(
     () => new Set(headChanged.filter((l) => stagedRows.has(l.rowIndex)).map((l) => l.lineNo)),
     [headChanged, stagedRows],
@@ -369,6 +529,10 @@ export function StageFileEditor({
   const worktreeStagedLineNos = useMemo(
     () => new Set(worktreeChanged.filter((l) => stagedRows.has(l.rowIndex)).map((l) => l.lineNo)),
     [worktreeChanged, stagedRows],
+  );
+  const inlineStagedLineNos = useMemo(
+    () => new Set([...stagedRows].map((rowIndex) => rowIndex + 1)),
+    [stagedRows],
   );
 
   // The staged result is composed directly from the line selection (no separate
@@ -404,6 +568,31 @@ export function StageFileEditor({
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexShrink: 0 }}>
           {lineEditable && (
             <>
+              <div
+                role="group"
+                aria-label="Diff view mode"
+                style={{
+                  display: "inline-flex",
+                  border: "1px solid var(--color-border-default)",
+                  borderRadius: "var(--radius-sm)",
+                  overflow: "hidden",
+                }}
+              >
+                <ViewModeButton
+                  active={viewMode === "split"}
+                  label="Side-by-side view"
+                  onClick={() => changeViewMode("split")}
+                >
+                  <SplitViewIcon />
+                </ViewModeButton>
+                <ViewModeButton
+                  active={viewMode === "inline"}
+                  label="Inline view"
+                  onClick={() => changeViewMode("inline")}
+                >
+                  <InlineViewIcon />
+                </ViewModeButton>
+              </div>
               <Button size="sm" type="button" onClick={handleReset}>
                 Reset
               </Button>
@@ -453,44 +642,62 @@ export function StageFileEditor({
         </div>
       ) : (
         <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
-          {/* HEAD / Working tree, side by side and row-for-row aligned */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              flex: 1,
-              minHeight: 0,
-              gap: "1px",
-              background: "var(--color-border-subtle)",
-            }}
-          >
-            <ReadOnlyStagePane
-              label="HEAD"
-              testId="head-pane"
-              content={headText}
-              changedLines={headChangedLineNos}
-              stagedLines={headStagedLineNos}
-              onToggle={onToggleHead}
-              decorations={headDecorations}
-              lineNumberMap={headLineNumbers}
-              language={language}
-              onView={registerHeadView}
-              onScroll={onScrollHead}
-            />
-            <ReadOnlyStagePane
-              label="Working Tree"
-              testId="worktree-pane"
-              content={worktreeText}
-              changedLines={worktreeChangedLineNos}
-              stagedLines={worktreeStagedLineNos}
-              onToggle={onToggleWorktree}
-              decorations={worktreeDecorations}
-              lineNumberMap={worktreeLineNumbers}
-              language={language}
-              onView={registerWorktreeView}
-              onScroll={onScrollWorktree}
-            />
-          </div>
+          {viewMode === "split" ? (
+            /* HEAD / Working tree, side by side and row-for-row aligned */
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                flex: 1,
+                minHeight: 0,
+                gap: "1px",
+                background: "var(--color-border-subtle)",
+              }}
+            >
+              <ReadOnlyStagePane
+                label="HEAD"
+                testId="head-pane"
+                content={headText}
+                changedLines={headChangedLineNos}
+                stagedLines={headStagedLineNos}
+                onToggle={onToggleHead}
+                decorations={headDecorations}
+                lineNumberMap={headLineNumbers}
+                language={language}
+                onView={registerHeadView}
+                onScroll={onScrollHead}
+              />
+              <ReadOnlyStagePane
+                label="Working Tree"
+                testId="worktree-pane"
+                content={worktreeText}
+                changedLines={worktreeChangedLineNos}
+                stagedLines={worktreeStagedLineNos}
+                onToggle={onToggleWorktree}
+                decorations={worktreeDecorations}
+                lineNumberMap={worktreeLineNumbers}
+                language={language}
+                onView={registerWorktreeView}
+                onScroll={onScrollWorktree}
+              />
+            </div>
+          ) : (
+            /* Unified inline diff: one editor with old/new number columns */
+            <div style={{ flex: 1, minHeight: 0 }}>
+              <ReadOnlyStagePane
+                testId="inline-pane"
+                content={inlineText}
+                changedLines={inlineChangedLineNos}
+                stagedLines={inlineStagedLineNos}
+                onToggle={onToggleInline}
+                decorations={inlineDecorations}
+                lineNumberMap={worktreeLineNumbers}
+                oldLineNumberMap={headLineNumbers}
+                language={language}
+                onView={registerInlineView}
+              />
+            </div>
+          )}
           <ChangeOverview rows={rows} onSeek={seek} />
         </div>
       )}

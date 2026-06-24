@@ -197,3 +197,13 @@ export function alignedWorktreeLineNumbers(rows: DiffRow[]): (number | null)[] {
   let n = 0;
   return rows.map((r) => (r.kind === "removed" ? null : ++n));
 }
+
+/**
+ * Unified (inline) diff text: every row on its own line, in order, so a removal
+ * sits directly above the addition that replaced it. One line per row, so line
+ * `i + 1` is `rows[i]` — paired with {@link alignedHeadLineNumbers} /
+ * {@link alignedWorktreeLineNumbers} for the old/new gutter columns.
+ */
+export function inlineText(rows: DiffRow[]): string {
+  return rows.map((r) => r.text).join("\n");
+}

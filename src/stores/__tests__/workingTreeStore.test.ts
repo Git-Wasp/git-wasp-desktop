@@ -61,6 +61,82 @@ describe("workingTreeStore", () => {
     expect(useWorkingTreeStore.getState().status).toEqual(newStatus);
   });
 
+  const entry = (path: string) => ({ path, originalPath: null, status: "Modified" as const });
+
+  it("applyStagedContent advances to the next unstaged file once a file is fully staged", async () => {
+    useWorkingTreeStore.setState({
+      selectedPath: "a.txt",
+      status: { staged: [], unstaged: [entry("a.txt"), entry("b.txt")], untracked: [] },
+    });
+    const newStatus: WorkingTreeStatus = {
+      staged: [entry("a.txt")],
+      unstaged: [entry("b.txt")],
+      untracked: [],
+    };
+    mockInvoke
+      .mockResolvedValueOnce(newStatus) // stage_file_content
+      .mockResolvedValueOnce(stageDiff); // get_stage_file_contents for the next file
+
+    await useWorkingTreeStore.getState().applyStagedContent("a.txt", "...");
+
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "get_stage_file_contents", { path: "b.txt" });
+    expect(useWorkingTreeStore.getState().selectedPath).toBe("b.txt");
+  });
+
+  it("stageFile advances to the next unstaged file when staging the open file", async () => {
+    useWorkingTreeStore.setState({
+      selectedPath: "a.txt",
+      status: { staged: [], unstaged: [entry("a.txt"), entry("b.txt")], untracked: [] },
+    });
+    const newStatus: WorkingTreeStatus = {
+      staged: [entry("a.txt")],
+      unstaged: [entry("b.txt")],
+      untracked: [],
+    };
+    mockInvoke
+      .mockResolvedValueOnce(newStatus) // stage_file
+      .mockResolvedValueOnce(stageDiff); // get_stage_file_contents for the next file
+
+    await useWorkingTreeStore.getState().stageFile("a.txt");
+
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, "stage_file", { path: "a.txt" });
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "get_stage_file_contents", { path: "b.txt" });
+    expect(useWorkingTreeStore.getState().selectedPath).toBe("b.txt");
+  });
+
+  it("stageFile leaves the selection alone when staging a file other than the open one", async () => {
+    useWorkingTreeStore.setState({
+      selectedPath: "b.txt",
+      status: { staged: [], unstaged: [entry("a.txt"), entry("b.txt")], untracked: [] },
+    });
+    mockInvoke.mockResolvedValueOnce({
+      staged: [entry("a.txt")],
+      unstaged: [entry("b.txt")],
+      untracked: [],
+    });
+
+    await useWorkingTreeStore.getState().stageFile("a.txt");
+
+    // Only stage_file ran — no reselect / diff reload for the untouched selection.
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
+    expect(useWorkingTreeStore.getState().selectedPath).toBe("b.txt");
+  });
+
+  it("keeps the last file shown when nothing remains to stage", async () => {
+    useWorkingTreeStore.setState({
+      selectedPath: "a.txt",
+      status: { staged: [], unstaged: [entry("a.txt")], untracked: [] },
+    });
+    mockInvoke
+      .mockResolvedValueOnce({ staged: [entry("a.txt")], unstaged: [], untracked: [] }) // stage_file_content
+      .mockResolvedValueOnce(stageDiff); // reload of the same file
+
+    await useWorkingTreeStore.getState().applyStagedContent("a.txt", "...");
+
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "get_stage_file_contents", { path: "a.txt" });
+    expect(useWorkingTreeStore.getState().selectedPath).toBe("a.txt");
+  });
+
   it("clearSelectedFile clears the selection and stage diff", () => {
     useWorkingTreeStore.setState({ selectedPath: "f.txt", stageDiff });
     useWorkingTreeStore.getState().clearSelectedFile();

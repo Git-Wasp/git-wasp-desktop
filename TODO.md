@@ -83,8 +83,20 @@ between sections, and add new ideas under the right heading. Items marked
       highlight palette comes from oneDark (dark) / defaultHighlightStyle (light)
       rather than the active app theme's tokens — a theme-matched highlight style
       would be a nice polish.
-- [ ] Add "removed" line to gutter in diff view when merging
-- [ ] Allow changing view when merging from side-by-side/split view to "inline" view
+- [x] Add "removed" line to gutter in diff view when staging
+- [x] Allow changing view from side-by-side/split view to "inline" view (done for
+      the staging diff; merge editor deferred) — `StageFileEditor` header now has a
+      GitKraken-style icon toggle (`SplitViewIcon`/`InlineViewIcon` segmented
+      control) switching between the two-pane split and a single unified/inline
+      editor. Inline = one CodeMirror with every diff row on its own line (new
+      `inlineText` helper in `lib/lineDiff.ts`), removed red / added green, a dual
+      old+new line-number gutter (`dualNumberGutter`, reusing the aligned
+      line-number maps), and the same per-line `+`/`−` stage toggles. Choice
+      persists to `localStorage`. `ReadOnlyStagePane` was generalised (optional
+      label + optional `oldLineNumberMap`) to serve both modes. NOTE: only the
+      staging view for now — the merge editor (`ConflictFileEditor`) should get the
+      same toggle when the two diff surfaces are unified into shared components
+      (tracked separately; we'll review the merge flow later).
 - [x] Remove unnecessary bottom panel in diff view when staging files (but not
       when handling merge conflicts!) — `StageFileEditor` dropped the editable
       "Staged result" pane (it confusingly showed a full result even before you
@@ -99,6 +111,15 @@ between sections, and add new ideas under the right heading. Items marked
       `alignedHead/WorktreeText` + `alignedHead/WorktreeLineNumbers` helpers in
       `lib/lineDiff.ts`. Removed the now-dead `stageResultPane.ts`. The merge
       editor (`ConflictFileEditor`) is untouched — it keeps its Result pane.
+- [x] Auto-advance the staging diff to the next unstaged file — when the file
+      open in the diff view is staged (via the editor's Stage, whole-file stage,
+      or its row's Stage button), the view jumps to the next file that still needs
+      staging (the one that took its slot in the Changes list, clamped to the
+      last). A partial stage keeps the file selected; when nothing is left to
+      stage the last file stays shown. Logic in `lib/stagingSelection.ts`
+      (`unstagedPaths` + `nextSelectionAfterStaging`, both tested), wired into the
+      store's `applyStagedContent`/`stageFile` (gated on the file being the open
+      one, so staging a different file's row doesn't move the selection).
 - [ ] Execute git hooks (pre-commit, pre-push) and show output in a built-in pane
 
 ## Merge editor (v2 refinements)
@@ -213,3 +234,4 @@ between sections, and add new ideas under the right heading. Items marked
 - [ ] Add the top left (under the tab) show a the current repo name and make it a "repo picker" to choose from 
       recent repositories. Next to it show the current checked out branch, and also make that
       a picker to choose from the available branches (local only)
+- [ ] Make the left side bar collapsible

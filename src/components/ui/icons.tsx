@@ -27,6 +27,53 @@ export function GitHubIcon({ size = 12, title }: IconProps) {
   );
 }
 
+/** Two side-by-side panes — the split / side-by-side diff view. */
+export function SplitViewIcon({ size = 14, title }: IconProps) {
+  return (
+    <svg
+      data-icon="split-view"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      style={{ flexShrink: 0 }}
+    >
+      {title && <title>{title}</title>}
+      <rect x="3" y="4" width="18" height="16" rx="1.5" />
+      <path d="M12 4v16" />
+    </svg>
+  );
+}
+
+/** Stacked rows — the inline / unified diff view. */
+export function InlineViewIcon({ size = 14, title }: IconProps) {
+  return (
+    <svg
+      data-icon="inline-view"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      style={{ flexShrink: 0 }}
+    >
+      {title && <title>{title}</title>}
+      <path d="M4 7h16M4 12h16M4 17h16" />
+    </svg>
+  );
+}
+
 export function LaptopIcon({ size = 12, title }: IconProps) {
   return (
     <svg
