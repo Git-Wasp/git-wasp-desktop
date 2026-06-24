@@ -197,10 +197,23 @@ between sections, and add new ideas under the right heading. Items marked
       any built-in id to its `data-theme` value (dark stays the `:root` default),
       so further built-ins (e.g. Cobalt2) just need a token block + registry entry.
 - [ ] Further theming improvements - the current grey colours feel "brown" and need to be more "grey"
-- [ ] Allow choice of fonts, customization of default UI font size, default code editor font (monospace).
+- [x] Allow choice of fonts, customization of default UI font size, default code editor font (monospace).
       Changes to be configurable from "settings" section and to persist between app reloads.
+      — new Settings → Fonts section (`FontSettings`): UI font, code (monospace)
+      font, and a UI size (Small/Default/Large/Extra large). Applied live by
+      overriding the `--font-family-sans` / `--font-family-mono` / `--font-scale`
+      tokens on the document root; the size tokens are now `calc(Npx *
+      var(--font-scale))` so the whole UI (incl. the CodeMirror panes that read
+      `--font-family-mono`) scales proportionally. Curated font stacks +
+      load/save/apply live in tested `lib/fonts.ts`; persisted to localStorage and
+      applied on startup in `App`. The graph stays aligned (fixed `ROW_HEIGHT`,
+      text just sizes within the row). A small live preview shows the fonts.
 - [ ] Allow default branch colour palette to be configurable (see pre-req in [Working Tree & Committing](#working-tree--committing))
 
+## Branding
+
+- [ ] Rename to "git wasp"
+- [ ] Import branding design assets (logo etc.) Update app to include branding (e.g. app icon)
 
 ## Engineering & tooling
 

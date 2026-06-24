@@ -72,13 +72,17 @@
   --font-family-mono: "JetBrains Mono", "Menlo", "Fira Code", monospace;
   --font-family-sans: -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
 
-  --font-size-xs:   11px;
-  --font-size-sm:   12px;
-  --font-size-base: 13px;
-  --font-size-md:   14px;
-  --font-size-lg:   16px;
-  --font-size-xl:   18px;
-  --font-size-2xl:  22px;
+  /* Global UI size multiplier (configurable in Settings → Fonts). Every size
+     token derives from it, so the whole UI scales proportionally. */
+  --font-scale: 1;
+
+  --font-size-xs:   calc(11px * var(--font-scale));
+  --font-size-sm:   calc(12px * var(--font-scale));
+  --font-size-base: calc(13px * var(--font-scale));
+  --font-size-md:   calc(14px * var(--font-scale));
+  --font-size-lg:   calc(16px * var(--font-scale));
+  --font-size-xl:   calc(18px * var(--font-scale));
+  --font-size-2xl:  calc(22px * var(--font-scale));
 
   --font-weight-normal:   400;
   --font-weight-medium:   500;

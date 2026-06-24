@@ -1,6 +1,7 @@
 import { ThemeManager } from "./ThemeManager";
 import { NotificationSettings } from "./NotificationSettings";
 import { GithubSettings } from "./GithubSettings";
+import { FontSettings } from "./FontSettings";
 
 const sectionTitleStyle: React.CSSProperties = {
   fontSize: "var(--font-size-md)",
@@ -32,6 +33,11 @@ export function SettingsView() {
       <section style={{ maxWidth: 640, marginBottom: "var(--space-6)" }}>
         <h2 style={sectionTitleStyle}>Themes</h2>
         <ThemeManager />
+      </section>
+
+      <section style={{ maxWidth: 640, marginBottom: "var(--space-6)" }}>
+        <h2 style={sectionTitleStyle}>Fonts</h2>
+        <FontSettings />
       </section>
 
       <section style={{ maxWidth: 640 }}>
