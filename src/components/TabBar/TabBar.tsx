@@ -27,7 +27,8 @@ const tabBaseStyle: CSSProperties = {
 export function TabBar() {
   const { openRepos, activeRepoPath, activateRepo, closeRepo, newTab } = useRepoStore();
 
-  if (openRepos.length === 0) return null;
+  // Always render — even with no repos open — so the "New tab" button is always
+  // reachable (the bar then shows just that button, with the welcome view below).
 
   return (
     <div style={barStyle} role="tablist" aria-label="Open repositories">

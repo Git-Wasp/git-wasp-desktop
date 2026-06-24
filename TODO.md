@@ -336,6 +336,19 @@ between sections, and add new ideas under the right heading. Items marked
       tab". The TabBar "+" now calls a frontend-only `repoStore.newTab()` (nulls
       the active repo without closing others) instead of jumping straight to the
       OS picker; clicking an existing tab re-activates it.
-- [ ] Remember screen size when re-opening app. If it was full screen when closed,
-      it should be full screen again when re-opened.
-- [ ] Always show "new tab" button
+- [x] Remember screen size when re-opening app. If it was full screen when closed,
+      it should be full screen again when re-opened. — added the
+      `tauri-plugin-window-state` plugin (registered in `lib.rs` with default
+      `StateFlags`, which cover size/position/maximised/fullscreen) + the
+      `window-state:default` capability. The window's geometry and fullscreen
+      state now persist and restore automatically across restarts.
+- [x] Always show "new tab" button — `TabBar` no longer returns null when no
+      repos are open; it always renders so the "New tab" (+) button is reachable
+      even with nothing open (the bar then shows just that button, above the
+      welcome view).
+- [ ] When selecting an existing file from an existing commit, show diff in
+      the same view we use for staging changes (read only). Don't show at the 
+      bottom of the right hand panel. Instead, add the commit title, date,
+      commit hash, and author in a read only view at the top of the right hand
+      panel (above the list of changed files)
+- [ ] Use icons for "added", "changed", and "removed" files using standard red/amber/green colours.

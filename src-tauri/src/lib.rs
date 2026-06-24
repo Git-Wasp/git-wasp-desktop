@@ -20,6 +20,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        // Persist & restore the window's size/position/maximised/fullscreen
+        // across restarts (default StateFlags cover all of these).
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(repo_manager::AppState::new())
         .invoke_handler(tauri::generate_handler![
             // Repo

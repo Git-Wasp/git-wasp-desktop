@@ -60,10 +60,12 @@ describe("TabBar", () => {
     expect(activateRepo).not.toHaveBeenCalled();
   });
 
-  it("renders nothing when no repositories are open", () => {
+  it("still shows the New tab button when no repositories are open", () => {
     useRepoStore.setState({ openRepos: [] });
-    const { container } = render(<TabBar />);
+    render(<TabBar />);
 
-    expect(container).toBeEmptyDOMElement();
+    // No repo tabs, but the new-tab affordance stays reachable.
+    expect(screen.queryByRole("tab")).toBeNull();
+    expect(screen.getByRole("button", { name: "New tab" })).toBeInTheDocument();
   });
 });
