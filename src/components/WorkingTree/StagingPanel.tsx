@@ -3,14 +3,8 @@ import { useWorkingTreeStore } from "../../stores/workingTreeStore";
 import { CommitForm } from "./CommitForm";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
+import { FileStatusIcon } from "../ui/FileStatusIcon";
 import type { StatusEntry } from "../../types/workingTree";
-
-const STATUS_ICONS: Record<string, string> = {
-  Added: "A",
-  Modified: "M",
-  Deleted: "D",
-  Renamed: "R",
-};
 
 function FileRow({
   entry,
@@ -40,17 +34,8 @@ function FileRow({
         borderRadius: "var(--radius-sm)",
       }}
     >
-      <span
-        style={{
-          fontFamily: "var(--font-family-mono)",
-          fontSize: "var(--font-size-xs)",
-          color: "var(--color-text-muted)",
-          width: 14,
-          textAlign: "center",
-          flexShrink: 0,
-        }}
-      >
-        {STATUS_ICONS[entry.status] ?? "?"}
+      <span style={{ width: 14, display: "inline-flex", justifyContent: "center", flexShrink: 0 }}>
+        <FileStatusIcon status={entry.status} />
       </span>
       <span
         style={{

@@ -127,6 +127,98 @@ export function BranchIcon({ size = 14, title }: IconProps) {
   );
 }
 
+/** A plus — an added/new file. */
+export function PlusIcon({ size = 14, title }: IconProps) {
+  return (
+    <svg
+      data-icon="plus"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      style={{ flexShrink: 0 }}
+    >
+      {title && <title>{title}</title>}
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+/** A minus — a removed/deleted file. */
+export function MinusIcon({ size = 14, title }: IconProps) {
+  return (
+    <svg
+      data-icon="minus"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      style={{ flexShrink: 0 }}
+    >
+      {title && <title>{title}</title>}
+      <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+/** A pencil — a modified/changed file. */
+export function PencilIcon({ size = 14, title }: IconProps) {
+  return (
+    <svg
+      data-icon="pencil"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      style={{ flexShrink: 0 }}
+    >
+      {title && <title>{title}</title>}
+      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+    </svg>
+  );
+}
+
+/** A right arrow — a renamed/copied file. */
+export function ArrowRightIcon({ size = 14, title }: IconProps) {
+  return (
+    <svg
+      data-icon="arrow-right"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      style={{ flexShrink: 0 }}
+    >
+      {title && <title>{title}</title>}
+      <path d="M5 12h14M13 6l6 6-6 6" />
+    </svg>
+  );
+}
+
 /** A checkmark — marks the currently checked-out branch. */
 export function CheckIcon({ size = 12, title }: IconProps) {
   return (

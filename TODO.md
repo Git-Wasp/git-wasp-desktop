@@ -351,4 +351,10 @@ between sections, and add new ideas under the right heading. Items marked
       bottom of the right hand panel. Instead, add the commit title, date,
       commit hash, and author in a read only view at the top of the right hand
       panel (above the list of changed files)
-- [ ] Use icons for "added", "changed", and "removed" files using standard red/amber/green colours.
+- [x] Use icons for "added", "changed", and "removed" files using standard
+      red/amber/green colours — new SVG glyphs (`PlusIcon`/`PencilIcon`/`MinusIcon`/
+      `ArrowRightIcon`) + a shared `FileStatusIcon` mapping status → coloured icon
+      (green plus = added/untracked, amber pencil = modified, red minus = deleted,
+      accent arrow = renamed/copied), with an accessible label. Replaces the
+      commit-detail file list's text symbols and the staging panel's plain
+      A/M/D/R letters, so both lists read consistently.

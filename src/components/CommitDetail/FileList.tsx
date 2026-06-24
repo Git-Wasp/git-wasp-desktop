@@ -1,13 +1,5 @@
 import type { ChangedFile } from "../../types/repo";
-
-const STATUS_ICON: Record<ChangedFile["status"], { symbol: string; color: string }> = {
-  Added:     { symbol: "+", color: "var(--color-success)" },
-  Modified:  { symbol: "~", color: "var(--color-warning)" },
-  Deleted:   { symbol: "-", color: "var(--color-danger)" },
-  Renamed:   { symbol: "→", color: "var(--color-accent-primary)" },
-  Copied:    { symbol: "⇒", color: "var(--color-accent-primary)" },
-  Untracked: { symbol: "?", color: "var(--color-text-muted)" },
-};
+import { FileStatusIcon } from "../ui/FileStatusIcon";
 
 interface FileListProps {
   files: ChangedFile[];
@@ -19,7 +11,6 @@ export function FileList({ files, selectedPath, onSelect }: FileListProps) {
   return (
     <ul style={{ listStyle: "none", margin: 0, padding: 0, overflowY: "auto" }}>
       {files.map((f) => {
-        const { symbol, color } = STATUS_ICON[f.status] ?? STATUS_ICON.Modified;
         const isSelected = f.path === selectedPath;
         return (
           <li
@@ -41,7 +32,7 @@ export function FileList({ files, selectedPath, onSelect }: FileListProps) {
                 : "var(--color-text-secondary)",
             }}
           >
-            <span style={{ color, fontWeight: 700, minWidth: 12 }}>{symbol}</span>
+            <FileStatusIcon status={f.status} />
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {f.path}
             </span>
