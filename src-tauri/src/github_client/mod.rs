@@ -38,6 +38,39 @@ fn http_client() -> anyhow::Result<reqwest::Client> {
         .context("failed to build HTTP client")
 }
 
+#[derive(Deserialize)]
+struct GhError {
+    message: String,
+}
+
+/// GitHub's human-readable `message` from an error body, falling back to the raw
+/// body when it isn't the expected `{ "message": ... }` shape.
+fn github_error_message(body: &str) -> String {
+    serde_json::from_str::<GhError>(body)
+        .map(|e| e.message)
+        .unwrap_or_else(|_| body.trim().to_string())
+}
+
+/// Deserialize a GitHub REST response into `T`, turning a non-2xx status into a
+/// clear, actionable error (the status + GitHub's `message`) instead of a
+/// cryptic JSON parse failure on the error body — a 401/403/404 used to surface
+/// as e.g. "failed to parse PRs".
+async fn github_json<T: serde::de::DeserializeOwned>(
+    response: reqwest::Response,
+    what: &str,
+) -> anyhow::Result<T> {
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .with_context(|| format!("failed to read {what} response body"))?;
+    if !status.is_success() {
+        anyhow::bail!("GitHub API error fetching {what} ({status}): {}", github_error_message(&body));
+    }
+    serde_json::from_str(&body)
+        .with_context(|| format!("failed to parse {what} (status {status}): {body}"))
+}
+
 // ----- Device flow -----
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -200,16 +233,14 @@ struct GhRepo {
 
 pub async fn list_repos(base_url: &str, token: &str) -> anyhow::Result<Vec<GithubRepo>> {
     let client = http_client()?;
-    let repos: Vec<GhRepo> = client
+    let response = client
         .get(format!("{base_url}/user/repos?per_page=100&sort=updated"))
         .bearer_auth(token)
         .header("Accept", "application/vnd.github+json")
         .send()
         .await
-        .context("list repos request failed")?
-        .json()
-        .await
-        .context("failed to parse repos response")?;
+        .context("list repos request failed")?;
+    let repos: Vec<GhRepo> = github_json(response, "repositories").await?;
     Ok(repos
         .into_iter()
         .map(|r| GithubRepo {
@@ -252,7 +283,8 @@ pub enum CiStatus {
 struct GhPr {
     number: u64,
     title: String,
-    user: GhUser,
+    // `user` can be null for a deleted/ghost author — don't let that fail the parse.
+    user: Option<GhUser>,
     head: GhRef,
     base: GhRef,
     html_url: String,
@@ -310,16 +342,14 @@ pub async fn list_pull_requests(
 ) -> anyhow::Result<Vec<PullRequest>> {
     let client = http_client()?;
 
-    let prs: Vec<GhPr> = client
+    let response = client
         .get(format!("{base}/repos/{owner}/{repo}/pulls?state=open&per_page=50"))
         .bearer_auth(token)
         .header("Accept", "application/vnd.github+json")
         .send()
         .await
-        .context("list PRs request failed")?
-        .json()
-        .await
-        .context("failed to parse PRs")?;
+        .context("list PRs request failed")?;
+    let prs: Vec<GhPr> = github_json(response, "pull requests").await?;
 
     let mut result = Vec::new();
     for pr in prs {
@@ -354,7 +384,7 @@ pub async fn list_pull_requests(
         result.push(PullRequest {
             number: pr.number,
             title: pr.title,
-            author: pr.user.login,
+            author: pr.user.map(|u| u.login).unwrap_or_else(|| "ghost".to_string()),
             head_ref: pr.head.ref_name,
             base_ref: pr.base.ref_name,
             url: pr.html_url,
@@ -385,22 +415,20 @@ pub async fn create_pull_request(
         base: &'a str,
     }
 
-    let pr: GhPr = client
+    let response = client
         .post(format!("{api}/repos/{owner}/{repo}/pulls"))
         .bearer_auth(token)
         .header("Accept", "application/vnd.github+json")
         .json(&CreatePrBody { title, body, head, base })
         .send()
         .await
-        .context("create PR request failed")?
-        .json()
-        .await
-        .context("failed to parse created PR")?;
+        .context("create PR request failed")?;
+    let pr: GhPr = github_json(response, "the created pull request").await?;
 
     Ok(PullRequest {
         number: pr.number,
         title: pr.title,
-        author: pr.user.login,
+        author: pr.user.map(|u| u.login).unwrap_or_else(|| "ghost".to_string()),
         head_ref: pr.head.ref_name,
         base_ref: pr.base.ref_name,
         url: pr.html_url,
@@ -666,6 +694,71 @@ mod tests {
         assert_eq!(prs[0].number, 42);
         assert_eq!(prs[0].ci_status, CiStatus::Success);
         assert_eq!(prs[0].approval_count, 1);
+    }
+
+    #[test]
+    fn github_error_message_extracts_message_field() {
+        let body = r#"{"message":"Bad credentials","documentation_url":"https://docs.github.com"}"#;
+        assert_eq!(github_error_message(body), "Bad credentials");
+    }
+
+    #[test]
+    fn github_error_message_falls_back_to_raw_body() {
+        assert_eq!(github_error_message("  not json  "), "not json");
+    }
+
+    #[tokio::test]
+    async fn list_pull_requests_surfaces_a_clear_error_on_api_failure() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::GET).path("/repos/mike/gitclient/pulls");
+            then.status(401)
+                .json_body(serde_json::json!({ "message": "Bad credentials" }));
+        });
+
+        let err = list_pull_requests(&server.base_url(), "mike", "gitclient", "bad-token")
+            .await
+            .unwrap_err();
+
+        mock.assert();
+        let message = format!("{err:#}");
+        // The old behaviour surfaced a cryptic "failed to parse PRs"; now the
+        // status and GitHub's message come through.
+        assert!(message.contains("401"), "expected status in error, got: {message}");
+        assert!(
+            message.contains("Bad credentials"),
+            "expected GitHub's message in error, got: {message}"
+        );
+        assert!(
+            !message.contains("failed to parse"),
+            "an API error should not read as a parse failure, got: {message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_pull_requests_tolerates_a_null_author() {
+        let server = httpmock::MockServer::start();
+        let prs_mock = server.mock(|when, then| {
+            when.method(httpmock::Method::GET).path("/repos/mike/gitclient/pulls");
+            then.status(200).json_body(serde_json::json!([
+                {
+                    "number": 9,
+                    "title": "Ghost PR",
+                    "user": null,
+                    "head": { "ref": "feat/y", "sha": "aaa" },
+                    "base": { "ref": "main", "sha": "bbb" },
+                    "html_url": "https://github.com/mike/gitclient/pull/9"
+                }
+            ]));
+        });
+
+        let prs = list_pull_requests(&server.base_url(), "mike", "gitclient", "test-token")
+            .await
+            .unwrap();
+
+        prs_mock.assert();
+        assert_eq!(prs.len(), 1);
+        assert_eq!(prs[0].author, "ghost");
     }
 
     #[tokio::test]

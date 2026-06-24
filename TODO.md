@@ -142,6 +142,16 @@ between sections, and add new ideas under the right heading. Items marked
 
 - [ ] Move GitHub connection into settings
 - [ ] Issue reference linking in commit messages (v1 scope)
+- [x] Attempting to manage PRs shows error "failed to parse PRs" — root cause was
+      the GitHub REST helpers calling `.json()` without checking HTTP status, so an
+      auth/404/rate-limit error body (a JSON object, not an array) failed to
+      deserialize and surfaced as the cryptic "failed to parse PRs". New
+      `github_json` helper checks the status and surfaces the status + GitHub's
+      `message` (e.g. "GitHub API error fetching pull requests (401 Unauthorized):
+      Bad credentials"); applied to `list_pull_requests`, `list_repos`, and
+      `create_pull_request`. Also made the PR `user` optional (deleted/ghost
+      authors → "ghost") so a null author no longer fails the parse. The PR panel
+      already shows the error string, so the actionable message flows through.
 - [ ] Cross-repo PR/CI notifications via API polling (Phase 6) — overlaps the
       workspace decision above
 
@@ -187,6 +197,10 @@ between sections, and add new ideas under the right heading. Items marked
 - [ ] Graph performance profiling against large repos (10k+ commits) (Phase 6)
 - [ ] Implement rustfmt on save + pre-commit hook
 - [ ] Consider implementing a CSP for the frontend (bear in mind we need to support data img or find alternative for user icons)
+- [ ] Proper logging everywhere (esp. rust backend) with an option to enable diagnostic logging
+      e.g. to increase log verbosity. Log file location clearly visible from within a "help" section
+      (possibly as a child section within settings). App fully instrumented for logging without storing
+      PII.
 
 ## General UX
 
