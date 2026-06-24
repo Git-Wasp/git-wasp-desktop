@@ -36,7 +36,21 @@ between sections, and add new ideas under the right heading. Items marked
       element like ContextMenu, hides on pointer-down so it doesn't linger during
       a drag). Applied to the branch/tag pills showing the full ref name (handy
       since pills truncate), replacing the plain native `title`.
-- [ ] Indicator/icon show currently checked out branch clearly (e.g. left arrow by 'circle' icon for commit?)
+- [x] Indicator/icon show currently checked out branch clearly — two cues:
+      (1) the checked-out branch's pill in the graph is marked distinctly — a
+      check icon (replacing the laptop marker), bold text, and a crisp white
+      inset ring so it stands out from the other same-coloured local pills; its
+      tooltip reads "<name> (checked out)". `BranchCell`/`BranchPill` take a
+      `currentBranch` (= `currentRepo.headBranch`, threaded through `GraphRow`);
+      only a local pill whose name matches is flagged (`data-current`).
+      (2) a subtle pulsing ring on the HEAD commit dot — a CSS overlay
+      (`.graph-head-pulse`) positioned over the canvas at the HEAD dot (cheap; no
+      canvas redraw loop), a ring that starts at the dot's edge (base size = dot
+      diameter) and expands outward/fades every 1.5s, with a static-halo fallback
+      under `prefers-reduced-motion`. Only rendered when HEAD is in the loaded
+      slice. (3) the HEAD commit's right-edge accent line (canvas) becomes a
+      left-pointing triangle, so the current commit reads at a glance even when
+      other branches are several commits ahead.
 - [x] Improve colour scheme. Colours too bright and "basic"? Allow default branch colours to be specified in colour schemes?
 - [ ] Open PR as a result of dropping one branch onto another. Include ability to enter title, description, "assign to (default to @me)", tags and then "Open PR" and "Continue on GitHub" options.
 - [ ] When clicking on the details of a commit (i.e. already committed) clicking on a file shows the changes in a side by side diff view that opens in the main panel of the app. It is possible to change the view from side by side to "inline"
@@ -252,6 +266,8 @@ between sections, and add new ideas under the right heading. Items marked
       e.g. to increase log verbosity. Log file location clearly visible from within a "help" section
       (possibly as a child section within settings). App fully instrumented for logging without storing
       PII.
+- [ ] "Auto-prune" capability that will remove local branches that are no longer on the remote. Before deleting
+      show a list of local branches to be removed (all selected by default) so the user can choose to retain a selection
 
 ## General UX
 
@@ -322,3 +338,4 @@ between sections, and add new ideas under the right heading. Items marked
       OS picker; clicking an existing tab re-activates it.
 - [ ] Remember screen size when re-opening app. If it was full screen when closed,
       it should be full screen again when re-opened.
+- [ ] Always show "new tab" button

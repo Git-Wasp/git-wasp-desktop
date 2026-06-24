@@ -4,7 +4,7 @@ import { THEME_CHANGE_EVENT } from "../lib/applyTheme";
 import { useAvatarStore } from "../stores/avatarStore";
 
 // Left padding inside the graph column so dots clear the branch|graph divider.
-const GRAPH_PAD_LEFT = 10;
+export const GRAPH_PAD_LEFT = 10;
 
 interface Selection {
   anchor: string | null;
@@ -122,11 +122,26 @@ export function useCommitGraph(
         ctx.fillRect(0, rowTop, cssW, rowHeight);
       }
 
-      // Strong right-aligned accent line in the commit's lane colour, drawn on
-      // top of the bands so it reads clearly even when the row is selected.
+      // Right-edge marker in the commit's lane colour, drawn on top of the bands
+      // so it reads clearly even when the row is selected. Normally a strong
+      // vertical accent line; for the checked-out commit (HEAD) it's a
+      // left-pointing triangle, so the current commit stands out even when other
+      // branches sit several commits ahead.
       if (!node.isWorkingTree) {
         ctx.fillStyle = color;
-        ctx.fillRect(cssW - 3, rowTop + 5, 3, rowHeight - 10);
+        if (node.isHead) {
+          const yMid = rowTop + rowHeight / 2;
+          const w = 8;
+          const h = 7;
+          ctx.beginPath();
+          ctx.moveTo(cssW, yMid - h);
+          ctx.lineTo(cssW, yMid + h);
+          ctx.lineTo(cssW - w, yMid);
+          ctx.closePath();
+          ctx.fill();
+        } else {
+          ctx.fillRect(cssW - 3, rowTop + 5, 3, rowHeight - 10);
+        }
       }
     });
 

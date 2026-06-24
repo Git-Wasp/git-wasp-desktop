@@ -3,7 +3,7 @@ import { useGraphStore } from "../../stores/graphStore";
 import { useRepoStore } from "../../stores/repoStore";
 import { useMergeStore } from "../../stores/mergeStore";
 import { useAvatarStore } from "../../stores/avatarStore";
-import { useCommitGraph } from "../../hooks/useCommitGraph";
+import { useCommitGraph, GRAPH_PAD_LEFT } from "../../hooks/useCommitGraph";
 import { ContextMenu, type MenuItem } from "../common/ContextMenu";
 import { PromptDialog } from "../common/PromptDialog";
 import { ResizeHandle } from "../common/ResizeHandle";
@@ -46,6 +46,7 @@ const GraphRow = memo(function GraphRow({
   selected,
   branchWidth,
   graphWidth,
+  currentBranch,
   pillHandlers,
   onRowClick,
   onRowContextMenu,
@@ -55,6 +56,7 @@ const GraphRow = memo(function GraphRow({
   selected: boolean;
   branchWidth: number;
   graphWidth: number;
+  currentBranch: string | null;
   pillHandlers: PillHandlers;
   onRowClick: (node: GraphNode, shiftKey: boolean) => void;
   onRowContextMenu: (e: React.MouseEvent, node: GraphNode) => void;
@@ -87,7 +89,7 @@ const GraphRow = memo(function GraphRow({
           background: cellBg,
         }}
       >
-        <BranchCell node={node} handlers={pillHandlers} />
+        <BranchCell node={node} handlers={pillHandlers} currentBranch={currentBranch} />
       </div>
       {/* graph gap — canvas shows through */}
       <div style={{ width: graphWidth, flexShrink: 0, height: "100%" }} />
@@ -345,6 +347,20 @@ export function CommitGraph({
   const canvasTop = offset * ROW_HEIGHT;
   const sliceHeight = (viewport?.nodes.length ?? 0) * ROW_HEIGHT;
 
+  // Position of the HEAD commit dot (when it's in the loaded slice), so a CSS
+  // pulse overlay can draw expanding rings on it — a clear "you are here" cue.
+  const headPulse = useMemo(() => {
+    const nodes = viewport?.nodes ?? [];
+    const idx = nodes.findIndex((n) => n.isHead && !n.isWorkingTree);
+    if (idx < 0) return null;
+    const laneWidth =
+      parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--graph-lane-width")) ||
+      20;
+    const x = branchWidth + GRAPH_PAD_LEFT + nodes[idx].lane * laneWidth + laneWidth / 2;
+    const y = (offset + idx) * ROW_HEIGHT + ROW_HEIGHT / 2;
+    return { x, y };
+  }, [viewport, offset, branchWidth]);
+
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--color-bg-app)" }}>
       {/* Column header */}
@@ -402,11 +418,20 @@ export function CommitGraph({
               selected={selection.range.has(node.oid)}
               branchWidth={branchWidth}
               graphWidth={graphWidth}
+              currentBranch={currentRepo?.headBranch ?? null}
               pillHandlers={pillHandlers}
               onRowClick={handleRowClick}
               onRowContextMenu={handleRowContextMenu}
             />
           ))}
+          {headPulse && (
+            <span
+              data-testid="head-pulse"
+              className="graph-head-pulse"
+              aria-hidden
+              style={{ left: headPulse.x, top: headPulse.y }}
+            />
+          )}
         </div>
       </div>
 

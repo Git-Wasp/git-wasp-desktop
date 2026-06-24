@@ -69,6 +69,38 @@ describe("BranchCell", () => {
     expect(screen.getByText("v1.0")).toBeInTheDocument();
   });
 
+  it("marks the checked-out branch with a check icon and a current flag", () => {
+    const { container } = render(
+      <BranchCell
+        node={node({
+          branchLabels: [
+            { name: "main", isRemote: false, isTag: false },
+            { name: "feature", isRemote: false, isTag: false },
+          ],
+        })}
+        currentBranch="main"
+      />,
+    );
+    const current = container.querySelector('[data-branch="main"]');
+    const other = container.querySelector('[data-branch="feature"]');
+    expect(current).toHaveAttribute("data-current", "true");
+    expect(other).not.toHaveAttribute("data-current");
+    // The current pill shows a check; the other keeps its laptop marker.
+    expect(current!.querySelector('[data-icon="check"]')).not.toBeNull();
+    expect(current!.querySelector('[data-icon="laptop"]')).toBeNull();
+    expect(other!.querySelector('[data-icon="laptop"]')).not.toBeNull();
+  });
+
+  it("does not mark a remote branch as current even if the name matches", () => {
+    const { container } = render(
+      <BranchCell
+        node={node({ branchLabels: [{ name: "origin/main", isRemote: true, isTag: false }] })}
+        currentBranch="origin/main"
+      />,
+    );
+    expect(container.querySelector('[data-branch="origin/main"]')).not.toHaveAttribute("data-current");
+  });
+
   it("marks local branches with a laptop icon and remotes with a GitHub icon", () => {
     const { container } = render(
       <BranchCell

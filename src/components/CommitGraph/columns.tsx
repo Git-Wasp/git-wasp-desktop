@@ -1,6 +1,6 @@
 import type { BranchLabel, GraphNode } from "../../types/graph";
 import { MAX_BODY_CHARS, type PillHandlers } from "./columnModel";
-import { GitHubIcon, LaptopIcon } from "../ui/icons";
+import { CheckIcon, GitHubIcon, LaptopIcon } from "../ui/icons";
 import { Tooltip } from "../ui/Tooltip";
 
 // --- Branch / Tag cell -------------------------------------------------------
@@ -11,14 +11,23 @@ function pillColor(label: BranchLabel): string {
   return "#4d9de0";
 }
 
-function BranchPill({ label, handlers }: { label: BranchLabel; handlers?: PillHandlers }) {
+function BranchPill({
+  label,
+  handlers,
+  isCurrent,
+}: {
+  label: BranchLabel;
+  handlers?: PillHandlers;
+  isCurrent?: boolean;
+}) {
   const local = !label.isRemote && !label.isTag;
   const isTarget = handlers?.isDropTarget(label.name) ?? false;
   return (
-    <Tooltip label={label.name}>
+    <Tooltip label={isCurrent ? `${label.name} (checked out)` : label.name}>
     <span
       data-branch={label.name}
       data-local={local ? "true" : "false"}
+      data-current={isCurrent ? "true" : undefined}
       onPointerDown={local && handlers ? (e) => handlers.onPointerDown(e, label) : undefined}
       onPointerEnter={handlers ? () => handlers.onPointerEnter(label) : undefined}
       onPointerLeave={handlers ? () => handlers.onPointerLeave() : undefined}
@@ -28,6 +37,7 @@ function BranchPill({ label, handlers }: { label: BranchLabel; handlers?: PillHa
         borderRadius: "var(--radius-sm)",
         fontSize: "var(--font-size-xs)",
         fontFamily: "var(--font-family-mono)",
+        fontWeight: isCurrent ? "var(--font-weight-bold)" : "var(--font-weight-normal)",
         background: pillColor(label),
         color: "#fff",
         cursor: local ? "grab" : "default",
@@ -36,14 +46,17 @@ function BranchPill({ label, handlers }: { label: BranchLabel; handlers?: PillHa
         whiteSpace: "nowrap",
         outline: isTarget ? "2px solid var(--color-accent-primary)" : "none",
         outlineOffset: 1,
+        // The checked-out branch gets a crisp light ring so it stands out from
+        // the other (same-coloured) local pills.
+        boxShadow: isCurrent ? "inset 0 0 0 1.5px #fff, 0 0 0 1px rgba(0,0,0,0.25)" : "none",
         display: "inline-flex",
         alignItems: "center",
         gap: "var(--space-1)",
       }}
     >
-      {/* Provenance marker: laptop for local branches, GitHub for remotes.
-          Tags get neither (they're distinguished by colour). */}
-      {!label.isTag && (label.isRemote ? <GitHubIcon /> : <LaptopIcon />)}
+      {/* The checked-out branch shows a check; otherwise the provenance marker:
+          laptop for local branches, GitHub for remotes (tags get neither). */}
+      {isCurrent ? <CheckIcon /> : !label.isTag && (label.isRemote ? <GitHubIcon /> : <LaptopIcon />)}
       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {label.name}
       </span>
@@ -52,11 +65,25 @@ function BranchPill({ label, handlers }: { label: BranchLabel; handlers?: PillHa
   );
 }
 
-export function BranchCell({ node, handlers }: { node: GraphNode; handlers?: PillHandlers }) {
+export function BranchCell({
+  node,
+  handlers,
+  currentBranch,
+}: {
+  node: GraphNode;
+  handlers?: PillHandlers;
+  /** The checked-out local branch, so its pill can be marked. */
+  currentBranch?: string | null;
+}) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", overflow: "hidden" }}>
       {node.branchLabels.map((label) => (
-        <BranchPill key={label.name} label={label} handlers={handlers} />
+        <BranchPill
+          key={label.name}
+          label={label}
+          handlers={handlers}
+          isCurrent={!label.isRemote && !label.isTag && label.name === currentBranch}
+        />
       ))}
     </div>
   );

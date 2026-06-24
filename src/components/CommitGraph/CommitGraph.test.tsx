@@ -104,6 +104,28 @@ describe("CommitGraph columns", () => {
   });
 });
 
+describe("CommitGraph checked-out indicators", () => {
+  it("marks the checked-out branch pill and pulses the HEAD dot", () => {
+    const { container } = render(<CommitGraph />);
+    // The "main" pill (HEAD's local branch) is flagged as current.
+    expect(container.querySelector('[data-branch="main"]')).toHaveAttribute("data-current", "true");
+    // A pulse overlay marks the HEAD commit dot.
+    expect(screen.getByTestId("head-pulse")).toBeInTheDocument();
+  });
+
+  it("shows no HEAD pulse when the loaded slice has no HEAD commit", () => {
+    useGraphStore.setState({
+      viewport: {
+        totalCount: 1,
+        offset: 0,
+        nodes: [node({ oid: "c".repeat(40), summary: "no head here", row: 0 })],
+      },
+    });
+    render(<CommitGraph />);
+    expect(screen.queryByTestId("head-pulse")).toBeNull();
+  });
+});
+
 describe("CommitGraph context menu", () => {
   it("opens a context menu with branch actions on right-click", () => {
     render(<CommitGraph />);

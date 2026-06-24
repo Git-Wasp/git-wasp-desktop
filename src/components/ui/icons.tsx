@@ -127,6 +127,29 @@ export function BranchIcon({ size = 14, title }: IconProps) {
   );
 }
 
+/** A checkmark — marks the currently checked-out branch. */
+export function CheckIcon({ size = 12, title }: IconProps) {
+  return (
+    <svg
+      data-icon="check"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={3}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      style={{ flexShrink: 0 }}
+    >
+      {title && <title>{title}</title>}
+      <path d="M5 13l4 4L19 7" />
+    </svg>
+  );
+}
+
 /** A panel with a left column — the collapsible left sidebar. */
 export function SidebarIcon({ size = 16, title }: IconProps) {
   return (

@@ -50,6 +50,41 @@
   }
 }
 
+/* Pulsing ring on the HEAD commit dot (commit graph) — a subtle "you are here"
+   cue marking the currently checked-out tip. Positioned by left/top from JS;
+   centred and animated here. */
+.graph-head-pulse {
+  position: absolute;
+  /* Base size = the commit dot's diameter (--graph-dot-radius * 2), so the ring
+     starts exactly on the dot's edge and expands outward from there. */
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--color-text-primary);
+  pointer-events: none;
+  z-index: 2;
+  transform: translate(-50%, -50%) scale(1);
+  animation: graph-head-pulse 1.5s ease-out infinite;
+}
+@keyframes graph-head-pulse {
+  0% {
+    opacity: 0.55;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(2.8);
+  }
+}
+/* Respect reduced-motion: keep a static halo instead of pulsing. */
+@media (prefers-reduced-motion: reduce) {
+  .graph-head-pulse {
+    animation: none;
+    opacity: 0.5;
+    transform: translate(-50%, -50%) scale(1.5);
+  }
+}
+
 /* Tactile press on shared buttons — a subtle nudge down on active. */
 .ui-button:active:not(:disabled) {
   transform: translateY(1px);
