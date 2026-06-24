@@ -33,15 +33,23 @@ pub(crate) fn diag_log(line: &str) {
 
 /// Slice-independent layout for the active repo, cached across viewport fetches.
 /// The whole HEAD-reachable history is laid out once (lanes, colours, edges,
-/// branch labels); only the cheap working-tree node and the final slicing happen
-/// per request. Invalidated whenever HEAD or any ref changes — see [`cache_key`].
+/// branch labels); only the final slicing happens per request. Invalidated
+/// whenever HEAD or any ref changes — see [`cache_key`].
 ///
 /// This is what makes scrolling cheap: without it, every scroll tick re-walked
 /// the entire history (twice) and re-scanned the working tree.
+///
+/// `change_count` (the working-tree dirty-file count) is cached here too,
+/// rather than rescanned on every slice — `repo.statuses()` walks the whole
+/// working directory and can cost well over a second on a large tree, which
+/// made every scroll tick pay for a full status scan. It's refreshed
+/// explicitly via [`refresh_working_tree_status`], which the frontend calls
+/// off the `notify`-driven file-watcher event rather than on every fetch.
 pub struct GraphCache {
     key: CacheKey,
     /// All commits, newest-first; `row` equals the index. No working-tree node.
     nodes: Vec<GraphNode>,
+    change_count: u32,
 }
 
 #[derive(PartialEq)]
@@ -129,19 +137,15 @@ fn log_full_build(
 }
 
 /// Carve a viewport out of already-laid-out nodes, layering in the synthetic
-/// working-tree node when the tree is dirty and row 0 is in view. Cheap enough to
-/// run on every request (the only per-call git work is the status scan).
-fn slice_viewport(
-    repo: &Repository,
-    full: &[GraphNode],
-    offset: usize,
-    limit: usize,
-) -> GraphViewport {
+/// working-tree node when the tree is dirty and row 0 is in view. Pure
+/// indexing — no git work — since `change_count` is supplied by the caller
+/// from the cache rather than rescanned here.
+fn slice_viewport(full: &[GraphNode], change_count: u32, offset: usize, limit: usize) -> GraphViewport {
     // A dirty working tree adds a synthetic node at row 0 (above HEAD). It is
     // always counted in total_count so the scroll height is offset-independent,
     // but only emitted when row 0 is in view (offset == 0). It needs a commit to
     // anchor to, hence the non-empty check.
-    let change_count = if full.is_empty() { 0 } else { changed_file_count(repo) };
+    let change_count = if full.is_empty() { 0 } else { change_count };
     let wip_offset = if change_count > 0 { 1 } else { 0 };
     let total_count = full.len() + wip_offset;
 
@@ -175,12 +179,16 @@ pub fn compute_layout(
     limit: usize,
 ) -> anyhow::Result<GraphViewport> {
     let full = build_full_layout(repo)?;
-    Ok(slice_viewport(repo, &full, offset, limit))
+    let change_count = changed_file_count(repo);
+    Ok(slice_viewport(&full, change_count, offset, limit))
 }
 
 /// Layout that reuses a cached full-history layout while HEAD and refs are
 /// unchanged, rebuilding only when they move. This is the path the viewport
 /// command uses, so repeated scroll fetches are cheap.
+///
+/// The working-tree dirty-file count is cached alongside the layout rather
+/// than rescanned here — see [`refresh_working_tree_status`].
 pub fn compute_layout_cached(
     repo: &Repository,
     cache: &mut Option<GraphCache>,
@@ -191,11 +199,24 @@ pub fn compute_layout_cached(
     let stale = cache.as_ref().map(|c| c.key != key).unwrap_or(true);
     if stale {
         let nodes = build_full_layout(repo)?;
-        *cache = Some(GraphCache { key, nodes });
+        let change_count = changed_file_count(repo);
+        *cache = Some(GraphCache { key, nodes, change_count });
     }
     // `stale` guarantees the cache is populated here.
-    let full = &cache.as_ref().expect("cache populated above").nodes;
-    Ok(slice_viewport(repo, full, offset, limit))
+    let cached = cache.as_ref().expect("cache populated above");
+    Ok(slice_viewport(&cached.nodes, cached.change_count, offset, limit))
+}
+
+/// Re-scans the working tree and updates the cached dirty-file count, without
+/// rebuilding the (expensive) full history layout. A no-op when there's no
+/// cache yet — the next [`compute_layout_cached`] call will populate one with
+/// a fresh scan anyway. Call this when the file watcher reports a working-tree
+/// change, before re-fetching the viewport, so the scan happens once per
+/// change rather than once per scroll tick.
+pub fn refresh_working_tree_status(repo: &Repository, cache: &mut Option<GraphCache>) {
+    if let Some(c) = cache {
+        c.change_count = changed_file_count(repo);
+    }
 }
 
 struct CommitRaw {
@@ -760,7 +781,7 @@ mod tests {
     }
 
     #[test]
-    fn cached_layout_reflects_working_tree_node_without_rebuild() {
+    fn cached_layout_does_not_rescan_working_tree_without_explicit_refresh() {
         let (dir, repo) = init_repo();
         let c1 = repo.find_commit(make_commit(&repo, "c1", &[])).unwrap();
         make_commit(&repo, "c2", &[&c1]);
@@ -770,12 +791,42 @@ mod tests {
         assert_eq!(clean.total_count, 2);
         assert!(clean.nodes.iter().all(|n| !n.is_working_tree));
 
-        // Dirtying the tree doesn't change HEAD/refs, but the per-call slice must
-        // still surface the working-tree node (status is re-read each call).
+        // Dirtying the tree doesn't change HEAD/refs, and — since the dirty
+        // count is now cached rather than rescanned per call — a plain
+        // re-fetch doesn't notice it either, until something explicitly
+        // refreshes the cached count (see the test below).
         std::fs::write(dir.path().join("new.txt"), "hi").unwrap();
+        let still_clean = compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+        assert_eq!(still_clean.total_count, 2);
+        assert!(still_clean.nodes.iter().all(|n| !n.is_working_tree));
+    }
+
+    #[test]
+    fn refresh_working_tree_status_updates_cached_count_without_rebuilding_layout() {
+        let (dir, repo) = init_repo();
+        let c1 = repo.find_commit(make_commit(&repo, "c1", &[])).unwrap();
+        make_commit(&repo, "c2", &[&c1]);
+
+        let mut cache = None;
+        compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+
+        std::fs::write(dir.path().join("new.txt"), "hi").unwrap();
+        refresh_working_tree_status(&repo, &mut cache);
+
         let dirty = compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
         assert_eq!(dirty.total_count, 3);
         assert!(dirty.nodes[0].is_working_tree);
+        assert_eq!(dirty.nodes[0].change_count, Some(1));
+    }
+
+    #[test]
+    fn refresh_working_tree_status_is_a_no_op_without_a_cache() {
+        let (_dir, repo) = init_repo();
+        make_commit(&repo, "c1", &[]);
+
+        let mut cache = None;
+        refresh_working_tree_status(&repo, &mut cache); // must not panic
+        assert!(cache.is_none());
     }
 
     #[test]

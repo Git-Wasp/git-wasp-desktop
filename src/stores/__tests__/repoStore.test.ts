@@ -1,26 +1,37 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useRepoStore } from "../repoStore";
+import { useGraphStore } from "../graphStore";
 
 const mockInvoke = vi.mocked(invoke);
 
 beforeEach(() => {
   vi.clearAllMocks();
   useRepoStore.setState({ currentRepo: null, recentRepos: [], branches: [], openRepos: [], activeRepoPath: null });
+  // reloadActiveRepo (triggered by openRepo/activateRepo/closeRepo) drives
+  // graphStore's fetchViewport, which now caches fetched rows — reset it too
+  // so one test's cached (possibly empty) viewport can't mask another's
+  // get_graph_viewport call.
+  useGraphStore.setState({ viewport: null, lastOffset: null, lastLimit: null, nodesByRow: new Map() });
 });
+
+const emptyGraphViewport = { nodes: [], totalCount: 0, offset: 0 };
 
 // Resolve invoke by command name so multi-step actions (which fire several
 // invokes via the shared reloadActiveRepo routine) don't depend on call order.
+// get_graph_viewport defaults to an empty viewport unless overridden, since
+// reloadActiveRepo always fetches it and graphStore expects a real shape.
 function mockByCommand(map: Record<string, unknown>) {
+  const withDefaults: Record<string, unknown> = { get_graph_viewport: emptyGraphViewport, ...map };
   mockInvoke.mockImplementation((cmd: string) =>
-    Promise.resolve(cmd in map ? map[cmd] : undefined),
+    Promise.resolve(cmd in withDefaults ? withDefaults[cmd] : undefined),
   );
 }
 
 describe("repoStore", () => {
   it("openRepo calls open_repo and updates currentRepo", async () => {
     const fakeRepo = { name: "myrepo", path: "/tmp/myrepo", headBranch: "main" };
-    mockInvoke.mockResolvedValueOnce(fakeRepo);
+    mockByCommand({ open_repo: fakeRepo });
 
     await useRepoStore.getState().openRepo("/tmp/myrepo");
 

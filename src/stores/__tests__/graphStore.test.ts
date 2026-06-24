@@ -15,9 +15,34 @@ const makeViewport = (): GraphViewport => ({
   ],
 });
 
+const makeNode = (row: number, oid: string): import("../../types/graph").GraphNode => ({
+  oid,
+  shortOid: oid,
+  summary: `commit ${row}`,
+  authorName: "A",
+  authorEmail: "a@a",
+  authorTimestamp: 0,
+  lane: 0,
+  row,
+  colorIndex: 0,
+  parents: [],
+  children: [],
+  edges: [],
+  branchLabels: [],
+  isHead: false,
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
-  useGraphStore.setState({ viewport: null, selection: { anchor: null, focus: null, range: new Set() }, selectedOid: null, lastOffset: null, lastLimit: null, scrollToRow: null });
+  useGraphStore.setState({
+    viewport: null,
+    selection: { anchor: null, focus: null, range: new Set() },
+    selectedOid: null,
+    lastOffset: null,
+    lastLimit: null,
+    scrollToRow: null,
+    nodesByRow: new Map(),
+  });
 });
 
 describe("graphStore", () => {
@@ -50,6 +75,46 @@ describe("graphStore", () => {
     resolveOlder(older);
     await p1;
     expect(useGraphStore.getState().viewport?.offset).toBe(50);
+  });
+
+  it("fetchViewport serves an already-loaded range from cache without calling invoke again", async () => {
+    const vp = makeViewport(); // rows 0-2, totalCount 3
+    mockInvoke.mockResolvedValueOnce(vp);
+
+    await useGraphStore.getState().fetchViewport(0, 10);
+    mockInvoke.mockClear();
+
+    await useGraphStore.getState().fetchViewport(0, 10); // same range — should hit cache
+
+    expect(mockInvoke).not.toHaveBeenCalled();
+    expect(useGraphStore.getState().viewport?.nodes.map((n) => n.oid)).toEqual(["aaa", "bbb", "ccc"]);
+  });
+
+  it("fetchViewport serves a previously-loaded range from cache when scrolling back up", async () => {
+    const top: GraphViewport = { totalCount: 10, offset: 0, nodes: [0, 1, 2].map((r) => makeNode(r, `o${r}`)) };
+    const further: GraphViewport = { totalCount: 10, offset: 5, nodes: [5, 6, 7].map((r) => makeNode(r, `o${r}`)) };
+    mockInvoke.mockResolvedValueOnce(top).mockResolvedValueOnce(further);
+
+    await useGraphStore.getState().fetchViewport(0, 3); // scroll to top
+    await useGraphStore.getState().fetchViewport(5, 3); // scroll down
+    mockInvoke.mockClear();
+
+    await useGraphStore.getState().fetchViewport(0, 3); // scroll back up — already loaded
+
+    expect(mockInvoke).not.toHaveBeenCalled();
+    expect(useGraphStore.getState().viewport?.nodes.map((n) => n.oid)).toEqual(["o0", "o1", "o2"]);
+  });
+
+  it("fetchViewport calls invoke again when the requested range isn't fully cached", async () => {
+    const top: GraphViewport = { totalCount: 10, offset: 0, nodes: [0, 1, 2].map((r) => makeNode(r, `o${r}`)) };
+    const further: GraphViewport = { totalCount: 10, offset: 3, nodes: [3, 4, 5].map((r) => makeNode(r, `o${r}`)) };
+    mockInvoke.mockResolvedValueOnce(top).mockResolvedValueOnce(further);
+
+    await useGraphStore.getState().fetchViewport(0, 3);
+    await useGraphStore.getState().fetchViewport(3, 3); // new, uncached rows
+
+    expect(mockInvoke).toHaveBeenCalledTimes(2);
+    expect(useGraphStore.getState().viewport?.nodes.map((n) => n.oid)).toEqual(["o3", "o4", "o5"]);
   });
 
   it("selectCommit sets anchor, focus, range, and selectedOid", () => {

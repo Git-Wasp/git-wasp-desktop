@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
-import type { GraphViewport } from "../types/graph";
+import type { GraphNode, GraphViewport } from "../types/graph";
 
 interface Selection {
   anchor: string | null;
@@ -17,6 +17,13 @@ interface GraphStore {
   // A row the graph should scroll into view (set by revealCommit); the graph
   // consumes and resets it. Null when there's nothing pending.
   scrollToRow: number | null;
+  // Every node fetched this session, keyed by row. Scrolling back to a range
+  // we've already loaded is served from here instead of round-tripping
+  // through invoke() — without this, scrolling up after scrolling down
+  // re-fetched (and on a large repo, re-paid for) the same rows every time.
+  // Cleared by refresh(), since a refresh means the underlying history or
+  // working-tree state may have moved.
+  nodesByRow: Map<number, GraphNode>;
   fetchViewport: (offset: number, limit: number) => Promise<void>;
   refresh: () => Promise<void>;
   selectCommit: (oid: string, extend: boolean) => void;
@@ -30,11 +37,62 @@ const emptySelection = (): Selection => ({
   range: new Set(),
 });
 
+const isRangeCached = (
+  cache: Map<number, GraphNode>,
+  offset: number,
+  limit: number,
+  totalCount: number,
+): boolean => {
+  const end = Math.min(offset + limit, totalCount);
+  // An empty clipped range only counts as "cached" when there's truly
+  // nothing to load (totalCount 0) — not when offset is past a totalCount
+  // that's stale (e.g. read right after refresh() clears the cache).
+  if (end <= offset) return totalCount === 0;
+  for (let row = offset; row < end; row++) {
+    if (!cache.has(row)) return false;
+  }
+  return true;
+};
+
+const sliceFromCache = (
+  cache: Map<number, GraphNode>,
+  offset: number,
+  limit: number,
+  totalCount: number,
+): GraphViewport => {
+  const end = Math.min(offset + limit, totalCount);
+  const nodes: GraphNode[] = [];
+  for (let row = offset; row < end; row++) {
+    const node = cache.get(row);
+    if (node) nodes.push(node);
+  }
+  return { nodes, totalCount, offset };
+};
+
+const mergeIntoCache = (cache: Map<number, GraphNode>, viewport: GraphViewport): void => {
+  for (const node of viewport.nodes) {
+    cache.set(node.row, node);
+  }
+};
+
 export const useGraphStore = create<GraphStore>((set, get) => {
   // Monotonic id so only the newest in-flight viewport fetch is applied. Rapid
   // scrolling fires overlapping fetches; without this, an older slice resolving
   // late could clobber a newer one and make the graph jump ("flash").
   let fetchId = 0;
+
+  // Always hits the backend and merges the result into the row cache —
+  // bypasses the cache-hit check entirely. refresh() needs this: it clears
+  // the cache because the underlying data may have moved, so it must not
+  // turn around and ask the (just-cleared) cache whether the range is
+  // already loaded.
+  const fetchAndCache = async (offset: number, limit: number) => {
+    const id = ++fetchId;
+    const fetched = await invoke<GraphViewport>("get_graph_viewport", { offset, limit });
+    if (id !== fetchId) return; // superseded by a newer fetch
+    mergeIntoCache(get().nodesByRow, fetched);
+    set({ viewport: fetched, lastOffset: offset, lastLimit: limit });
+  };
 
   return {
   viewport: null,
@@ -43,21 +101,27 @@ export const useGraphStore = create<GraphStore>((set, get) => {
   lastOffset: null,
   lastLimit: null,
   scrollToRow: null,
+  nodesByRow: new Map(),
 
   fetchViewport: async (offset: number, limit: number) => {
-    const id = ++fetchId;
-    const viewport = await invoke<GraphViewport>("get_graph_viewport", {
-      offset,
-      limit,
-    });
-    if (id !== fetchId) return; // superseded by a newer fetch
-    set({ viewport, lastOffset: offset, lastLimit: limit });
+    const { viewport, nodesByRow } = get();
+    if (viewport && isRangeCached(nodesByRow, offset, limit, viewport.totalCount)) {
+      ++fetchId; // supersede any fetch still in flight so it can't clobber this
+      set({
+        viewport: sliceFromCache(nodesByRow, offset, limit, viewport.totalCount),
+        lastOffset: offset,
+        lastLimit: limit,
+      });
+      return;
+    }
+    await fetchAndCache(offset, limit);
   },
 
   refresh: async () => {
-    const { lastOffset, lastLimit, fetchViewport } = get();
+    const { lastOffset, lastLimit, nodesByRow } = get();
     if (lastOffset === null || lastLimit === null) return;
-    await fetchViewport(lastOffset, lastLimit);
+    nodesByRow.clear();
+    await fetchAndCache(lastOffset, lastLimit);
   },
 
   selectCommit: (oid: string, extend: boolean) => {

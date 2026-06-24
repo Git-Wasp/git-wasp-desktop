@@ -208,6 +208,16 @@ impl RepoManager {
         Ok(f(&entry.repo, &mut entry.graph_cache))
     }
 
+    /// Re-scans the working tree and updates the graph cache's dirty-file
+    /// count, without rebuilding the full layout. Called when the file
+    /// watcher reports a change, so the (expensive) scan happens once per
+    /// change rather than once per scroll-driven viewport fetch.
+    pub fn refresh_graph_working_tree_status(&self) -> anyhow::Result<()> {
+        self.with_repo_graph_cache(|repo, cache| {
+            crate::graph::refresh_working_tree_status(repo, cache);
+        })
+    }
+
     pub fn checkout_branch(&self, branch_name: &str) -> anyhow::Result<RepoInfo> {
         self.with_repo(|repo| -> anyhow::Result<()> {
             let branch = repo
@@ -431,6 +441,10 @@ impl AppState {
         F: FnOnce(&Repository, &mut Option<crate::graph::GraphCache>) -> T,
     {
         self.manager.with_repo_graph_cache(f)
+    }
+
+    pub fn refresh_graph_working_tree_status(&self) -> anyhow::Result<()> {
+        self.manager.refresh_graph_working_tree_status()
     }
 
     pub fn checkout_branch(&self, branch_name: &str) -> anyhow::Result<RepoInfo> {

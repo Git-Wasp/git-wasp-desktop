@@ -115,9 +115,14 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const unlisten = await listen("working-tree-changed", () => {
       if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
+      debounceTimer = setTimeout(async () => {
         get().loadStatus();
-        // Keep the graph's working-tree node in sync with the file count.
+        // Refresh the cached dirty-file count the graph uses for its
+        // working-tree node *before* re-fetching — the graph viewport
+        // command no longer rescans the working tree on every call (it was
+        // costing a full statuses() walk per scroll tick on large repos), so
+        // this explicit, debounced refresh is what keeps it in sync now.
+        await invoke("refresh_graph_working_tree_status");
         useGraphStore.getState().refresh();
       }, 300);
     });
