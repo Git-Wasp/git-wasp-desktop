@@ -12,43 +12,87 @@ const inserted: StageFileContents = {
   worktreeExists: true,
 };
 
-function getResultPaneText(container: HTMLElement): string {
-  const pane = container.querySelector('[data-testid="result-pane"]');
-  if (!pane) throw new Error("result pane not found");
-  return pane.textContent ?? "";
+// A pure deletion: working tree removes line "b".
+const removed: StageFileContents = {
+  headContent: "a\nb\nc\n",
+  worktreeContent: "a\nc\n",
+  isBinary: false,
+  worktreeExists: true,
+};
+
+function pane(container: HTMLElement, testId: string): HTMLElement {
+  const el = container.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+  if (!el) throw new Error(`pane ${testId} not found`);
+  return el;
 }
 
 describe("StageFileEditor", () => {
-  it("renders HEAD, working tree, and staged result panes", async () => {
-    render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+  it("renders the HEAD and Working Tree panes side by side", () => {
+    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
 
     expect(screen.getByText("HEAD")).toBeInTheDocument();
     expect(screen.getByText("Working Tree")).toBeInTheDocument();
-    expect(screen.getByText("Staged result")).toBeInTheDocument();
+    expect(pane(container, "head-pane")).toBeInTheDocument();
+    expect(pane(container, "worktree-pane")).toBeInTheDocument();
   });
 
-  it("seeds the staged result with the working-tree content (everything staged)", async () => {
+  it("no longer renders the bottom staged-result pane", () => {
     const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
 
-    await waitFor(() => {
-      expect(getResultPaneText(container)).toContain("b");
-    });
+    expect(screen.queryByText("Staged result")).not.toBeInTheDocument();
+    expect(container.querySelector('[data-testid="result-pane"]')).toBeNull();
   });
 
-  it("shows '−' toggles on changed lines (working-tree pane + result pane)", async () => {
+  it("shows a single '−' toggle (staged by default) on the inserted line", async () => {
     const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
 
     await waitFor(() => {
       const buttons = container.querySelectorAll<HTMLButtonElement>(".cm-stage-toggle");
-      // The single added line carries a toggle in the working-tree pane and in
-      // the staged-result pane.
-      expect(buttons.length).toBe(2);
-      expect([...buttons].every((b) => b.textContent === "−")).toBe(true);
+      // One change ⇒ one toggle (on the working-tree pane, where the text lives).
+      expect(buttons.length).toBe(1);
+      expect(buttons[0].textContent).toBe("−");
     });
   });
 
-  it("reverts the staged result to HEAD when the only change is unstaged", async () => {
+  it("shows an addition solid-green on the right and hatched on the HEAD side", async () => {
     const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+
+    await waitFor(() => {
+      // The real added text reads solid green on the working-tree side.
+      expect(pane(container, "worktree-pane").querySelector(".cm-diff-add-line")).not.toBeNull();
+      // The added "b" has no HEAD line, so the HEAD pane shows a neutral hatch
+      // gap (not a solid green fill).
+      expect(pane(container, "head-pane").querySelector(".cm-diff-placeholder-line")).not.toBeNull();
+      expect(pane(container, "head-pane").querySelector(".cm-diff-add-line")).toBeNull();
+    });
+  });
+
+  it("shows a removal solid-red on the HEAD side and hatched on the right", async () => {
+    const { container } = render(<StageFileEditor path="f.txt" contents={removed} onStage={vi.fn()} />);
+
+    await waitFor(() => {
+      // The real removed text reads solid red on the HEAD side.
+      expect(pane(container, "head-pane").querySelector(".cm-diff-del-line")).not.toBeNull();
+      // The removed "b" has no working-tree line, so that pane shows a hatch gap.
+      expect(pane(container, "worktree-pane").querySelector(".cm-diff-placeholder-line")).not.toBeNull();
+      expect(pane(container, "worktree-pane").querySelector(".cm-diff-del-line")).toBeNull();
+    });
+  });
+
+  it("stages the whole file by default", async () => {
+    const onStage = vi.fn();
+    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={onStage} />);
+
+    await waitFor(() => expect(container.querySelector(".cm-stage-toggle")).not.toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Stage" }));
+
+    expect(onStage).toHaveBeenCalledTimes(1);
+    expect(onStage.mock.calls[0]).toEqual(["f.txt", "a\nb\nc\n"]);
+  });
+
+  it("stages HEAD content once the only change is unstaged", async () => {
+    const onStage = vi.fn();
+    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={onStage} />);
 
     const toggle = await waitFor(() => {
       const button = container.querySelector<HTMLButtonElement>(".cm-stage-toggle");
@@ -58,26 +102,26 @@ describe("StageFileEditor", () => {
     fireEvent.click(toggle);
 
     await waitFor(() => {
-      // With the insertion unstaged the result equals HEAD: no "b" line, and the
-      // line drops out of the result pane so only the working-tree toggle (now
-      // "+") remains.
-      const text = getResultPaneText(container);
-      expect(text).toContain("a");
-      expect(text).toContain("c");
-      expect(text).not.toContain("b");
-      const buttons = container.querySelectorAll<HTMLButtonElement>(".cm-stage-toggle");
-      expect(buttons.length).toBe(1);
-      expect(buttons[0].textContent).toBe("+");
+      expect(container.querySelector<HTMLButtonElement>(".cm-stage-toggle")?.textContent).toBe("+");
     });
+    fireEvent.click(screen.getByRole("button", { name: "Stage" }));
+
+    expect(onStage.mock.calls[0]).toEqual(["f.txt", "a\nc\n"]);
   });
 
-  it("highlights staged additions in the result pane", async () => {
+  it("resets the selection back to everything staged", async () => {
     const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
 
-    await waitFor(() => {
-      const resultPane = container.querySelector('[data-testid="result-pane"]');
-      expect(resultPane?.querySelector(".cm-diff-add-line")).not.toBeNull();
-    });
+    const toggle = await waitFor(() => container.querySelector<HTMLButtonElement>(".cm-stage-toggle")!);
+    fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(container.querySelector<HTMLButtonElement>(".cm-stage-toggle")?.textContent).toBe("+"),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    await waitFor(() =>
+      expect(container.querySelector<HTMLButtonElement>(".cm-stage-toggle")?.textContent).toBe("−"),
+    );
   });
 
   it("renders the change overview ruler", () => {
@@ -86,19 +130,6 @@ describe("StageFileEditor", () => {
     expect(overview).not.toBeNull();
     // One marker for the single added row.
     expect(overview!.children.length).toBe(1);
-  });
-
-  it("invokes onStage with the path and the current staged result content", async () => {
-    const onStage = vi.fn();
-    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={onStage} />);
-
-    await waitFor(() => expect(container.querySelector(".cm-stage-toggle")).not.toBeNull());
-    fireEvent.click(screen.getByRole("button", { name: "Stage" }));
-
-    expect(onStage).toHaveBeenCalledTimes(1);
-    const [path, content] = onStage.mock.calls[0];
-    expect(path).toBe("f.txt");
-    expect(content).toBe("a\nb\nc\n");
   });
 
   it("falls back to whole-file staging for binary files", async () => {
@@ -119,6 +150,8 @@ describe("StageFileEditor", () => {
     );
 
     expect(screen.getByText(/binary file/i)).toBeInTheDocument();
+    // No line-level Stage/Reset for a non-line-editable file.
+    expect(screen.queryByRole("button", { name: "Stage" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Stage whole file" }));
     expect(onStageWholeFile).toHaveBeenCalledWith("logo.png");
   });

@@ -12,16 +12,15 @@ import { editorThemeExtension, registerEditorView } from "../../lib/editorTheme"
 import { languageForPath } from "../../lib/editorLanguage";
 import type { StageFileContents } from "../../types/workingTree";
 import {
+  alignedHeadLineNumbers,
+  alignedHeadText,
+  alignedWorktreeLineNumbers,
+  alignedWorktreeText,
   changedRowIndices,
-  composeStagedResult,
+  composeStagedText,
   diffLines,
-  headChangedLines,
-  headPaneText,
-  worktreeChangedLines,
-  worktreePaneText,
 } from "../../lib/lineDiff";
 import { stageGutter, setStagedLines } from "./stageGutter";
-import { stageResultExtensions, setResultLines } from "./stageResultPane";
 import { ChangeOverview } from "./ChangeOverview";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
@@ -50,6 +49,13 @@ const paneTheme = EditorView.theme({
   ".cm-activeLineGutter": { backgroundColor: "var(--color-bg-elevated)" },
   ".cm-diff-add-line": { backgroundColor: "var(--color-diff-add-bg)" },
   ".cm-diff-del-line": { backgroundColor: "var(--color-diff-del-bg)" },
+  // The absent side of an aligned change: a neutral diagonal hatch (à la
+  // GitKraken), so only the side that holds the changed text reads green/red.
+  ".cm-diff-placeholder-line": {
+    backgroundColor: "var(--color-bg-surface)",
+    backgroundImage:
+      "repeating-linear-gradient(45deg, var(--color-border-default) 0, var(--color-border-default) 1px, transparent 1px, transparent 7px)",
+  },
   ".cm-stage-gutter": { paddingLeft: "var(--space-1)", paddingRight: "var(--space-1)" },
   ".cm-stage-toggle": {
     cursor: "pointer",
@@ -83,13 +89,21 @@ function lineStartOffsets(text: string): number[] {
   return starts;
 }
 
-// Whole-line background decoration on the given 1-based pane line numbers.
-function buildLineDecorations(content: string, lineNos: number[], className: string): DecorationSet {
-  if (lineNos.length === 0) return Decoration.none;
+/** A whole-line background class to apply at a given 1-based pane line number. */
+interface LineDecoration {
+  lineNo: number;
+  className: string;
+}
+
+// Whole-line background decorations at the given 1-based pane line numbers. The
+// offsets are resolved against `content`, so each pane builds its own set even
+// though both panes share the same row→class mapping (their texts differ).
+function buildLineDecorations(content: string, entries: LineDecoration[]): DecorationSet {
+  if (entries.length === 0) return Decoration.none;
   const starts = lineStartOffsets(content);
-  const ranges = [...lineNos]
-    .sort((a, b) => a - b)
-    .map((n) => Decoration.line({ class: className }).range(starts[n - 1]));
+  const ranges = [...entries]
+    .sort((a, b) => a.lineNo - b.lineNo)
+    .map((e) => Decoration.line({ class: e.className }).range(starts[e.lineNo - 1]));
   return Decoration.set(ranges);
 }
 
@@ -100,7 +114,9 @@ function ReadOnlyStagePane({
   stagedLines,
   onToggle,
   decorations,
+  lineNumberMap,
   language,
+  testId,
   onView,
   onScroll,
 }: {
@@ -110,7 +126,10 @@ function ReadOnlyStagePane({
   stagedLines: Set<number>;
   onToggle: (lineNo: number) => void;
   decorations: DecorationSet;
+  /** Real file line number per 1-based pane line; `null` renders a blank gutter. */
+  lineNumberMap: (number | null)[];
   language: Extension | null;
+  testId?: string;
   onView?: (view: EditorView | null) => void;
   onScroll?: () => void;
 }) {
@@ -123,7 +142,14 @@ function ReadOnlyStagePane({
       state: EditorState.create({
         doc: content,
         extensions: [
-          lineNumbers(),
+          lineNumbers({
+            // Aligned panes pad the opposite side with blank rows; those carry no
+            // real file line, so leave their gutter empty.
+            formatNumber: (n) => {
+              const real = lineNumberMap[n - 1];
+              return real == null ? "" : String(real);
+            },
+          }),
           ...activeLineExtensions,
           ...(language ? [language] : []),
           editorThemeExtension(),
@@ -151,7 +177,7 @@ function ReadOnlyStagePane({
       viewRef.current = null;
       onView?.(null);
     };
-  }, [content, changedLines, onToggle, decorations, language, onView, onScroll]);
+  }, [content, changedLines, onToggle, decorations, lineNumberMap, language, onView, onScroll]);
 
   // Push the controlled staged-line set into the gutter markers.
   useEffect(() => {
@@ -159,7 +185,10 @@ function ReadOnlyStagePane({
   }, [stagedLines]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
+    <div
+      data-testid={testId}
+      style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}
+    >
       <div style={paneLabelStyle}>{label}</div>
       <div ref={containerRef} style={{ flex: 1, minHeight: 0, overflow: "hidden" }} />
     </div>
@@ -182,10 +211,25 @@ export function StageFileEditor({
     () => diffLines(contents.headContent, contents.worktreeContent),
     [contents.headContent, contents.worktreeContent],
   );
-  const headText = useMemo(() => headPaneText(rows), [rows]);
-  const worktreeText = useMemo(() => worktreePaneText(rows), [rows]);
-  const headChanged = useMemo(() => headChangedLines(rows), [rows]);
-  const worktreeChanged = useMemo(() => worktreeChangedLines(rows), [rows]);
+  // Aligned pane texts + real line-number maps: every diff row is one line in
+  // both panes, with the absent side padded by a blank (coloured) placeholder so
+  // HEAD and Working Tree line up row-for-row.
+  const headText = useMemo(() => alignedHeadText(rows), [rows]);
+  const worktreeText = useMemo(() => alignedWorktreeText(rows), [rows]);
+  const headLineNumbers = useMemo(() => alignedHeadLineNumbers(rows), [rows]);
+  const worktreeLineNumbers = useMemo(() => alignedWorktreeLineNumbers(rows), [rows]);
+
+  // With aligned panes a row's line number is simply its row index + 1. Removed
+  // rows carry their toggle in the HEAD pane (where the text lives), added rows
+  // in the Working Tree pane; placeholder rows get neither.
+  const headChanged = useMemo(
+    () => rows.flatMap((r, i) => (r.kind === "removed" ? [{ lineNo: i + 1, rowIndex: i }] : [])),
+    [rows],
+  );
+  const worktreeChanged = useMemo(
+    () => rows.flatMap((r, i) => (r.kind === "added" ? [{ lineNo: i + 1, rowIndex: i }] : [])),
+    [rows],
+  );
 
   const headChangedLineNos = useMemo(() => new Set(headChanged.map((l) => l.lineNo)), [headChanged]);
   const worktreeChangedLineNos = useMemo(
@@ -200,41 +244,52 @@ export function StageFileEditor({
     () => new Map(worktreeChanged.map((l) => [l.lineNo, l.rowIndex])),
     [worktreeChanged],
   );
+
+  // Each pane shows the changed text solid (red for a removal in HEAD, green for
+  // an addition in Working Tree) and the opposite side's change as a neutral
+  // hatched placeholder gap. Offsets resolve against each pane's own text.
+  const headDecorationEntries = useMemo(
+    () =>
+      rows.flatMap((r, i) =>
+        r.kind === "removed"
+          ? [{ lineNo: i + 1, className: "cm-diff-del-line" }]
+          : r.kind === "added"
+            ? [{ lineNo: i + 1, className: "cm-diff-placeholder-line" }]
+            : [],
+      ),
+    [rows],
+  );
+  const worktreeDecorationEntries = useMemo(
+    () =>
+      rows.flatMap((r, i) =>
+        r.kind === "added"
+          ? [{ lineNo: i + 1, className: "cm-diff-add-line" }]
+          : r.kind === "removed"
+            ? [{ lineNo: i + 1, className: "cm-diff-placeholder-line" }]
+            : [],
+      ),
+    [rows],
+  );
   const headDecorations = useMemo(
-    () => buildLineDecorations(headText, headChanged.map((l) => l.lineNo), "cm-diff-del-line"),
-    [headText, headChanged],
+    () => buildLineDecorations(headText, headDecorationEntries),
+    [headText, headDecorationEntries],
   );
   const worktreeDecorations = useMemo(
-    () => buildLineDecorations(worktreeText, worktreeChanged.map((l) => l.lineNo), "cm-diff-add-line"),
-    [worktreeText, worktreeChanged],
+    () => buildLineDecorations(worktreeText, worktreeDecorationEntries),
+    [worktreeText, worktreeDecorationEntries],
   );
 
-  // Row indices whose change is staged. Seeded to "everything staged" (result ==
-  // working tree), so the panes open with every change marked "−".
+  // Row indices whose change is staged. Seeded to "everything staged", so the
+  // panes open with every change marked "−" (Stage commits the whole file).
   const [stagedRows, setStagedRows] = useState<Set<number>>(() => new Set(changedRowIndices(rows)));
   const stagedRowsRef = useRef(stagedRows);
-  const resultContainerRef = useRef<HTMLDivElement>(null);
-  const resultViewRef = useRef<EditorView | null>(null);
   const headViewRef = useRef<EditorView | null>(null);
   const worktreeViewRef = useRef<EditorView | null>(null);
 
-  // Recompose the result buffer from a staged set, pushing both the new text and
-  // the per-line metadata (drives the result gutter + change decoration).
-  const applyStaged = useCallback(
-    (next: Set<number>) => {
-      stagedRowsRef.current = next;
-      setStagedRows(next);
-      const view = resultViewRef.current;
-      if (view) {
-        const { text, lines } = composeStagedResult(rows, next);
-        view.dispatch({
-          changes: { from: 0, to: view.state.doc.length, insert: text },
-          effects: setResultLines.of(lines),
-        });
-      }
-    },
-    [rows],
-  );
+  const applyStaged = useCallback((next: Set<number>) => {
+    stagedRowsRef.current = next;
+    setStagedRows(next);
+  }, []);
 
   const toggleRow = useCallback(
     (rowIndex: number) => {
@@ -252,36 +307,6 @@ export function StageFileEditor({
     stagedRowsRef.current = initial;
     setStagedRows(initial);
   }, [rows]);
-
-  // The editable result pane, seeded to the working tree (all changes staged).
-  // Rebuilt when the file changes; seeds the line metadata on creation.
-  useEffect(() => {
-    if (!lineEditable || !resultContainerRef.current) return;
-    const view = new EditorView({
-      state: EditorState.create({
-        doc: worktreeText,
-        extensions: [
-          lineNumbers(),
-          ...activeLineExtensions,
-          ...(language ? [language] : []),
-          editorThemeExtension(),
-          paneTheme,
-          EditorView.lineWrapping,
-          stageResultExtensions(toggleRow),
-        ],
-      }),
-      parent: resultContainerRef.current,
-    });
-    resultViewRef.current = view;
-    const { lines } = composeStagedResult(rows, stagedRowsRef.current);
-    view.dispatch({ effects: setResultLines.of(lines) });
-    const unregister = registerEditorView(view);
-    return () => {
-      unregister();
-      view.destroy();
-      resultViewRef.current = null;
-    };
-  }, [worktreeText, lineEditable, rows, toggleRow, language]);
 
   // Keep the two top panes vertically (and horizontally) in sync as you scroll.
   const syncingRef = useRef(false);
@@ -313,9 +338,9 @@ export function StageFileEditor({
   const onScrollHead = useCallback(() => syncScroll("head"), [syncScroll]);
   const onScrollWorktree = useCallback(() => syncScroll("worktree"), [syncScroll]);
 
-  // Scroll every pane to a fraction of its scrollable height (overview click).
+  // Scroll both panes to a fraction of their scrollable height (overview click).
   const seek = useCallback((fraction: number) => {
-    for (const view of [headViewRef.current, worktreeViewRef.current, resultViewRef.current]) {
+    for (const view of [headViewRef.current, worktreeViewRef.current]) {
       if (!view) continue;
       const max = view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight;
       view.scrollDOM.scrollTop = fraction * max;
@@ -346,7 +371,9 @@ export function StageFileEditor({
     [worktreeChanged, stagedRows],
   );
 
-  const handleStage = () => onStage(path, resultViewRef.current?.state.doc.toString() ?? worktreeText);
+  // The staged result is composed directly from the line selection (no separate
+  // result buffer): every change staged ⇒ the working tree; none ⇒ HEAD.
+  const handleStage = () => onStage(path, composeStagedText(rows, stagedRows));
   const handleReset = () => applyStaged(new Set(changedRowIndices(rows)));
 
   return (
@@ -375,6 +402,16 @@ export function StageFileEditor({
           {path}
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexShrink: 0 }}>
+          {lineEditable && (
+            <>
+              <Button size="sm" type="button" onClick={handleReset}>
+                Reset
+              </Button>
+              <Button variant="primary" size="sm" type="button" onClick={handleStage}>
+                Stage
+              </Button>
+            </>
+          )}
           {onDiscardFile && (
             <Button variant="danger" size="sm" onClick={() => onDiscardFile(path)}>
               Discard file
@@ -416,8 +453,7 @@ export function StageFileEditor({
         </div>
       ) : (
         <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
-          <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-          {/* Top: HEAD / Working tree, side by side */}
+          {/* HEAD / Working tree, side by side and row-for-row aligned */}
           <div
             style={{
               display: "grid",
@@ -430,54 +466,30 @@ export function StageFileEditor({
           >
             <ReadOnlyStagePane
               label="HEAD"
+              testId="head-pane"
               content={headText}
               changedLines={headChangedLineNos}
               stagedLines={headStagedLineNos}
               onToggle={onToggleHead}
               decorations={headDecorations}
+              lineNumberMap={headLineNumbers}
               language={language}
               onView={registerHeadView}
               onScroll={onScrollHead}
             />
             <ReadOnlyStagePane
               label="Working Tree"
+              testId="worktree-pane"
               content={worktreeText}
               changedLines={worktreeChangedLineNos}
               stagedLines={worktreeStagedLineNos}
               onToggle={onToggleWorktree}
               decorations={worktreeDecorations}
+              lineNumberMap={worktreeLineNumbers}
               language={language}
               onView={registerWorktreeView}
               onScroll={onScrollWorktree}
             />
-          </div>
-
-          {/* Bottom: editable staged result */}
-          <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "var(--space-1) var(--space-2)",
-                borderTop: "1px solid var(--color-border-subtle)",
-                borderBottom: "1px solid var(--color-border-subtle)",
-              }}
-            >
-              <span style={{ fontSize: "var(--font-size-sm)", fontWeight: 500, color: "var(--color-text-secondary)" }}>
-                Staged result
-              </span>
-              <div style={{ display: "flex", gap: "var(--space-2)" }}>
-                <Button size="sm" type="button" onClick={handleReset}>
-                  Reset
-                </Button>
-                <Button variant="primary" size="sm" type="button" onClick={handleStage}>
-                  Stage
-                </Button>
-              </div>
-            </div>
-            <div ref={resultContainerRef} data-testid="result-pane" style={{ flex: 1, minHeight: 0, overflow: "hidden" }} />
-          </div>
           </div>
           <ChangeOverview rows={rows} onSeek={seek} />
         </div>

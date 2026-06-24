@@ -162,3 +162,38 @@ export function headChangedLines(rows: DiffRow[]): PaneLine[] {
 export function worktreeChangedLines(rows: DiffRow[]): PaneLine[] {
   return paneChangedLines(rows, "added", "added");
 }
+
+/**
+ * Aligned pane text for the HEAD side: one output line per diff row so the HEAD
+ * and working-tree panes line up row-for-row. An `added` row (no line on the
+ * HEAD side) becomes a blank placeholder, rendered as a coloured gap. The result
+ * always has exactly `rows.length` lines.
+ */
+export function alignedHeadText(rows: DiffRow[]): string {
+  return rows.map((r) => (r.kind === "added" ? "" : r.text)).join("\n");
+}
+
+/**
+ * Aligned pane text for the working-tree side: one output line per diff row. A
+ * `removed` row (no line on the working-tree side) becomes a blank placeholder.
+ * Always has exactly `rows.length` lines, matching {@link alignedHeadText}.
+ */
+export function alignedWorktreeText(rows: DiffRow[]): string {
+  return rows.map((r) => (r.kind === "removed" ? "" : r.text)).join("\n");
+}
+
+/**
+ * Real 1-based file line numbers for each aligned HEAD row, or `null` for a
+ * placeholder row (an `added` row has no line on the HEAD side). Used to label
+ * the line-number gutter so it tracks the real file, not the padded pane.
+ */
+export function alignedHeadLineNumbers(rows: DiffRow[]): (number | null)[] {
+  let n = 0;
+  return rows.map((r) => (r.kind === "added" ? null : ++n));
+}
+
+/** Like {@link alignedHeadLineNumbers} for the working-tree side (`removed` → null). */
+export function alignedWorktreeLineNumbers(rows: DiffRow[]): (number | null)[] {
+  let n = 0;
+  return rows.map((r) => (r.kind === "removed" ? null : ++n));
+}

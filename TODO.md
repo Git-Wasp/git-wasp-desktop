@@ -85,7 +85,20 @@ between sections, and add new ideas under the right heading. Items marked
       would be a nice polish.
 - [ ] Add "removed" line to gutter in diff view when merging
 - [ ] Allow changing view when merging from side-by-side/split view to "inline" view
-- [ ] Remove unnecessary bottom panel in diff view when staging files (but not when handling merge conflicts!)
+- [x] Remove unnecessary bottom panel in diff view when staging files (but not
+      when handling merge conflicts!) — `StageFileEditor` dropped the editable
+      "Staged result" pane (it confusingly showed a full result even before you
+      staged anything); Stage/Reset moved to the header and the staged content is
+      now composed straight from the per-line selection (`composeStagedText`).
+      The two panes are now row-for-row aligned (GitKraken style): each diff row
+      is one line in both panes. The side that holds the changed text reads solid
+      (red removal in HEAD, green addition in Working Tree); the absent side shows
+      a neutral diagonal-hatch placeholder gap (`cm-diff-placeholder-line`, built
+      from `--color-border-default` over the surface). Real file line numbers are
+      kept in the gutter (placeholders blank) via new
+      `alignedHead/WorktreeText` + `alignedHead/WorktreeLineNumbers` helpers in
+      `lib/lineDiff.ts`. Removed the now-dead `stageResultPane.ts`. The merge
+      editor (`ConflictFileEditor`) is untouched — it keeps its Result pane.
 - [ ] Execute git hooks (pre-commit, pre-push) and show output in a built-in pane
 
 ## Merge editor (v2 refinements)
@@ -197,3 +210,6 @@ between sections, and add new ideas under the right heading. Items marked
       selection change re-renders only the affected rows. (Canvas keeps the
       selection band so graph lines stay unobscured — see earlier ordered-pass fix.)
 - [ ] Add ability to select multiple "unpushed" commits on the same branch and squash them.
+- [ ] Add the top left (under the tab) show a the current repo name and make it a "repo picker" to choose from 
+      recent repositories. Next to it show the current checked out branch, and also make that
+      a picker to choose from the available branches (local only)

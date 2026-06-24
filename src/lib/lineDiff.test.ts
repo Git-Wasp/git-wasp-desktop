@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  alignedHeadLineNumbers,
+  alignedHeadText,
+  alignedWorktreeLineNumbers,
+  alignedWorktreeText,
   changedRowIndices,
   composeStagedResult,
   composeStagedText,
@@ -113,5 +117,39 @@ describe("pane changed-line maps", () => {
     const lineNos = wt.map((l) => l.lineNo).sort((a, b) => a - b);
     // "B" (line 2) and "d" (line 4) are the added lines in the worktree pane.
     expect(lineNos).toEqual([2, 4]);
+  });
+});
+
+describe("aligned panes", () => {
+  it("pads the HEAD side with a blank placeholder opposite an insertion", () => {
+    // worktree inserts "b": rows = [ctx a, added b, ctx c, ctx ""].
+    const rows = diffLines("a\nc\n", "a\nb\nc\n");
+    expect(alignedHeadText(rows)).toBe("a\n\nc\n");
+    expect(alignedWorktreeText(rows)).toBe("a\nb\nc\n");
+  });
+
+  it("pads the working-tree side with a blank placeholder opposite a deletion", () => {
+    // worktree removes "b": rows = [ctx a, removed b, ctx c, ctx ""].
+    const rows = diffLines("a\nb\nc\n", "a\nc\n");
+    expect(alignedHeadText(rows)).toBe("a\nb\nc\n");
+    expect(alignedWorktreeText(rows)).toBe("a\n\nc\n");
+  });
+
+  it("gives both aligned panes the same line count (row-for-row alignment)", () => {
+    const rows = diffLines("a\nb\nc\n", "a\nB\nc\nd\n");
+    expect(alignedHeadText(rows).split("\n").length).toBe(rows.length);
+    expect(alignedWorktreeText(rows).split("\n").length).toBe(rows.length);
+  });
+
+  it("numbers real lines and leaves placeholders blank (null)", () => {
+    const inserted = diffLines("a\nc\n", "a\nb\nc\n");
+    // HEAD has no line opposite the inserted "b" → null at that row.
+    expect(alignedHeadLineNumbers(inserted)).toEqual([1, null, 2, 3]);
+    expect(alignedWorktreeLineNumbers(inserted)).toEqual([1, 2, 3, 4]);
+
+    const removed = diffLines("a\nb\nc\n", "a\nc\n");
+    // Working tree has no line opposite the removed "b" → null at that row.
+    expect(alignedHeadLineNumbers(removed)).toEqual([1, 2, 3, 4]);
+    expect(alignedWorktreeLineNumbers(removed)).toEqual([1, null, 2, 3]);
   });
 });
