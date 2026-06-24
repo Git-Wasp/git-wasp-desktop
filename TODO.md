@@ -122,6 +122,17 @@ between sections, and add new ideas under the right heading. Items marked
       one, so staging a different file's row doesn't move the selection).
 - [ ] Execute git hooks (pre-commit, pre-push) and show output in a built-in pane
 
+## PR refinements
+
+- [ ] Improve UX for opening PRs
+  - [ ] Select source branch automatically as current branch
+  - [ ] Select destination branch automatically as main
+  - [ ] Change branch inputs to select from local branches
+  - [ ] Allow adding title and description with formatting
+  - [ ] Add a "continue editing on GitHub" button to pass over to GitHub to open the PR
+  - [ ] Allow choosing an assignee (defaulting to @me)
+  - [ ] Allow adding one or more labels
+
 ## Merge editor (v2 refinements)
 
 - [x] Per-line (sub-block) selection of source vs current via gutter checkboxes
@@ -196,7 +207,11 @@ between sections, and add new ideas under the right heading. Items marked
       `[data-theme=github-dark|github-light]` token blocks. `applyTheme` now maps
       any built-in id to its `data-theme` value (dark stays the `:root` default),
       so further built-ins (e.g. Cobalt2) just need a token block + registry entry.
-- [ ] Further theming improvements - the current grey colours feel "brown" and need to be more "grey"
+- [x] Further theming improvements - the current grey colours feel "brown" and need to be more "grey"
+      — resolved without a code change: the default "Dark" theme is Monokai, whose
+      warm/brown greys are intentional and part of its character. The neutral grey
+      look is already provided by the built-in "GitHub Dark" theme, so the fix is
+      to use that theme rather than neutralise Monokai's palette.
 - [x] Allow choice of fonts, customization of default UI font size, default code editor font (monospace).
       Changes to be configurable from "settings" section and to persist between app reloads.
       — new Settings → Fonts section (`FontSettings`): UI font, code (monospace)
@@ -208,7 +223,16 @@ between sections, and add new ideas under the right heading. Items marked
       load/save/apply live in tested `lib/fonts.ts`; persisted to localStorage and
       applied on startup in `App`. The graph stays aligned (fixed `ROW_HEIGHT`,
       text just sizes within the row). A small live preview shows the fonts.
-- [ ] Allow default branch colour palette to be configurable (see pre-req in [Working Tree & Committing](#working-tree--committing))
+- [x] Allow default branch colour palette to be configurable — new Settings →
+      Graph colours section (`GraphColorSettings`) with a set of pre-built lane
+      palettes: Theme default, Bright, Pastel, Shades of blue/green/red, Ocean,
+      Sunset (live swatch preview). A palette overrides the eight
+      `--color-lane-0..7` tokens on the document root, so it applies independently
+      of the active theme (inline style beats the theme stylesheet) and survives
+      theme switches; "Theme default" clears the overrides so the theme's own lane
+      colours show. Palettes + load/save/apply live in tested `lib/graphPalettes.ts`;
+      persisted to localStorage and applied on startup in `App`. The graph
+      re-resolves lane colours on the existing `THEME_CHANGE_EVENT`.
 
 ## Branding
 

@@ -16,6 +16,7 @@ import { ResizeHandle } from "./components/common/ResizeHandle";
 import { usePersistedWidth } from "./lib/usePersistedWidth";
 import { usePersistedBoolean } from "./lib/usePersistedBoolean";
 import { applyFontPrefs, loadFontPrefs } from "./lib/fonts";
+import { applyGraphPalette, loadGraphPaletteId } from "./lib/graphPalettes";
 import { useRepoStore } from "./stores/repoStore";
 import { useGraphStore } from "./stores/graphStore";
 import { useGithubStore } from "./stores/githubStore";
@@ -79,6 +80,7 @@ export default function App() {
 
   useEffect(() => {
     applyFontPrefs(loadFontPrefs());
+    applyGraphPalette(loadGraphPaletteId());
   }, []);
 
   useEffect(() => {
