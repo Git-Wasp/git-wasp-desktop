@@ -8,7 +8,9 @@ import { useToastStore } from "../../stores/toastStore";
 import { ContextMenu, type MenuItem } from "../common/ContextMenu";
 import { PromptDialog } from "../common/PromptDialog";
 import { Button } from "../ui/Button";
-import { BranchIcon, PullIcon, PushIcon } from "../ui/icons";
+import { IconButton } from "../ui/IconButton";
+import { Tooltip } from "../ui/Tooltip";
+import { BranchIcon, PullIcon, PushIcon, TargetIcon } from "../ui/icons";
 
 const barStyle: React.CSSProperties = {
   display: "flex",
@@ -26,7 +28,7 @@ const PULL_MESSAGE: Record<string, string> = {
   merged: "Merged remote changes",
 };
 
-export function HistoryToolbar() {
+export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } = {}) {
   const {
     isFetching,
     isPulling,
@@ -36,6 +38,7 @@ export function HistoryToolbar() {
     push,
   } = useRemoteStore();
   const refresh = useGraphStore((s) => s.refresh);
+  const revealHead = useGraphStore((s) => s.revealHead);
   const { createBranch, checkoutBranch } = useRepoStore();
   const remoteInfo = useGithubStore((s) => s.remoteInfo);
   const loadMergeStatus = useMergeStore((s) => s.loadStatus);
@@ -96,6 +99,13 @@ export function HistoryToolbar() {
     setPullMenu({ x: rect?.left ?? 0, y: rect?.bottom ?? 0 });
   };
 
+  const handleJumpToHead = () => {
+    // Let the host leave the uncommitted-changes view so the selected HEAD
+    // commit's detail shows, then select + scroll to it.
+    onJumpToHead?.();
+    void revealHead();
+  };
+
   const handleCreateBranch = async (name: string) => {
     setShowNewBranch(false);
     await createBranch(name);
@@ -129,6 +139,15 @@ export function HistoryToolbar() {
         <BranchIcon />
         New branch
       </Button>
+
+      {/* Right-aligned: jump to the checked-out (HEAD) commit. */}
+      <div style={{ marginLeft: "auto" }}>
+        <Tooltip label="Scroll to current HEAD">
+          <IconButton aria-label="Scroll to current HEAD" onClick={handleJumpToHead}>
+            <TargetIcon />
+          </IconButton>
+        </Tooltip>
+      </div>
 
       {pullMenu && (
         <ContextMenu x={pullMenu.x} y={pullMenu.y} items={pullItems} onClose={() => setPullMenu(null)} />

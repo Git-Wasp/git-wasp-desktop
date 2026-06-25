@@ -182,6 +182,35 @@ describe("CommitGraph working-tree row", () => {
     expect(selectCommit).not.toHaveBeenCalled();
   });
 
+  it("highlights the working-tree row as selected and clears any commit selection", () => {
+    useGraphStore.setState({
+      viewport: {
+        totalCount: 1,
+        offset: 0,
+        nodes: [
+          node({
+            oid: "WORKING_TREE",
+            summary: "3 uncommitted changes",
+            isWorkingTree: true,
+            changeCount: 3,
+          }),
+        ],
+      },
+      // A commit was previously selected (e.g. HEAD) — it should stop reading as
+      // selected once the working-tree row is chosen.
+      selection: { anchor: "x", focus: "x", range: new Set(["x"]) },
+      selectedOid: "x",
+    });
+    render(<CommitGraph onViewChanges={vi.fn()} />);
+
+    fireEvent.click(screen.getByText("3 uncommitted changes"));
+
+    const { selection, selectedOid } = useGraphStore.getState();
+    expect(selection.range.has("WORKING_TREE")).toBe(true);
+    expect(selection.range.has("x")).toBe(false);
+    expect(selectedOid).toBeNull();
+  });
+
   it("does not open a context menu on the working-tree row", () => {
     useGraphStore.setState({
       viewport: {

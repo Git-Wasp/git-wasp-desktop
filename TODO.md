@@ -395,6 +395,13 @@ between sections, and add new ideas under the right heading. Items marked
       accent arrow = renamed/copied), with an accessible label. Replaces the
       commit-detail file list's text symbols and the staging panel's plain
       A/M/D/R letters, so both lists read consistently.
-- [ ] When the uncommitted changes are selected at the top of the graph,
+- [x] When the uncommitted changes are selected at the top of the graph,
       show a clear "currently selected" indicator. Currently the checked out
       head line still shows as "selected" which is confusing
+      — clicking the working-tree row now selects it like a commit: new
+      `selectWorkingTree` graph-store action puts the sentinel `WORKING_TREE` oid
+      in the selection range (so the row's branch/message cells and the canvas
+      selection band all highlight) and clears `selectedOid`, so the previously
+      selected commit (often HEAD) stops reading as selected. `selectedOid` is
+      nulled rather than set to the sentinel so the commit-detail panel never
+      tries to resolve it. Selecting any commit afterwards replaces it as before.

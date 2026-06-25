@@ -2,6 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import type { GraphNode, GraphViewport } from "../types/graph";
 
+// Sentinel oid of the synthetic working-tree (uncommitted changes) node — must
+// match the backend graph layout (`graph/layout.rs`). Selecting it highlights
+// that row without pointing the commit-detail panel at a real commit.
+export const WORKING_TREE_OID = "WORKING_TREE";
+
 interface Selection {
   anchor: string | null;
   focus: string | null;
@@ -27,7 +32,9 @@ interface GraphStore {
   fetchViewport: (offset: number, limit: number) => Promise<void>;
   refresh: () => Promise<void>;
   selectCommit: (oid: string, extend: boolean) => void;
+  selectWorkingTree: () => void;
   revealCommit: (oid: string) => Promise<void>;
+  revealHead: () => Promise<void>;
   clearSelection: () => void;
 }
 
@@ -162,6 +169,22 @@ export const useGraphStore = create<GraphStore>((set, get) => {
     });
   },
 
+  // Select the working-tree (uncommitted changes) row: highlight it like a
+  // commit, but clear `selectedOid` so the commit-detail panel doesn't try to
+  // resolve the sentinel oid. This is what makes the uncommitted row read as
+  // "currently selected" instead of leaving the previously selected commit
+  // (often HEAD) looking selected.
+  selectWorkingTree: () => {
+    set({
+      selection: {
+        anchor: WORKING_TREE_OID,
+        focus: WORKING_TREE_OID,
+        range: new Set([WORKING_TREE_OID]),
+      },
+      selectedOid: null,
+    });
+  },
+
   // Select a commit by oid (e.g. a branch head from the sidebar) and ask the
   // graph to scroll to it. Selecting happens immediately so the detail panel
   // updates even if the commit isn't in the loaded slice; the row lookup then
@@ -176,6 +199,18 @@ export const useGraphStore = create<GraphStore>((set, get) => {
       if (row !== null) set({ scrollToRow: row });
     } catch {
       // No row (detached/unreachable) — selection still stands.
+    }
+  },
+
+  // Select the checked-out (HEAD) commit and scroll it into view, wherever the
+  // user has scrolled to. Resolves HEAD's oid from the backend (it may not be in
+  // the loaded slice) and delegates to revealCommit.
+  revealHead: async () => {
+    try {
+      const head = await invoke<{ oid: string } | null>("get_head_commit_info");
+      if (head?.oid) await get().revealCommit(head.oid);
+    } catch {
+      // No HEAD (unborn branch) — nothing to reveal.
     }
   },
 

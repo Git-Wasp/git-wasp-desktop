@@ -289,6 +289,31 @@ export function InlineViewIcon({ size = 14, title }: IconProps) {
   );
 }
 
+/** A crosshair / target — jump to and select the checked-out (HEAD) commit. */
+export function TargetIcon({ size = 14, title }: IconProps) {
+  return (
+    <svg
+      data-icon="target"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      style={{ flexShrink: 0 }}
+    >
+      {title && <title>{title}</title>}
+      <circle cx="12" cy="12" r="7" />
+      <circle cx="12" cy="12" r="2.5" />
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+    </svg>
+  );
+}
+
 export function LaptopIcon({ size = 12, title }: IconProps) {
   return (
     <svg

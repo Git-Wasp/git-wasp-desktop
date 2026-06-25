@@ -133,7 +133,8 @@ export function CommitGraph({
 } = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { viewport, selection, fetchViewport, selectCommit, refresh } = useGraphStore();
+  const { viewport, selection, fetchViewport, selectCommit, selectWorkingTree, refresh } =
+    useGraphStore();
   const scrollToRow = useGraphStore((s) => s.scrollToRow);
   const { currentRepo, createBranch, checkoutBranch, renameBranch, deleteBranch } = useRepoStore();
   const startMerge = useMergeStore((s) => s.startMerge);
@@ -261,13 +262,16 @@ export function CommitGraph({
       // Swallow the click that ends a drag so it doesn't also select.
       if (drag.consumeClick()) return;
       if (node.isWorkingTree) {
+        // Highlight the uncommitted-changes row (and clear any commit selection)
+        // so it reads as the current selection, then open the changes view.
+        selectWorkingTree();
         onViewChanges?.();
         return;
       }
       selectCommit(node.oid, shiftKey);
       onCommitSelect?.();
     },
-    [drag, selectCommit, onViewChanges, onCommitSelect],
+    [drag, selectCommit, selectWorkingTree, onViewChanges, onCommitSelect],
   );
 
   const handleRowContextMenu = useCallback(

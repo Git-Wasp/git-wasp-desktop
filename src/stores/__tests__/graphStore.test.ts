@@ -182,6 +182,42 @@ describe("graphStore", () => {
     expect(useGraphStore.getState().scrollToRow).toBeNull();
   });
 
+  it("selectWorkingTree highlights the working-tree row and clears the commit selection", () => {
+    useGraphStore.setState({ viewport: makeViewport() });
+    // Start with a commit selected (e.g. HEAD).
+    useGraphStore.getState().selectCommit("bbb", false);
+
+    useGraphStore.getState().selectWorkingTree();
+
+    const { selection, selectedOid } = useGraphStore.getState();
+    expect(selection.range.has("WORKING_TREE")).toBe(true);
+    expect(selection.range.has("bbb")).toBe(false);
+    expect(selection.range.size).toBe(1);
+    // No real commit is selected, so the detail panel won't resolve the sentinel.
+    expect(selectedOid).toBeNull();
+  });
+
+  it("revealHead resolves HEAD's oid and reveals it (selects + scrolls)", async () => {
+    mockInvoke
+      .mockResolvedValueOnce({ oid: "bbb", message: "head", pushed: false }) // get_head_commit_info
+      .mockResolvedValueOnce(1); // find_commit_row
+
+    await useGraphStore.getState().revealHead();
+
+    expect(mockInvoke).toHaveBeenCalledWith("get_head_commit_info");
+    const { selectedOid, scrollToRow } = useGraphStore.getState();
+    expect(selectedOid).toBe("bbb");
+    expect(scrollToRow).toBe(1);
+  });
+
+  it("revealHead is a no-op on an unborn branch (no HEAD)", async () => {
+    mockInvoke.mockResolvedValueOnce(null); // get_head_commit_info
+
+    await useGraphStore.getState().revealHead();
+
+    expect(useGraphStore.getState().selectedOid).toBeNull();
+  });
+
   it("clearSelection resets to empty", () => {
     useGraphStore.setState({ viewport: makeViewport() });
     useGraphStore.getState().selectCommit("aaa", false);

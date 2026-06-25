@@ -165,7 +165,7 @@ export default function App() {
                 flexDirection: "column",
               }}
             >
-              <HistoryToolbar />
+              <HistoryToolbar onJumpToHead={exitUncommitted} />
               <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
                 {showingUncommittedDiff && wtSelectedPath && wtStageDiff ? (
                   <StageFileEditor

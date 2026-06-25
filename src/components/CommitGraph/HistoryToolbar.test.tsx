@@ -87,6 +87,18 @@ describe("HistoryToolbar", () => {
     expect(useRepoStore.getState().checkoutBranch).toHaveBeenCalledWith("feat/x");
   });
 
+  it("jumps to the checked-out commit and leaves the uncommitted view", () => {
+    const revealHead = vi.fn().mockResolvedValue(undefined);
+    useGraphStore.setState({ revealHead });
+    const onJumpToHead = vi.fn();
+
+    render(<HistoryToolbar onJumpToHead={onJumpToHead} />);
+    fireEvent.click(screen.getByRole("button", { name: /scroll to current head/i }));
+
+    expect(onJumpToHead).toHaveBeenCalled();
+    expect(revealHead).toHaveBeenCalled();
+  });
+
   it("disables push and pull when there is no remote", () => {
     useGithubStore.setState({ remoteInfo: null });
     render(<HistoryToolbar />);
