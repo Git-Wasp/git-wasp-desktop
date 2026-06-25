@@ -347,9 +347,26 @@ between sections, and add new ideas under the right heading. Items marked
       icon is hidden while the button is loading (the spinner takes its place);
       icons are `aria-hidden` so button accessible names are unchanged.
 - [ ] Add ability to select multiple "unpushed" commits on the same branch and squash them.
-- [ ] Add the top left (under the tab) show a the current repo name and make it a "repo picker" to choose from 
+- [x] Add the top left (under the tab) show a the current repo name and make it a "repo picker" to choose from 
       recent repositories. Next to it show the current checked out branch, and also make that
       a picker to choose from the available branches (local only). Remove the unnecessary "open repository" button
+      — new NavBar pickers on the left, under the tab bar: `RepoPicker` (trigger
+      shows the current repo name, or "Open a repository" when none; panel lists
+      recent repos + an "Open repository…" folder action) and `BranchPicker`
+      (trigger shows the checked-out branch; panel lists local branches, filterable
+      once there are ≥8, and checking one out refreshes the graph). Both built on a
+      new reusable `ui/Dropdown` (anchored popover with `DropdownItem/Label/Divider`,
+      close on outside-click/Escape, `onOpenChange`). Removed the standalone
+      "Open Repository…" button from the NavBar (its function now lives in the repo
+      picker). The sidebar's repo/branch/recent sections are unchanged.
+      Refinements: taller NavBar (44px) + taller picker triggers (md control
+      height). The branch picker lists the current branch first, then other locals,
+      then remote-only branches (remotes whose short name already exists locally are
+      hidden to avoid duplicates; symbolic `origin/HEAD` dropped). Rows carry the
+      graph's pill icons — laptop (local) / GitHub (remote), check for the current.
+      Choosing a remote branch checks it out via a new backend
+      `checkout_remote_branch` that creates a local tracking branch of the same
+      short name (sets upstream) and switches to it.
 - [x] Make the left side bar collapsible — a sidebar toggle (panel icon) at the
       far left of the `NavBar` hides/shows the left `Sidebar` (and its resize
       handle); collapsed state persists via `usePersistedBoolean`

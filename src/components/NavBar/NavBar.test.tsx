@@ -1,17 +1,18 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
-import { open } from "@tauri-apps/plugin-dialog";
 import { NavBar } from "./NavBar";
 import { useRepoStore } from "../../stores/repoStore";
-
-const mockOpen = vi.mocked(open);
 
 beforeEach(() => {
   vi.clearAllMocks();
   useRepoStore.setState({
     currentRepo: { name: "gitclient", path: "/repo", headBranch: "main" },
+    recentRepos: [],
+    branches: [],
     openRepo: vi.fn().mockResolvedValue(undefined),
+    loadRecentRepos: vi.fn().mockResolvedValue(undefined),
+    checkoutBranch: vi.fn().mockResolvedValue(undefined),
   });
 });
 
@@ -41,12 +42,14 @@ describe("NavBar", () => {
     expect(onViewChange).toHaveBeenCalledWith("prs");
   });
 
-  it("hides the repo-specific view tabs when no repo is open, but keeps Settings and Open Repository", () => {
+  it("hides the view tabs and branch picker when no repo is open, but keeps Settings and the repo picker", () => {
     useRepoStore.setState({ currentRepo: null });
     render(<NavBar view="history" onViewChange={vi.fn()} />);
     expect(screen.queryByRole("tab", { name: "History" })).toBeNull();
     expect(screen.getByRole("tab", { name: /settings/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /open repository/i })).toBeInTheDocument();
+    // The repo picker stands in for the removed "Open Repository" button.
+    expect(screen.getByRole("button", { name: /repository picker/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /branch picker/i })).toBeNull();
   });
 
   it("shows the sidebar toggle only when an onToggleSidebar handler is given", () => {
@@ -73,12 +76,11 @@ describe("NavBar", () => {
     expect(screen.getByRole("button", { name: "Show sidebar" })).toBeInTheDocument();
   });
 
-  it("opens a chosen folder as a repo", async () => {
-    mockOpen.mockResolvedValueOnce("/picked/repo");
+  it("shows the repo and branch pickers when a repo is open", () => {
     render(<NavBar view="history" onViewChange={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: /open repository/i }));
-    await waitFor(() =>
-      expect(useRepoStore.getState().openRepo).toHaveBeenCalledWith("/picked/repo"),
-    );
+    expect(screen.getByRole("button", { name: /repository picker/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /branch picker/i })).toBeInTheDocument();
+    expect(screen.getByText("gitclient")).toBeInTheDocument();
+    expect(screen.getByText("main")).toBeInTheDocument();
   });
 });

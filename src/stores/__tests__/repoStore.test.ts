@@ -63,6 +63,19 @@ describe("repoStore", () => {
     expect(useRepoStore.getState().currentRepo).toEqual(updatedRepo);
   });
 
+  it("checkoutRemoteBranch calls checkout_remote_branch and updates currentRepo", async () => {
+    const updatedRepo = { name: "r", path: "/p", headBranch: "release" };
+    mockInvoke.mockResolvedValueOnce(updatedRepo); // checkout_remote_branch
+    mockInvoke.mockResolvedValueOnce([]); // list_branches (loadBranches)
+
+    await useRepoStore.getState().checkoutRemoteBranch("origin/release");
+
+    expect(mockInvoke).toHaveBeenCalledWith("checkout_remote_branch", {
+      remoteRef: "origin/release",
+    });
+    expect(useRepoStore.getState().currentRepo).toEqual(updatedRepo);
+  });
+
   it("openRepo records the tab list and active path", async () => {
     const repo = { name: "myrepo", path: "/tmp/myrepo", headBranch: "main" };
     mockByCommand({ open_repo: repo, list_open_repos: [repo] });

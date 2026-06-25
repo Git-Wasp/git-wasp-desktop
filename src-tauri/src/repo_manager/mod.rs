@@ -32,6 +32,29 @@ fn log_worktree_state(repo: &Repository, label: &str) {
     }
 }
 
+/// Check out an existing local branch: update the working tree to its tree and
+/// point HEAD at it. Logs the working-tree dirty counts on either side (debug)
+/// to diagnose checkouts that leave the tree unexpectedly modified.
+fn checkout_local_branch(repo: &Repository, branch_name: &str) -> anyhow::Result<()> {
+    log_worktree_state(repo, "checkout: pre");
+    let branch = repo
+        .find_branch(branch_name, BranchType::Local)
+        .with_context(|| format!("branch not found: {branch_name}"))?;
+    let obj = branch
+        .get()
+        .peel(ObjectType::Commit)
+        .context("could not resolve branch to commit")?;
+    let head_ref = branch.get().name().unwrap().to_string();
+    log::debug!(target: "git", "checkout: target={} head_ref={head_ref}", obj.id());
+    let mut checkout = git2::build::CheckoutBuilder::new();
+    checkout.safe();
+    repo.checkout_tree(&obj, Some(&mut checkout))
+        .context("checkout failed — working tree has conflicting changes")?;
+    repo.set_head(&head_ref).context("could not update HEAD")?;
+    log_worktree_state(repo, "checkout: post");
+    Ok(())
+}
+
 /// A single open repository tab, carrying its own in-progress operation so a
 /// merge (or future rebase) in one tab can't leak into another.
 struct OpenRepo {
@@ -240,30 +263,39 @@ impl RepoManager {
 
     pub fn checkout_branch(&self, branch_name: &str) -> anyhow::Result<RepoInfo> {
         log::info!(target: "git", "checkout: branch={branch_name}");
-        self.with_repo(|repo| -> anyhow::Result<()> {
-            // Diagnostics: the working-tree state on either side of the checkout.
-            // A clean pre-state that turns dirty post-checkout points the finger
-            // at the checkout itself (e.g. index/filter mismatch) rather than at
-            // pre-existing local edits. Only computed when debug logging is on.
-            log_worktree_state(repo, "checkout: pre");
-            let branch = repo
-                .find_branch(branch_name, BranchType::Local)
-                .with_context(|| format!("branch not found: {branch_name}"))?;
-            let obj = branch
-                .get()
-                .peel(ObjectType::Commit)
-                .context("could not resolve branch to commit")?;
-            let head_ref = branch.get().name().unwrap().to_string();
-            log::debug!(target: "git", "checkout: target={} head_ref={head_ref}", obj.id());
-            let mut checkout = git2::build::CheckoutBuilder::new();
-            checkout.safe();
-            repo.checkout_tree(&obj, Some(&mut checkout))
-                .context("checkout failed — working tree has conflicting changes")?;
-            repo.set_head(&head_ref).context("could not update HEAD")?;
-            log_worktree_state(repo, "checkout: post");
-            Ok(())
-        })??;
+        self.with_repo(|repo| checkout_local_branch(repo, branch_name))??;
         log::info!(target: "git", "checkout: branch={branch_name} ok");
+        self.get_current()?.ok_or_else(|| anyhow::anyhow!("no repo after checkout"))
+    }
+
+    /// Check out a remote-tracking branch (e.g. `origin/feature`) by creating a
+    /// local branch of the same short name that tracks it, then checking that
+    /// out. If a matching local branch already exists, just switches to it.
+    pub fn checkout_remote_branch(&self, remote_ref: &str) -> anyhow::Result<RepoInfo> {
+        log::info!(target: "git", "checkout remote: {remote_ref}");
+        self.with_repo(|repo| -> anyhow::Result<()> {
+            // Strip the remote name ("origin/feature/x" -> "feature/x").
+            let local_name = remote_ref.split_once('/').map(|(_, rest)| rest).unwrap_or(remote_ref);
+
+            if repo.find_branch(local_name, BranchType::Local).is_err() {
+                let remote = repo
+                    .find_branch(remote_ref, BranchType::Remote)
+                    .with_context(|| format!("remote branch not found: {remote_ref}"))?;
+                let commit = remote
+                    .get()
+                    .peel_to_commit()
+                    .context("remote branch has no commit")?;
+                let mut local = repo
+                    .branch(local_name, &commit, false)
+                    .with_context(|| format!("failed to create local branch: {local_name}"))?;
+                // Track the remote so pull/push and ahead/behind work; non-fatal.
+                let _ = local.set_upstream(Some(remote_ref));
+                log::info!(target: "git", "checkout remote: created local {local_name} tracking {remote_ref}");
+            }
+
+            checkout_local_branch(repo, local_name)
+        })??;
+        log::info!(target: "git", "checkout remote: {remote_ref} ok");
         self.get_current()?.ok_or_else(|| anyhow::anyhow!("no repo after checkout"))
     }
 
@@ -483,6 +515,10 @@ impl AppState {
         self.manager.checkout_branch(branch_name)
     }
 
+    pub fn checkout_remote_branch(&self, remote_ref: &str) -> anyhow::Result<RepoInfo> {
+        self.manager.checkout_remote_branch(remote_ref)
+    }
+
     pub fn create_branch(&self, name: &str, start_oid: Option<&str>) -> anyhow::Result<BranchInfo> {
         self.manager.create_branch(name, start_oid)
     }
@@ -634,6 +670,38 @@ mod tests {
         assert!(result.is_ok(), "{:?}", result.err());
         let info = result.unwrap();
         assert!(!info.name.is_empty());
+    }
+
+    #[test]
+    fn checkout_remote_branch_creates_tracking_local_and_checks_it_out() {
+        let (dir, repo) = make_git_repo_with_commit();
+        // Simulate a clone: an "origin" remote plus a remote-tracking branch.
+        repo.remote("origin", "https://example.com/repo.git").unwrap();
+        let head_id = repo.head().unwrap().peel_to_commit().unwrap().id();
+        repo.reference("refs/remotes/origin/feature", head_id, true, "remote branch")
+            .unwrap();
+        drop(repo);
+
+        let manager = RepoManager::new();
+        manager.open(dir.path().to_str().unwrap()).unwrap();
+        manager.checkout_remote_branch("origin/feature").unwrap();
+
+        manager
+            .with_repo(|r| {
+                let b = r.find_branch("feature", BranchType::Local).expect("local branch created");
+                assert!(b.is_head(), "feature should be checked out");
+                let upstream = b.upstream().unwrap();
+                assert_eq!(upstream.name().unwrap().unwrap(), "origin/feature");
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn checkout_remote_branch_errors_when_remote_missing() {
+        let (dir, _repo) = make_git_repo_with_commit();
+        let manager = RepoManager::new();
+        manager.open(dir.path().to_str().unwrap()).unwrap();
+        assert!(manager.checkout_remote_branch("origin/nope").is_err());
     }
 
     #[test]

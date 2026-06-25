@@ -22,6 +22,7 @@ interface RepoStore {
   loadRecentRepos: () => Promise<void>;
   loadBranches: () => Promise<void>;
   checkoutBranch: (name: string) => Promise<void>;
+  checkoutRemoteBranch: (remoteRef: string) => Promise<void>;
   createBranch: (name: string, startPoint?: string) => Promise<void>;
   renameBranch: (oldName: string, newName: string) => Promise<void>;
   deleteBranch: (name: string) => Promise<void>;
@@ -103,6 +104,14 @@ export const useRepoStore = create<RepoStore>((set, get) => {
       const repo = await invoke<RepoInfo>("checkout_branch", {
         branchName: name,
       });
+      set({ currentRepo: repo });
+      await get().loadBranches();
+    },
+
+    // Check out a remote-tracking branch (e.g. "origin/feature"): the backend
+    // creates a local tracking branch of the same short name and switches to it.
+    checkoutRemoteBranch: async (remoteRef: string) => {
+      const repo = await invoke<RepoInfo>("checkout_remote_branch", { remoteRef });
       set({ currentRepo: repo });
       await get().loadBranches();
     },

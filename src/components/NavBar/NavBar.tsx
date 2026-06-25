@@ -1,9 +1,9 @@
-import { open } from "@tauri-apps/plugin-dialog";
 import type { CSSProperties } from "react";
 import { useRepoStore } from "../../stores/repoStore";
-import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { SidebarIcon } from "../ui/icons";
+import { RepoPicker } from "./RepoPicker";
+import { BranchPicker } from "./BranchPicker";
 
 export type View = "history" | "prs" | "settings";
 
@@ -16,7 +16,7 @@ const barStyle: CSSProperties = {
   display: "flex",
   alignItems: "stretch",
   flexShrink: 0,
-  height: 36,
+  height: 44,
   padding: "0 var(--space-2)",
   gap: "var(--space-1)",
   background: "var(--color-bg-panel)",
@@ -40,11 +40,21 @@ function tabStyle(active: boolean): CSSProperties {
   };
 }
 
+const dividerStyle: CSSProperties = {
+  alignSelf: "center",
+  width: 1,
+  height: 18,
+  margin: "0 var(--space-1)",
+  background: "var(--color-border-subtle)",
+  flexShrink: 0,
+};
+
 /**
- * Primary navigation strip beneath the repo tab bar: view tabs (History /
- * Changes / PRs / Settings) plus the Open Repository action. Always rendered, so
- * a repo can be opened (and Settings reached) even with nothing open yet; the
- * repo-specific view tabs only appear once a repo is open.
+ * Primary navigation strip beneath the repo tab bar: a repo picker (current repo
+ * + recents + open) and branch picker (current branch + checkout) on the left,
+ * then the view tabs (History / PRs) and Settings. Always rendered, so a repo
+ * can be opened (and Settings reached) even with nothing open yet; the
+ * repo-specific view tabs and branch picker only appear once a repo is open.
  */
 export function NavBar({
   view,
@@ -58,14 +68,6 @@ export function NavBar({
   onToggleSidebar?: () => void;
 }) {
   const currentRepo = useRepoStore((s) => s.currentRepo);
-  const openRepo = useRepoStore((s) => s.openRepo);
-
-  const handleOpenFolder = async () => {
-    const selected = await open({ directory: true, multiple: false });
-    if (typeof selected === "string") {
-      await openRepo(selected);
-    }
-  };
 
   return (
     <div style={barStyle} role="tablist" aria-label="Views">
@@ -81,6 +83,15 @@ export function NavBar({
           </IconButton>
         </div>
       )}
+
+      {/* Repo + branch pickers (top-left). */}
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", minWidth: 0 }}>
+        <RepoPicker />
+        <BranchPicker />
+      </div>
+
+      {currentRepo && <div style={dividerStyle} />}
+
       {currentRepo &&
         VIEW_TABS.map((tab) => (
           <button
@@ -104,11 +115,6 @@ export function NavBar({
       >
         ⚙ Settings
       </button>
-      <div style={{ display: "flex", alignItems: "center", paddingLeft: "var(--space-2)" }}>
-        <Button variant="primary" size="sm" onClick={handleOpenFolder}>
-          Open Repository…
-        </Button>
-      </div>
     </div>
   );
 }

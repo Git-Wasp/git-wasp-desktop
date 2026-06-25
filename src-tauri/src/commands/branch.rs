@@ -35,6 +35,14 @@ pub async fn checkout_branch(
 }
 
 #[tauri::command]
+pub async fn checkout_remote_branch(
+    remote_ref: String,
+    state: State<'_, AppState>,
+) -> Result<RepoInfo, String> {
+    state.checkout_remote_branch(&remote_ref).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn create_branch(
     name: String,
     start_point: Option<String>,

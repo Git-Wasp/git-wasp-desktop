@@ -63,6 +63,7 @@ pub fn run() {
             // Branches
             commands::branch::list_branches,
             commands::branch::checkout_branch,
+            commands::branch::checkout_remote_branch,
             commands::branch::create_branch,
             commands::branch::rename_branch,
             commands::branch::delete_branch,
