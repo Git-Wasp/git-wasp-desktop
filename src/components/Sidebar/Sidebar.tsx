@@ -38,11 +38,11 @@ const branchEmptyHintStyle: CSSProperties = {
 };
 
 export function Sidebar({ width = 220 }: { width?: number }) {
-  const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, loadBranches, checkoutBranch, createBranch, deleteBranch } =
+  const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, checkoutBranch, createBranch, deleteBranch } =
     useRepoStore();
   const { fetchViewport, revealCommit } = useGraphStore();
-  const { remoteInfo, detectRemote } = useGithubStore();
-  const { aheadBehind, loadAheadBehind } = useRemoteStore();
+  const { remoteInfo } = useGithubStore();
+  const { aheadBehind } = useRemoteStore();
   const { status: operationStatus, startMerge } = useMergeStore();
   const [newBranchName, setNewBranchName] = useState("");
   const [showNewBranch, setShowNewBranch] = useState(false);
@@ -57,16 +57,9 @@ export function Sidebar({ width = 220 }: { width?: number }) {
     loadRecentRepos();
   }, [loadRecentRepos]);
 
-  useEffect(() => {
-    if (currentRepo) {
-      loadBranches();
-      loadAheadBehind();
-      // remoteInfo is detected once at startup; re-detect whenever the open
-      // repo changes so switching to a repo with a different (or no) GitHub
-      // remote is reflected in the PR panel and clone/connect flows.
-      detectRemote();
-    }
-  }, [currentRepo, loadBranches, loadAheadBehind, detectRemote]);
+  // Branch list, ahead/behind, and remote detection are loaded at the app root
+  // (App) on repo change, so they stay correct even when this sidebar is
+  // collapsed (and thus unmounted).
 
   const handleRecentClick = async (path: string) => {
     await openRepo(path);

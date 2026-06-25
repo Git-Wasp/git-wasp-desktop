@@ -22,6 +22,7 @@ import { useRepoStore } from "./stores/repoStore";
 import { useGraphStore } from "./stores/graphStore";
 import { useCommitFileStore } from "./stores/commitFileStore";
 import { useGithubStore } from "./stores/githubStore";
+import { useRemoteStore } from "./stores/remoteStore";
 import { useMergeStore } from "./stores/mergeStore";
 import { useThemeStore } from "./stores/themeStore";
 import { useWorkingTreeStore } from "./stores/workingTreeStore";
@@ -29,14 +30,15 @@ import { useWorkingTreeStore } from "./stores/workingTreeStore";
 type View = "history" | "prs" | "settings";
 
 export default function App() {
-  const { loadCurrentRepo, loadOpenRepos, currentRepo } = useRepoStore();
+  const { loadCurrentRepo, loadOpenRepos, currentRepo, loadBranches } = useRepoStore();
   const { selectedOid } = useGraphStore();
   const {
     path: commitFilePath,
     contents: commitFileContents,
     clear: clearCommitFile,
   } = useCommitFileStore();
-  const { init, setPrDraft } = useGithubStore();
+  const { init, setPrDraft, detectRemote } = useGithubStore();
+  const loadAheadBehind = useRemoteStore((s) => s.loadAheadBehind);
   const { status: operationStatus, loadStatus } = useMergeStore();
   const { initTheme } = useThemeStore();
   const {
@@ -85,6 +87,18 @@ export default function App() {
     loadCurrentRepo();
     loadOpenRepos();
   }, [loadCurrentRepo, loadOpenRepos]);
+
+  // Load everything scoped to the active repo whenever it changes. This lives at
+  // the app root (not in the Sidebar) so it runs even when the sidebar is
+  // collapsed — otherwise the remote wouldn't be detected and the push/pull
+  // buttons (gated on a detected remote) would stay disabled.
+  const repoPath = currentRepo?.path ?? null;
+  useEffect(() => {
+    if (!repoPath) return;
+    loadBranches();
+    detectRemote();
+    loadAheadBehind();
+  }, [repoPath, loadBranches, detectRemote, loadAheadBehind]);
 
   useEffect(() => {
     initTheme();
