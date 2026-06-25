@@ -208,6 +208,76 @@ describe("StageFileEditor", () => {
     expect(overview!.children.length).toBe(1);
   });
 
+  describe("read-only mode", () => {
+    it("renders the diff with custom labels and no staging controls", async () => {
+      const { container } = render(
+        <StageFileEditor
+          readOnly
+          path="f.txt"
+          contents={modified}
+          leftLabel="Parent"
+          rightLabel="This commit"
+          onStage={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByText("Parent")).toBeInTheDocument();
+      expect(screen.getByText("This commit")).toBeInTheDocument();
+      // No staging affordances.
+      expect(screen.queryByRole("button", { name: "Stage" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Reset" })).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(pane(container, "head-pane").querySelector(".cm-diff-del-line")).not.toBeNull();
+        expect(pane(container, "worktree-pane").querySelector(".cm-diff-add-line")).not.toBeNull();
+      });
+      expect(container.querySelector(".cm-stage-toggle")).toBeNull();
+    });
+
+    it("keeps the split/inline view toggle", () => {
+      render(<StageFileEditor readOnly path="f.txt" contents={modified} onStage={vi.fn()} />);
+      expect(screen.getByRole("button", { name: "Side-by-side view" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Inline view" })).toBeInTheDocument();
+    });
+
+    it("renders a deletion (empty new side) as a diff rather than a fallback", async () => {
+      const deleted: StageFileContents = {
+        headContent: "a\nb\n",
+        worktreeContent: "",
+        isBinary: false,
+        worktreeExists: false,
+      };
+      const { container } = render(
+        <StageFileEditor readOnly path="f.txt" contents={deleted} onStage={vi.fn()} />,
+      );
+
+      expect(screen.queryByText(/can't be staged/i)).not.toBeInTheDocument();
+      await waitFor(() =>
+        expect(pane(container, "head-pane").querySelector(".cm-diff-del-line")).not.toBeNull(),
+      );
+    });
+
+    it("shows a no-preview message (no stage button) for binary files", () => {
+      const binary: StageFileContents = {
+        headContent: "",
+        worktreeContent: "",
+        isBinary: true,
+        worktreeExists: true,
+      };
+      render(
+        <StageFileEditor
+          readOnly
+          path="logo.png"
+          contents={binary}
+          onStage={vi.fn()}
+          onStageWholeFile={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByText(/no preview/i)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Stage whole file" })).not.toBeInTheDocument();
+    });
+  });
+
   it("falls back to whole-file staging for binary files", async () => {
     const onStageWholeFile = vi.fn();
     const binary: StageFileContents = {

@@ -49,6 +49,13 @@ interface StageFileEditorProps {
   onStageWholeFile?: (path: string) => void;
   onDiscardFile?: (path: string) => void;
   onClose?: () => void;
+  /** Read-only mode: same diff surface (split/inline, red/green, syntax) but
+   *  with no staging affordances — used to view a file's changes in a committed
+   *  commit. Hides the stage gutters and Stage/Reset/Discard actions. */
+  readOnly?: boolean;
+  /** Pane labels for the two sides (defaults suit staging). */
+  leftLabel?: string;
+  rightLabel?: string;
 }
 
 const paneTheme = EditorView.theme({
@@ -222,6 +229,7 @@ function ReadOnlyStagePane({
   testId,
   onView,
   onScroll,
+  showStageGutter = true,
 }: {
   label?: string;
   content: string;
@@ -238,6 +246,9 @@ function ReadOnlyStagePane({
   testId?: string;
   onView?: (view: EditorView | null) => void;
   onScroll?: () => void;
+  /** Render the per-line `+`/`−` stage toggles. False for the read-only commit
+   *  diff viewer, which has no staging. */
+  showStageGutter?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -266,7 +277,7 @@ function ReadOnlyStagePane({
           EditorState.readOnly.of(true),
           EditorView.lineWrapping,
           EditorView.decorations.of(decorations),
-          stageGutter(changedLines, onToggle),
+          ...(showStageGutter ? [stageGutter(changedLines, onToggle)] : []),
           EditorView.domEventHandlers({
             scroll() {
               onScroll?.();
@@ -296,12 +307,14 @@ function ReadOnlyStagePane({
     language,
     onView,
     onScroll,
+    showStageGutter,
   ]);
 
   // Push the controlled staged-line set into the gutter markers.
   useEffect(() => {
+    if (!showStageGutter) return;
     viewRef.current?.dispatch({ effects: setStagedLines.of(stagedLines) });
-  }, [stagedLines]);
+  }, [stagedLines, showStageGutter]);
 
   return (
     <div
@@ -321,8 +334,13 @@ export function StageFileEditor({
   onStageWholeFile,
   onDiscardFile,
   onClose,
+  readOnly = false,
+  leftLabel = "HEAD",
+  rightLabel = "Working Tree",
 }: StageFileEditorProps) {
-  const lineEditable = !contents.isBinary && contents.worktreeExists;
+  // In read-only mode a deletion (no "worktree" side) is still a perfectly good
+  // diff to render (all-removed); only a binary file can't be shown line by line.
+  const lineEditable = !contents.isBinary && (readOnly || contents.worktreeExists);
 
   const language = useMemo(() => languageForPath(path), [path]);
 
@@ -593,15 +611,19 @@ export function StageFileEditor({
                   <InlineViewIcon />
                 </ViewModeButton>
               </div>
-              <Button size="sm" type="button" onClick={handleReset}>
-                Reset
-              </Button>
-              <Button variant="primary" size="sm" type="button" onClick={handleStage}>
-                Stage
-              </Button>
+              {!readOnly && (
+                <>
+                  <Button size="sm" type="button" onClick={handleReset}>
+                    Reset
+                  </Button>
+                  <Button variant="primary" size="sm" type="button" onClick={handleStage}>
+                    Stage
+                  </Button>
+                </>
+              )}
             </>
           )}
-          {onDiscardFile && (
+          {!readOnly && onDiscardFile && (
             <Button variant="danger" size="sm" onClick={() => onDiscardFile(path)}>
               Discard file
             </Button>
@@ -631,10 +653,12 @@ export function StageFileEditor({
         >
           <span>
             {contents.isBinary
-              ? "Binary file — can't be staged line by line."
+              ? readOnly
+                ? "Binary file — no preview available."
+                : "Binary file — can't be staged line by line."
               : "File deleted — can't be staged line by line."}
           </span>
-          {onStageWholeFile && (
+          {!readOnly && onStageWholeFile && (
             <Button variant="primary" size="sm" onClick={() => onStageWholeFile(path)}>
               Stage whole file
             </Button>
@@ -655,7 +679,7 @@ export function StageFileEditor({
               }}
             >
               <ReadOnlyStagePane
-                label="HEAD"
+                label={leftLabel}
                 testId="head-pane"
                 content={headText}
                 changedLines={headChangedLineNos}
@@ -666,9 +690,10 @@ export function StageFileEditor({
                 language={language}
                 onView={registerHeadView}
                 onScroll={onScrollHead}
+                showStageGutter={!readOnly}
               />
               <ReadOnlyStagePane
-                label="Working Tree"
+                label={rightLabel}
                 testId="worktree-pane"
                 content={worktreeText}
                 changedLines={worktreeChangedLineNos}
@@ -679,6 +704,7 @@ export function StageFileEditor({
                 language={language}
                 onView={registerWorktreeView}
                 onScroll={onScrollWorktree}
+                showStageGutter={!readOnly}
               />
             </div>
           ) : (
@@ -695,6 +721,7 @@ export function StageFileEditor({
                 oldLineNumberMap={headLineNumbers}
                 language={language}
                 onView={registerInlineView}
+                showStageGutter={!readOnly}
               />
             </div>
           )}

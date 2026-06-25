@@ -1,5 +1,5 @@
 use anyhow::Context;
-use git2::{DiffFormat, DiffOptions, Repository};
+use git2::{DiffOptions, Repository};
 use serde::Serialize;
 use crate::working_tree::FileDiffHunks;
 
@@ -101,38 +101,6 @@ pub fn get_commit_detail(repo: &Repository, oid_str: &str) -> anyhow::Result<Com
         parent_oids,
         changed_files,
     })
-}
-
-pub fn get_file_diff(repo: &Repository, oid_str: &str, path: &str) -> anyhow::Result<String> {
-    let oid = git2::Oid::from_str(oid_str).context("invalid OID")?;
-    let commit = repo.find_commit(oid).context("commit not found")?;
-
-    let parent_tree = commit.parent(0).ok().map(|p| p.tree().ok()).flatten();
-    let commit_tree = commit.tree().context("commit has no tree")?;
-
-    let mut opts = DiffOptions::new();
-    opts.pathspec(path);
-    let diff =
-        repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit_tree), Some(&mut opts))
-            .context("failed to compute diff")?;
-
-    let mut output = String::new();
-    diff.print(DiffFormat::Patch, |_delta, _hunk, line| {
-        use git2::DiffLineType::*;
-        let prefix = match line.origin_value() {
-            Addition => "+",
-            Deletion => "-",
-            Context => " ",
-            _ => "",
-        };
-        let content = std::str::from_utf8(line.content()).unwrap_or("");
-        output.push_str(prefix);
-        output.push_str(content);
-        true
-    })
-    .context("failed to print diff")?;
-
-    Ok(output)
 }
 
 fn collect_hunks(diff: git2::Diff<'_>) -> anyhow::Result<Vec<crate::working_tree::Hunk>> {
@@ -251,13 +219,6 @@ mod tests {
         let detail = get_commit_detail(&repo, &oid.to_string()).unwrap();
         assert_eq!(detail.changed_files.len(), 1);
         assert_eq!(detail.changed_files[0].path, "hello.txt");
-    }
-
-    #[test]
-    fn get_file_diff_returns_unified_format() {
-        let (_dir, repo, oid) = init_repo_with_file("hello.txt", "hello\n");
-        let diff = get_file_diff(&repo, &oid.to_string(), "hello.txt").unwrap();
-        assert!(diff.contains("+hello"), "diff output: {diff}");
     }
 
     #[test]

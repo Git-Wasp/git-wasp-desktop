@@ -4,7 +4,7 @@ use crate::diff_engine::{
     get_staged_diff as de_get_staged_diff,
 };
 use crate::repo_manager::AppState;
-use crate::working_tree::FileDiffHunks;
+use crate::working_tree::{FileDiffHunks, StageFileContents};
 use tauri::State;
 
 #[tauri::command]
@@ -19,14 +19,19 @@ pub async fn get_commit_diff(
     .map_err(|e| e.to_string())
 }
 
+/// Parent-vs-commit content for a single file, for the read-only commit diff
+/// viewer (the staging editor surface, in read-only mode). Reuses
+/// `StageFileContents`: `headContent` is the parent side, `worktreeContent` the
+/// version in this commit. `old_path` carries the pre-rename path when set.
 #[tauri::command]
-pub async fn get_file_diff(
+pub async fn get_commit_file_contents(
     oid: String,
     path: String,
+    old_path: Option<String>,
     state: State<'_, AppState>,
-) -> Result<String, String> {
+) -> Result<StageFileContents, String> {
     state.with_repo(|repo| {
-        crate::diff_engine::get_file_diff(repo, &oid, &path)
+        crate::working_tree::get_commit_file_contents(repo, &oid, &path, old_path.as_deref())
     })
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())

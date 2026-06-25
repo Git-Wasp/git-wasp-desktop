@@ -38,7 +38,7 @@ pub fn run() {
             commands::graph::refresh_graph_working_tree_status,
             // Diff (history)
             commands::diff::get_commit_diff,
-            commands::diff::get_file_diff,
+            commands::diff::get_commit_file_contents,
             // Diff (working tree)
             commands::diff::get_unstaged_diff,
             commands::diff::get_staged_diff,

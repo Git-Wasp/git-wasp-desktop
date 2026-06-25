@@ -53,7 +53,12 @@ between sections, and add new ideas under the right heading. Items marked
       other branches are several commits ahead.
 - [x] Improve colour scheme. Colours too bright and "basic"? Allow default branch colours to be specified in colour schemes?
 - [ ] Open PR as a result of dropping one branch onto another. Include ability to enter title, description, "assign to (default to @me)", tags and then "Open PR" and "Continue on GitHub" options.
-- [ ] When clicking on the details of a commit (i.e. already committed) clicking on a file shows the changes in a side by side diff view that opens in the main panel of the app. It is possible to change the view from side by side to "inline"
+- [x] When clicking on the details of a commit (i.e. already committed) clicking on a file shows the changes in a side by side diff view that opens in the main panel of the app. It is possible to change the view from side by side to "inline"
+      — clicking a file in the commit detail panel opens its diff in the main panel
+      (replacing the graph, like staging does), reusing `StageFileEditor` in a new
+      read-only mode: split/inline toggle, red/green decoration and syntax
+      highlighting, but no stage gutters/buttons. Implemented together with the
+      right-panel General-UX item below.
 
 ## Working tree & committing
 
@@ -135,6 +140,9 @@ between sections, and add new ideas under the right heading. Items marked
       store's `applyStagedContent`/`stageFile` (gated on the file being the open
       one, so staging a different file's row doesn't move the selection).
 - [ ] Execute git hooks (pre-commit, pre-push) and show output in a built-in pane
+- [ ] When a branch is checked out and fully committed, checking out another branch
+      feels like it's not a "clean" checkout and I end up with multiple changes
+      in an unstaged state.
 
 ## PR refinements
 
@@ -265,7 +273,8 @@ between sections, and add new ideas under the right heading. Items marked
 - [ ] Proper logging everywhere (esp. rust backend) with an option to enable diagnostic logging
       e.g. to increase log verbosity. Log file location clearly visible from within a "help" section
       (possibly as a child section within settings). App fully instrumented for logging without storing
-      PII.
+      PII. Pay particular attention to git operations and potential issues that may occur when in
+      diagnostics "mode". The existing logs we have can move to DEBUG level too - they're very noisy
 - [ ] "Auto-prune" capability that will remove local branches that are no longer on the remote. Before deleting
       show a list of local branches to be removed (all selected by default) so the user can choose to retain a selection
 
@@ -346,11 +355,19 @@ between sections, and add new ideas under the right heading. Items marked
       repos are open; it always renders so the "New tab" (+) button is reachable
       even with nothing open (the bar then shows just that button, above the
       welcome view).
-- [ ] When selecting an existing file from an existing commit, show diff in
+- [x] When selecting an existing file from an existing commit, show diff in
       the same view we use for staging changes (read only). Don't show at the 
       bottom of the right hand panel. Instead, add the commit title, date,
       commit hash, and author in a read only view at the top of the right hand
       panel (above the list of changed files)
+      — `CommitDetail` dropped the bottom `DiffViewer` (file removed): the right
+      panel is now commit metadata (message, author, date, short hash) above a
+      full-height changed-files list. Selecting a file loads its parent-vs-commit
+      content into a new `commitFileStore` (backend `get_commit_file_contents`,
+      reusing `StageFileContents` — parent on the HEAD side, this commit on the
+      worktree side; handles root commits, deletions, renames via `oldPath`) and
+      opens it in the main panel via `StageFileEditor readOnly` (see the commit-
+      graph item above). Closing returns to the graph.
 - [x] Use icons for "added", "changed", and "removed" files using standard
       red/amber/green colours — new SVG glyphs (`PlusIcon`/`PencilIcon`/`MinusIcon`/
       `ArrowRightIcon`) + a shared `FileStatusIcon` mapping status → coloured icon

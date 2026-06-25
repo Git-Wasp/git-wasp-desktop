@@ -198,6 +198,51 @@ pub fn get_stage_file_contents(repo: &Repository, path: &str) -> anyhow::Result<
     })
 }
 
+/// Read the parent-blob and commit-blob content for `path` at commit `oid_str`,
+/// for the read-only commit diff viewer — the same surface as the line-level
+/// staging editor, so this reuses `StageFileContents`: `head_content` carries the
+/// parent (before) version and `worktree_content` the version in this commit
+/// (after). For a rename, `old_path` names the file in the parent. The diff is
+/// against the first parent; a root commit has no parent, so its files read as
+/// all-added. `worktree_exists` is false when the
+/// commit deletes the file. `is_binary` marks a NUL on either side so the
+/// frontend skips line rendering.
+pub fn get_commit_file_contents(
+    repo: &Repository,
+    oid_str: &str,
+    path: &str,
+    old_path: Option<&str>,
+) -> anyhow::Result<StageFileContents> {
+    let oid = git2::Oid::from_str(oid_str).context("invalid OID")?;
+    let commit = repo.find_commit(oid).context("commit not found")?;
+    let commit_tree = commit.tree().context("commit has no tree")?;
+    let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
+
+    let read_blob = |tree: Option<&git2::Tree>, p: &str| -> Vec<u8> {
+        let Some(tree) = tree else { return Vec::new() };
+        match tree.get_path(Path::new(p)) {
+            Ok(entry) => repo
+                .find_blob(entry.id())
+                .map(|b| b.content().to_vec())
+                .unwrap_or_default(),
+            Err(_) => Vec::new(),
+        }
+    };
+
+    let parent_bytes = read_blob(parent_tree.as_ref(), old_path.unwrap_or(path));
+    let commit_bytes = read_blob(Some(&commit_tree), path);
+
+    let worktree_exists = commit_tree.get_path(Path::new(path)).is_ok();
+    let is_binary = parent_bytes.contains(&0) || commit_bytes.contains(&0);
+
+    Ok(StageFileContents {
+        head_content: String::from_utf8_lossy(&parent_bytes).into_owned(),
+        worktree_content: String::from_utf8_lossy(&commit_bytes).into_owned(),
+        is_binary,
+        worktree_exists,
+    })
+}
+
 /// Stage exactly `content` for `path`: write it as a blob and point the index
 /// entry at it, preserving the existing file mode. This is how the line-level
 /// staging editor persists its (possibly hand-edited) result buffer — the buffer
@@ -843,6 +888,71 @@ mod tests {
 
         let c = get_stage_file_contents(&repo, "bin").unwrap();
         assert!(c.is_binary);
+    }
+
+    #[test]
+    fn get_commit_file_contents_returns_parent_and_commit_sides() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "f.txt", "a\nb\nc\n");
+        create_commit(&repo, "first").unwrap();
+        fs::write(dir.path().join("f.txt"), "a\nB\nc\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("f.txt")).unwrap();
+        index.write().unwrap();
+        let second = create_commit(&repo, "second").unwrap();
+
+        let c = get_commit_file_contents(&repo, &second, "f.txt", None).unwrap();
+        assert_eq!(c.head_content, "a\nb\nc\n");
+        assert_eq!(c.worktree_content, "a\nB\nc\n");
+        assert!(!c.is_binary);
+        assert!(c.worktree_exists);
+    }
+
+    #[test]
+    fn get_commit_file_contents_root_commit_has_empty_parent_side() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "f.txt", "hello\n");
+        let root = create_commit(&repo, "root").unwrap();
+
+        let c = get_commit_file_contents(&repo, &root, "f.txt", None).unwrap();
+        assert_eq!(c.head_content, "");
+        assert_eq!(c.worktree_content, "hello\n");
+        assert!(c.worktree_exists);
+    }
+
+    #[test]
+    fn get_commit_file_contents_flags_a_deletion() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "f.txt", "a\nb\n");
+        create_commit(&repo, "add").unwrap();
+        fs::remove_file(dir.path().join("f.txt")).unwrap();
+        let mut index = repo.index().unwrap();
+        index.remove_path(Path::new("f.txt")).unwrap();
+        index.write().unwrap();
+        let del = create_commit(&repo, "delete").unwrap();
+
+        let c = get_commit_file_contents(&repo, &del, "f.txt", None).unwrap();
+        assert!(!c.worktree_exists);
+        assert_eq!(c.head_content, "a\nb\n");
+        assert_eq!(c.worktree_content, "");
+    }
+
+    #[test]
+    fn get_commit_file_contents_reads_parent_side_from_old_path_on_rename() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "old.txt", "a\nb\n");
+        create_commit(&repo, "add old").unwrap();
+        fs::remove_file(dir.path().join("old.txt")).unwrap();
+        fs::write(dir.path().join("new.txt"), "a\nB\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.remove_path(Path::new("old.txt")).unwrap();
+        index.add_path(Path::new("new.txt")).unwrap();
+        index.write().unwrap();
+        let renamed = create_commit(&repo, "rename").unwrap();
+
+        let c = get_commit_file_contents(&repo, &renamed, "new.txt", Some("old.txt")).unwrap();
+        assert_eq!(c.head_content, "a\nb\n");
+        assert_eq!(c.worktree_content, "a\nB\n");
     }
 
     #[test]

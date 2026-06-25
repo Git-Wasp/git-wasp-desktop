@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { CommitDetail as CommitDetailData } from "../../types/repo";
 import { FileList } from "./FileList";
-import { DiffViewer } from "./DiffViewer";
+import { useCommitFileStore } from "../../stores/commitFileStore";
 
 interface CommitDetailProps {
   oid: string | null;
@@ -10,29 +10,24 @@ interface CommitDetailProps {
 
 export function CommitDetail({ oid }: CommitDetailProps) {
   const [detail, setDetail] = useState<CommitDetailData | null>(null);
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const [diffContent, setDiffContent] = useState<string>("");
+  const {
+    oid: openOid,
+    path: openPath,
+    selectFile,
+    clear: clearCommitFile,
+  } = useCommitFileStore();
 
   useEffect(() => {
     if (!oid) {
       setDetail(null);
-      setSelectedPath(null);
-      setDiffContent("");
+      clearCommitFile();
       return;
     }
-    invoke<CommitDetailData>("get_commit_diff", { oid }).then((d) => {
-      setDetail(d);
-      setSelectedPath(d.changedFiles[0]?.path ?? null);
-    });
-  }, [oid]);
-
-  useEffect(() => {
-    if (!oid || !selectedPath) {
-      setDiffContent("");
-      return;
-    }
-    invoke<string>("get_file_diff", { oid, path: selectedPath }).then(setDiffContent);
-  }, [oid, selectedPath]);
+    // A different commit: drop any file open in the main-panel diff so it returns
+    // to the graph and this commit's file list reads fresh.
+    clearCommitFile();
+    invoke<CommitDetailData>("get_commit_diff", { oid }).then(setDetail);
+  }, [oid, clearCommitFile]);
 
   if (!oid || !detail) {
     return (
@@ -52,6 +47,13 @@ export function CommitDetail({ oid }: CommitDetailProps) {
   }
 
   const date = new Date(detail.authorTimestamp * 1000).toLocaleString();
+  // Only highlight a file when its diff (for this commit) is the one open.
+  const selectedPath = openOid === oid ? openPath : null;
+
+  const handleSelect = (path: string) => {
+    const file = detail.changedFiles.find((f) => f.path === path);
+    selectFile(oid, path, file?.oldPath ?? null);
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -91,25 +93,13 @@ export function CommitDetail({ oid }: CommitDetailProps) {
         </div>
       </div>
 
-      {/* File list */}
-      <div
-        style={{
-          flexShrink: 0,
-          maxHeight: 200,
-          overflowY: "auto",
-          borderBottom: "1px solid var(--color-border-subtle)",
-        }}
-      >
+      {/* File list — selecting a file opens its diff in the main panel */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
         <FileList
           files={detail.changedFiles}
           selectedPath={selectedPath}
-          onSelect={setSelectedPath}
+          onSelect={handleSelect}
         />
-      </div>
-
-      {/* Diff viewer */}
-      <div style={{ flex: 1, overflow: "hidden" }}>
-        <DiffViewer content={diffContent} />
       </div>
     </div>
   );

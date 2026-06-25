@@ -19,6 +19,7 @@ import { applyFontPrefs, loadFontPrefs } from "./lib/fonts";
 import { applyGraphPalette, loadGraphPaletteId } from "./lib/graphPalettes";
 import { useRepoStore } from "./stores/repoStore";
 import { useGraphStore } from "./stores/graphStore";
+import { useCommitFileStore } from "./stores/commitFileStore";
 import { useGithubStore } from "./stores/githubStore";
 import { useMergeStore } from "./stores/mergeStore";
 import { useThemeStore } from "./stores/themeStore";
@@ -29,6 +30,11 @@ type View = "history" | "prs" | "settings";
 export default function App() {
   const { loadCurrentRepo, loadOpenRepos, currentRepo } = useRepoStore();
   const { selectedOid } = useGraphStore();
+  const {
+    path: commitFilePath,
+    contents: commitFileContents,
+    clear: clearCommitFile,
+  } = useCommitFileStore();
   const { init, setPrDraft } = useGithubStore();
   const { status: operationStatus, loadStatus } = useMergeStore();
   const { initTheme } = useThemeStore();
@@ -50,6 +56,7 @@ export default function App() {
 
   const enterUncommitted = () => {
     clearSelectedFile();
+    clearCommitFile();
     setHistoryRightMode("uncommitted");
   };
   const exitUncommitted = () => {
@@ -59,6 +66,10 @@ export default function App() {
 
   const showingUncommittedDiff =
     historyRightMode === "uncommitted" && wtSelectedPath != null && wtStageDiff != null;
+  // A file picked from a commit's changed-files list opens its (read-only) diff in
+  // the main panel, the same surface staging uses.
+  const showingCommitFileDiff =
+    historyRightMode === "commit" && commitFilePath != null && commitFileContents != null;
 
   // No active repo (initial launch, a "new tab", or the last repo closed) lands
   // on the welcome view — except in Settings, which stands alone.
@@ -160,6 +171,16 @@ export default function App() {
                     onStageWholeFile={stageFile}
                     onDiscardFile={discardFile}
                     onClose={clearSelectedFile}
+                  />
+                ) : showingCommitFileDiff && commitFilePath && commitFileContents ? (
+                  <StageFileEditor
+                    readOnly
+                    path={commitFilePath}
+                    contents={commitFileContents}
+                    leftLabel="Parent"
+                    rightLabel="This commit"
+                    onStage={() => {}}
+                    onClose={clearCommitFile}
                   />
                 ) : (
                   <CommitGraph
