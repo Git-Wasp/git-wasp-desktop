@@ -5,30 +5,11 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::time::Instant;
 
-/// Append a line to the graph diagnostics log (`<cache>/gitclient/graph-diagnostics.log`)
-/// and mirror it to the standard logger. Best-effort and a no-op in tests; this
-/// exists to debug graph-walk issues (e.g. histories that look truncated) from a
-/// packaged build where stderr isn't visible.
+/// Emit a graph-walk diagnostic (e.g. histories that look truncated). Routed
+/// through the standard logger at debug level, so it lands in the unified log
+/// file only when diagnostic logging is on — keeping everyday logs quiet.
 pub(crate) fn diag_log(line: &str) {
-    log::info!(target: "graph", "{line}");
-    if cfg!(test) {
-        return;
-    }
-    use std::io::Write;
-    let Some(base) = dirs::cache_dir() else { return };
-    let dir = base.join("gitclient");
-    let _ = std::fs::create_dir_all(&dir);
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(dir.join("graph-diagnostics.log"))
-    {
-        let ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0);
-        let _ = writeln!(f, "[{ms}] {line}");
-    }
+    log::debug!(target: "graph", "{line}");
 }
 
 /// Slice-independent layout for the active repo, cached across viewport fetches.

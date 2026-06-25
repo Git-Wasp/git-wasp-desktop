@@ -154,12 +154,19 @@ pub fn compute_ahead_behind(repo: &Repository) -> anyhow::Result<Vec<AheadBehind
 }
 
 pub fn fetch(repo: &Repository, remote_name: &str, token: Option<&str>) -> anyhow::Result<FetchResult> {
+    // Never log the token; "auth=token/none" records only whether one was used.
+    log::info!(
+        target: "git",
+        "fetch: remote={remote_name} auth={}",
+        if token.is_some() { "token" } else { "none" }
+    );
     let mut remote = repo
         .find_remote(remote_name)
         .with_context(|| format!("remote '{remote_name}' not found"))?;
     let url = remote.url().unwrap_or("").to_string();
 
     if is_ssh_remote(&url) {
+        log::debug!(target: "git", "fetch: ssh remote, using git CLI");
         return fetch_cli(repo, remote_name);
     }
 
@@ -185,6 +192,7 @@ pub fn fetch(repo: &Repository, remote_name: &str, token: Option<&str>) -> anyho
         .unwrap_or_default()
         .into_inner()
         .unwrap_or_default();
+    log::info!(target: "git", "fetch: remote={remote_name} ok ({} refs updated)", refs.len());
     Ok(FetchResult { updated_refs: refs })
 }
 
@@ -211,6 +219,7 @@ pub fn pull_ff(
     branch: &str,
     token: Option<&str>,
 ) -> anyhow::Result<PullFfOutcome> {
+    log::info!(target: "git", "pull (ff): remote={remote_name} branch={branch}");
     fetch(repo, remote_name, token)?;
 
     // Resolve the upstream ref
@@ -225,6 +234,7 @@ pub fn pull_ff(
         .with_context(|| format!("local branch ref '{local_ref}' not found"))?;
 
     if local_oid == upstream_oid {
+        log::info!(target: "git", "pull (ff): branch={branch} already up to date");
         return Ok(PullFfOutcome::AlreadyUpToDate);
     }
 
@@ -232,6 +242,10 @@ pub fn pull_ff(
     // upstream lacks.
     let (ahead, _behind) = repo.graph_ahead_behind(local_oid, upstream_oid)?;
     if ahead > 0 {
+        log::info!(
+            target: "git",
+            "pull (ff): branch={branch} diverged ({ahead} local commit(s) ahead) — needs merge/rebase"
+        );
         return Ok(PullFfOutcome::Diverged {
             remote_branch: format!("{remote_name}/{branch}"),
         });
@@ -256,6 +270,7 @@ pub fn pull_ff(
         }
     }
 
+    log::info!(target: "git", "pull (ff): branch={branch} fast-forwarded to {upstream_oid}");
     Ok(PullFfOutcome::FastForwarded)
 }
 
@@ -265,12 +280,18 @@ pub fn push(
     branch: &str,
     token: Option<&str>,
 ) -> anyhow::Result<()> {
+    log::info!(
+        target: "git",
+        "push: remote={remote_name} branch={branch} auth={}",
+        if token.is_some() { "token" } else { "none" }
+    );
     let mut remote = repo
         .find_remote(remote_name)
         .with_context(|| format!("remote '{remote_name}' not found"))?;
     let url = remote.url().unwrap_or("").to_string();
 
     if is_ssh_remote(&url) {
+        log::debug!(target: "git", "push: ssh remote, using git CLI");
         let workdir = repo.workdir().context("bare repo not supported")?;
         let output = std::process::Command::new("git")
             .args(["push", remote_name, branch])
@@ -281,6 +302,7 @@ pub fn push(
             let stderr = String::from_utf8_lossy(&output.stderr);
             anyhow::bail!("git push failed: {stderr}");
         }
+        log::info!(target: "git", "push: remote={remote_name} branch={branch} ok (cli)");
         return Ok(());
     }
 
@@ -297,6 +319,7 @@ pub fn push(
     remote
         .push(&[refspec.as_str()], Some(&mut opts))
         .context("push failed")?;
+    log::info!(target: "git", "push: remote={remote_name} branch={branch} ok");
     Ok(())
 }
 

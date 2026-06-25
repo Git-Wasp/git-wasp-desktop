@@ -17,6 +17,7 @@ import { usePersistedWidth } from "./lib/usePersistedWidth";
 import { usePersistedBoolean } from "./lib/usePersistedBoolean";
 import { applyFontPrefs, loadFontPrefs } from "./lib/fonts";
 import { applyGraphPalette, loadGraphPaletteId } from "./lib/graphPalettes";
+import { applyDiagnosticsPref } from "./lib/diagnostics";
 import { useRepoStore } from "./stores/repoStore";
 import { useGraphStore } from "./stores/graphStore";
 import { useCommitFileStore } from "./stores/commitFileStore";
@@ -92,6 +93,9 @@ export default function App() {
   useEffect(() => {
     applyFontPrefs(loadFontPrefs());
     applyGraphPalette(loadGraphPaletteId());
+    // Re-apply the user's diagnostics override (if any); no-op otherwise, leaving
+    // the build default (on for dev, off for release).
+    applyDiagnosticsPref().catch(() => {});
   }, []);
 
   useEffect(() => {

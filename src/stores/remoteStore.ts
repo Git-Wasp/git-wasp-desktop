@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import type { AheadBehind, FetchResult, PullResult } from "../types/github";
+import { logOperationError } from "../lib/logger";
 
 export type PullMode = "ffOnly" | "ffOrMerge";
 
@@ -36,7 +37,7 @@ export const useRemoteStore = create<RemoteStore>((set, get) => ({
       await get().loadAheadBehind();
       return result;
     } catch (e) {
-      set({ lastError: String(e) });
+      set({ lastError: logOperationError("fetch", e) });
       throw e;
     } finally {
       set({ isFetching: false });
@@ -54,7 +55,7 @@ export const useRemoteStore = create<RemoteStore>((set, get) => ({
       await get().loadAheadBehind();
       return result;
     } catch (e) {
-      set({ lastError: String(e) });
+      set({ lastError: logOperationError("pull", e) });
       throw e;
     } finally {
       set({ isPulling: false });
@@ -67,7 +68,7 @@ export const useRemoteStore = create<RemoteStore>((set, get) => ({
       await invoke("push_branch", { remoteName: remoteName ?? null, branch: branch ?? null });
       await get().loadAheadBehind();
     } catch (e) {
-      set({ lastError: String(e) });
+      set({ lastError: logOperationError("push", e) });
       throw e;
     } finally {
       set({ isPushing: false });

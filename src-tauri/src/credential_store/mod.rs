@@ -1,4 +1,4 @@
-use log::{info, warn};
+use log::{debug, warn};
 
 pub trait CredentialStore: Send + Sync {
     fn store(&self, host: &str, token: &str) -> anyhow::Result<()>;
@@ -10,29 +10,29 @@ pub struct KeyringStore;
 
 impl CredentialStore for KeyringStore {
     fn store(&self, host: &str, token: &str) -> anyhow::Result<()> {
-        info!("credential store: storing token for host={host:?} (service=\"gitclient\", len={})", token.len());
+        debug!("credential store: storing token for host={host:?} (service=\"gitclient\", len={})", token.len());
         let result = keyring::Entry::new("gitclient", host)
             .map_err(|e| anyhow::anyhow!("keyring error: {e}"))?
             .set_password(token)
             .map_err(|e| anyhow::anyhow!("failed to store credential for {host}: {e}"));
         match &result {
-            Ok(()) => info!("credential store: stored token for host={host:?}"),
+            Ok(()) => debug!("credential store: stored token for host={host:?}"),
             Err(e) => warn!("credential store: failed to store token for host={host:?}: {e}"),
         }
         result
     }
 
     fn load(&self, host: &str) -> anyhow::Result<Option<String>> {
-        info!("credential store: loading token for host={host:?} (service=\"gitclient\")");
+        debug!("credential store: loading token for host={host:?} (service=\"gitclient\")");
         let entry = keyring::Entry::new("gitclient", host)
             .map_err(|e| anyhow::anyhow!("keyring error: {e}"))?;
         match entry.get_password() {
             Ok(pw) => {
-                info!("credential store: found token for host={host:?} (len={})", pw.len());
+                debug!("credential store: found token for host={host:?} (len={})", pw.len());
                 Ok(Some(pw))
             }
             Err(keyring::Error::NoEntry) => {
-                info!("credential store: no entry for host={host:?}");
+                debug!("credential store: no entry for host={host:?}");
                 Ok(None)
             }
             Err(e) => {

@@ -143,6 +143,13 @@ between sections, and add new ideas under the right heading. Items marked
 - [ ] When a branch is checked out and fully committed, checking out another branch
       feels like it's not a "clean" checkout and I end up with multiple changes
       in an unstaged state.
+      — Now instrumented for diagnosis (see the logging item under Engineering &
+      tooling): with diagnostic logging on, `checkout_branch` logs the working-tree
+      dirty counts before and after as `checkout: pre/post staged=.. unstaged=..
+      untracked=..`. A clean pre-state turning dirty post-checkout implicates the
+      checkout itself (suspect: index/clean-filter mismatch — `stage_file_content`
+      already bypasses clean filters) rather than pre-existing edits. Root-cause fix
+      pending captured evidence.
 
 ## PR refinements
 
@@ -270,11 +277,24 @@ between sections, and add new ideas under the right heading. Items marked
 - [ ] Graph performance profiling against large repos (10k+ commits) (Phase 6)
 - [ ] Implement rustfmt on save + pre-commit hook
 - [ ] Consider implementing a CSP for the frontend (bear in mind we need to support data img or find alternative for user icons)
-- [ ] Proper logging everywhere (esp. rust backend) with an option to enable diagnostic logging
+- [x] Proper logging everywhere (esp. rust backend) with an option to enable diagnostic logging
       e.g. to increase log verbosity. Log file location clearly visible from within a "help" section
       (possibly as a child section within settings). App fully instrumented for logging without storing
       PII. Pay particular attention to git operations and potential issues that may occur when in
       diagnostics "mode". The existing logs we have can move to DEBUG level too - they're very noisy
+      — replaced `env_logger` with `tauri-plugin-log` (file in the app log dir +
+      stdout). New `logging` module: a runtime "diagnostics" toggle that flips the
+      effective level between Info (off) and Debug (on) via `log::set_max_level`
+      (ceiling Debug; noisy framework crates pinned to Warn/Info). Defaults on for
+      dev builds, off for release; the user's choice persists (localStorage) and is
+      re-applied on startup. Backend commands `get_diagnostics_info` /
+      `set_diagnostics` / `open_log_dir` / `frontend_log` (the last bridges
+      frontend logs into the same file). New Settings → Diagnostics section: toggle,
+      log file path, "Open log folder". Git ops now log at info (checkout, commit,
+      branch create/rename/delete, fetch/pull/push) — checkout additionally logs
+      pre/post working-tree dirty counts at debug to diagnose the next item — and
+      tokens/file contents/messages/emails are never logged (PII-safe). Demoted the
+      noisy graph-walk + credential-store logs to debug.
 - [ ] "Auto-prune" capability that will remove local branches that are no longer on the remote. Before deleting
       show a list of local branches to be removed (all selected by default) so the user can choose to retain a selection
 
@@ -375,3 +395,6 @@ between sections, and add new ideas under the right heading. Items marked
       accent arrow = renamed/copied), with an accessible label. Replaces the
       commit-detail file list's text symbols and the staging panel's plain
       A/M/D/R letters, so both lists read consistently.
+- [ ] When the uncommitted changes are selected at the top of the graph,
+      show a clear "currently selected" indicator. Currently the checked out
+      head line still shows as "selected" which is confusing

@@ -5,6 +5,7 @@ mod diff_engine;
 mod file_watcher;
 mod github_client;
 mod graph;
+mod logging;
 mod merge_ops;
 mod operation_runner;
 mod remote_ops;
@@ -15,9 +16,26 @@ mod working_tree;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-
     tauri::Builder::default()
+        // Logging: file (app log dir) + stdout. The ceiling is Debug; the
+        // effective verbosity is set at runtime in `.setup()` from the
+        // diagnostics default (see the `logging` module). Noisy framework crates
+        // are pinned down so diagnostics mode stays readable.
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+                        file_name: Some(logging::LOG_FILE_NAME.to_string()),
+                    }),
+                ])
+                .level(logging::LEVEL_CEILING)
+                .level_for("tao", log::LevelFilter::Warn)
+                .level_for("wry", log::LevelFilter::Warn)
+                .level_for("hyper", log::LevelFilter::Info)
+                .level_for("reqwest", log::LevelFilter::Info)
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         // Persist & restore the window's size/position/maximised/fullscreen
@@ -104,8 +122,21 @@ pub fn run() {
             commands::theme::delete_theme,
             commands::theme::set_active_theme,
             commands::theme::get_active_theme,
+            // Diagnostics / logging
+            commands::diagnostics::get_diagnostics_info,
+            commands::diagnostics::set_diagnostics,
+            commands::diagnostics::open_log_dir,
+            commands::diagnostics::frontend_log,
         ])
         .setup(|app| {
+            // Apply the build's default verbosity; the frontend re-applies the
+            // user's persisted choice on startup if they've set one.
+            logging::set_diagnostics(logging::diagnostics_default());
+            log::info!(
+                target: "app",
+                "gitclient starting (diagnostics default {})",
+                if logging::diagnostics_default() { "on" } else { "off" }
+            );
             repo_manager::restore_session(app)?;
             Ok(())
         })

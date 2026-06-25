@@ -3,6 +3,7 @@ import { NotificationSettings } from "./NotificationSettings";
 import { GithubSettings } from "./GithubSettings";
 import { FontSettings } from "./FontSettings";
 import { GraphColorSettings } from "./GraphColorSettings";
+import { DiagnosticsSettings } from "./DiagnosticsSettings";
 
 const sectionTitleStyle: React.CSSProperties = {
   fontSize: "var(--font-size-md)",
@@ -46,9 +47,14 @@ export function SettingsView() {
         <GraphColorSettings />
       </section>
 
-      <section style={{ maxWidth: 640 }}>
+      <section style={{ maxWidth: 640, marginBottom: "var(--space-6)" }}>
         <h2 style={sectionTitleStyle}>Notifications</h2>
         <NotificationSettings />
+      </section>
+
+      <section style={{ maxWidth: 640 }}>
+        <h2 style={sectionTitleStyle}>Diagnostics</h2>
+        <DiagnosticsSettings />
       </section>
     </div>
   );

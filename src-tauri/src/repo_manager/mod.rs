@@ -12,6 +12,26 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use tauri::Manager;
 
+/// Log the working-tree dirty counts under `label`, for diagnosing operations
+/// (e.g. a checkout) that leave the tree unexpectedly modified. No-op unless
+/// debug logging is on, since computing status walks the tree — and it never
+/// logs file paths/contents, only counts (no PII).
+fn log_worktree_state(repo: &Repository, label: &str) {
+    if !log::log_enabled!(log::Level::Debug) {
+        return;
+    }
+    match crate::working_tree::get_working_tree_status(repo) {
+        Ok(s) => log::debug!(
+            target: "git",
+            "{label}: staged={} unstaged={} untracked={}",
+            s.staged.len(),
+            s.unstaged.len(),
+            s.untracked.len()
+        ),
+        Err(e) => log::debug!(target: "git", "{label}: status unavailable: {e}"),
+    }
+}
+
 /// A single open repository tab, carrying its own in-progress operation so a
 /// merge (or future rebase) in one tab can't leak into another.
 struct OpenRepo {
@@ -219,7 +239,13 @@ impl RepoManager {
     }
 
     pub fn checkout_branch(&self, branch_name: &str) -> anyhow::Result<RepoInfo> {
+        log::info!(target: "git", "checkout: branch={branch_name}");
         self.with_repo(|repo| -> anyhow::Result<()> {
+            // Diagnostics: the working-tree state on either side of the checkout.
+            // A clean pre-state that turns dirty post-checkout points the finger
+            // at the checkout itself (e.g. index/filter mismatch) rather than at
+            // pre-existing local edits. Only computed when debug logging is on.
+            log_worktree_state(repo, "checkout: pre");
             let branch = repo
                 .find_branch(branch_name, BranchType::Local)
                 .with_context(|| format!("branch not found: {branch_name}"))?;
@@ -228,17 +254,21 @@ impl RepoManager {
                 .peel(ObjectType::Commit)
                 .context("could not resolve branch to commit")?;
             let head_ref = branch.get().name().unwrap().to_string();
+            log::debug!(target: "git", "checkout: target={} head_ref={head_ref}", obj.id());
             let mut checkout = git2::build::CheckoutBuilder::new();
             checkout.safe();
             repo.checkout_tree(&obj, Some(&mut checkout))
                 .context("checkout failed — working tree has conflicting changes")?;
             repo.set_head(&head_ref).context("could not update HEAD")?;
+            log_worktree_state(repo, "checkout: post");
             Ok(())
         })??;
+        log::info!(target: "git", "checkout: branch={branch_name} ok");
         self.get_current()?.ok_or_else(|| anyhow::anyhow!("no repo after checkout"))
     }
 
     pub fn create_branch(&self, name: &str, start_oid: Option<&str>) -> anyhow::Result<BranchInfo> {
+        log::info!(target: "git", "branch: create {name} (start={})", start_oid.unwrap_or("HEAD"));
         self.with_repo(|repo| -> anyhow::Result<BranchInfo> {
             let commit = match start_oid {
                 Some(oid) => repo.find_commit(git2::Oid::from_str(oid)?)?,
@@ -260,6 +290,7 @@ impl RepoManager {
     }
 
     pub fn rename_branch(&self, old_name: &str, new_name: &str) -> anyhow::Result<()> {
+        log::info!(target: "git", "branch: rename {old_name} -> {new_name}");
         self.with_repo(|repo| -> anyhow::Result<()> {
             let mut branch = repo.find_branch(old_name, BranchType::Local)
                 .with_context(|| format!("branch not found: {old_name}"))?;
@@ -270,6 +301,7 @@ impl RepoManager {
     }
 
     pub fn delete_branch(&self, name: &str) -> anyhow::Result<()> {
+        log::info!(target: "git", "branch: delete {name}");
         self.with_repo(|repo| -> anyhow::Result<()> {
             let mut branch = repo.find_branch(name, BranchType::Local)
                 .with_context(|| format!("branch not found: {name}"))?;

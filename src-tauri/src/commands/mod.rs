@@ -1,5 +1,6 @@
 pub mod branch;
 pub mod commit;
+pub mod diagnostics;
 pub mod diff;
 pub mod discard;
 pub mod github;

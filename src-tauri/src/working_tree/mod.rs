@@ -416,6 +416,13 @@ pub fn create_commit(repo: &Repository, message: &str) -> anyhow::Result<String>
     let oid = repo
         .commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)
         .context("failed to create commit")?;
+    // The message is user content, so it's not logged — just the identity of the
+    // new commit and whether it had a parent.
+    log::info!(
+        target: "git",
+        "commit: created {oid} ({} parent)",
+        parents.len()
+    );
     Ok(oid.to_string())
 }
 
