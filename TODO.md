@@ -80,7 +80,16 @@ between sections, and add new ideas under the right heading. Items marked
       read-only mode: split/inline toggle, red/green decoration and syntax
       highlighting, but no stage gutters/buttons. Implemented together with the
       right-panel General-UX item below.
-- [ ] Add a "revert commit" option in right click menu for a commit.
+- [x] Add a "revert commit" option in right click menu for a commit.
+      — commit context menu now has "Revert commit" (creates the revert commit) and
+      "Revert without committing" (applies the inverse as ordinary *unstaged*
+      working-tree changes to stage/commit as you choose). Backend
+      `revert_commit(oid, auto_commit)`: git2 revert → either commit it or
+      mixed-reset the index back to HEAD (keeping the reverted working tree) and
+      clear the in-progress revert state. Refuses merge commits and a dirty tree
+      (so the conflict abort can hard-reset safely); aborts cleanly on conflict.
+      `repoStore.revertCommit` refreshes the graph + working-tree status; success/
+      error toasts. Backend tests (commit / no-commit / dirty / merge) + menu tests.
 - [ ] Add a "stash changes" option for uncommitted changes to create a new named stash. The stash can be viewed
       in the commit graph (and clearly shown as a "stash"). Right click on the stash allows me to pop the stash.
 

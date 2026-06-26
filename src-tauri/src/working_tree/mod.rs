@@ -426,6 +426,78 @@ pub fn create_commit(repo: &Repository, message: &str) -> anyhow::Result<String>
     Ok(oid.to_string())
 }
 
+/// Revert `oid` by applying its inverse on the current branch. With
+/// `auto_commit` it creates the revert commit and returns its oid; otherwise it
+/// leaves the inverse as ordinary *unstaged* working-tree changes (no commit, no
+/// in-progress revert state) for the user to stage and commit as they choose,
+/// returning `None`. Refuses merge commits and a dirty working tree (so the
+/// abort-on-conflict path can hard-reset without losing edits); on conflict it
+/// aborts cleanly and errors rather than leaving a half-applied revert.
+pub fn revert_commit(
+    repo: &Repository,
+    oid_str: &str,
+    auto_commit: bool,
+) -> anyhow::Result<Option<String>> {
+    let oid = git2::Oid::from_str(oid_str).context("invalid commit oid")?;
+    let commit = repo.find_commit(oid).context("commit not found")?;
+    if commit.parent_count() > 1 {
+        anyhow::bail!("reverting a merge commit isn't supported yet");
+    }
+
+    // Require a clean tree: revert touches the working tree, and the conflict
+    // abort below hard-resets to HEAD — which would discard any local edits.
+    let status = get_working_tree_status(repo)?;
+    if !status.staged.is_empty() || !status.unstaged.is_empty() {
+        anyhow::bail!("commit or stash your changes before reverting");
+    }
+
+    let head = repo.head()?.peel_to_commit().context("HEAD is not a commit")?;
+
+    let mut checkout = git2::build::CheckoutBuilder::new();
+    checkout.safe();
+    let mut opts = git2::RevertOptions::new();
+    opts.checkout_builder(checkout);
+    repo.revert(&commit, Some(&mut opts)).context("revert failed")?;
+
+    let mut index = repo.index().context("failed to read index")?;
+    if index.has_conflicts() {
+        let _ = repo.reset(head.as_object(), git2::ResetType::Hard, None);
+        let _ = repo.cleanup_state();
+        anyhow::bail!("revert would conflict with later history — revert it manually");
+    }
+
+    let tree_id = index.write_tree().context("failed to write tree")?;
+    if tree_id == head.tree_id() {
+        let _ = repo.reset(head.as_object(), git2::ResetType::Hard, None);
+        let _ = repo.cleanup_state();
+        anyhow::bail!("nothing to revert — the commit's changes aren't present");
+    }
+
+    if !auto_commit {
+        // Leave the inverse as plain unstaged changes: reset the index back to
+        // HEAD (un-staging) while keeping the reverted working tree, and clear the
+        // in-progress revert state so it's not "mid-revert".
+        repo.reset(head.as_object(), git2::ResetType::Mixed, None)
+            .context("failed to unstage revert")?;
+        repo.cleanup_state().context("failed to clean up revert state")?;
+        log::info!(target: "git", "revert: {oid} applied as uncommitted changes");
+        return Ok(None);
+    }
+
+    let tree = repo.find_tree(tree_id).context("failed to find tree")?;
+    let sig = repo.signature().context(
+        "Git user identity not configured. Set user.name and user.email in your .gitconfig.",
+    )?;
+    let subject = commit.summary().unwrap_or("commit");
+    let message = format!("Revert \"{subject}\"\n\nThis reverts commit {oid}.");
+    let new_oid = repo
+        .commit(Some("HEAD"), &sig, &sig, &message, &tree, &[&head])
+        .context("failed to create revert commit")?;
+    repo.cleanup_state().context("failed to clean up revert state")?;
+    log::info!(target: "git", "revert: {oid} -> {new_oid}");
+    Ok(Some(new_oid.to_string()))
+}
+
 /// True if HEAD is reachable from any remote-tracking branch, meaning the commit
 /// has already been pushed. Returns false for an unborn branch (no HEAD yet).
 pub fn head_commit_is_pushed(repo: &Repository) -> anyhow::Result<bool> {
@@ -813,6 +885,86 @@ mod tests {
         assert!(!oid.is_empty());
         let head = repo.head().unwrap().peel_to_commit().unwrap();
         assert_eq!(head.parent_count(), 0);
+    }
+
+    #[test]
+    fn revert_commit_creates_inverse_commit() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "a.txt", "1\n");
+        let c1 = create_commit(&repo, "add a").unwrap();
+        write_and_stage(&repo, &dir, "b.txt", "2\n");
+        let c2 = create_commit(&repo, "add b").unwrap();
+
+        let new_oid = revert_commit(&repo, &c2, true).unwrap().expect("committed revert");
+
+        // b.txt is gone from the working tree, and HEAD is the revert commit whose
+        // tree matches the pre-c2 state.
+        assert!(!dir.path().join("b.txt").exists());
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        assert_eq!(head.id().to_string(), new_oid);
+        assert!(head.message().unwrap().starts_with("Revert \"add b\""));
+        assert_eq!(head.tree_id(), repo.find_commit(c1.parse().unwrap()).unwrap().tree_id());
+        // Working tree is clean afterwards.
+        let status = get_working_tree_status(&repo).unwrap();
+        assert!(status.staged.is_empty() && status.unstaged.is_empty());
+    }
+
+    #[test]
+    fn revert_commit_without_auto_commit_leaves_unstaged_changes() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "a.txt", "1\n");
+        create_commit(&repo, "add a").unwrap();
+        write_and_stage(&repo, &dir, "b.txt", "2\n");
+        let c2 = create_commit(&repo, "add b").unwrap();
+
+        let result = revert_commit(&repo, &c2, false).unwrap();
+
+        // No commit was created, HEAD is unchanged...
+        assert!(result.is_none());
+        assert_eq!(repo.head().unwrap().peel_to_commit().unwrap().id().to_string(), c2);
+        // ...and the revert shows as an ordinary *unstaged* change (b removed).
+        assert!(!dir.path().join("b.txt").exists());
+        let status = get_working_tree_status(&repo).unwrap();
+        assert!(status.staged.is_empty(), "should not be staged: {:?}", status.staged);
+        assert!(status.unstaged.iter().any(|e| e.path == "b.txt"));
+        // No in-progress revert state left behind.
+        assert_eq!(repo.state(), git2::RepositoryState::Clean);
+    }
+
+    #[test]
+    fn revert_commit_refuses_a_dirty_tree() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "a.txt", "1\n");
+        create_commit(&repo, "add a").unwrap();
+        write_and_stage(&repo, &dir, "b.txt", "2\n");
+        let c2 = create_commit(&repo, "add b").unwrap();
+        fs::write(dir.path().join("a.txt"), "dirty\n").unwrap(); // uncommitted edit
+
+        let err = revert_commit(&repo, &c2, true).unwrap_err();
+        assert!(err.to_string().contains("stash"), "got: {err}");
+        // The dirty edit is untouched.
+        assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "dirty\n");
+    }
+
+    #[test]
+    fn revert_commit_refuses_a_merge_commit() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "a.txt", "1\n");
+        let c1 = create_commit(&repo, "c1").unwrap();
+        write_and_stage(&repo, &dir, "b.txt", "2\n");
+        create_commit(&repo, "c2").unwrap();
+
+        // Fabricate a 2-parent (merge) commit at HEAD.
+        let sig = Signature::now("Test", "test@test.com").unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        let other = repo.find_commit(c1.parse().unwrap()).unwrap();
+        let tree = head.tree().unwrap();
+        let merge = repo
+            .commit(Some("HEAD"), &sig, &sig, "merge", &tree, &[&head, &other])
+            .unwrap();
+
+        let err = revert_commit(&repo, &merge.to_string(), true).unwrap_err();
+        assert!(err.to_string().contains("merge"), "got: {err}");
     }
 
     /// Point a remote-tracking ref (refs/remotes/origin/main) at `oid` to

@@ -70,6 +70,7 @@ beforeEach(() => {
     deleteBranch: vi.fn().mockResolvedValue(undefined),
     checkoutCommit: vi.fn().mockResolvedValue(undefined),
     createTag: vi.fn().mockResolvedValue(undefined),
+    revertCommit: vi.fn().mockResolvedValue(null),
   });
   useGithubStore.setState({ remoteInfo: null });
 });
@@ -246,6 +247,24 @@ describe("CommitGraph context menu", () => {
     fireEvent.contextMenu(screen.getByText("second commit"));
     fireEvent.click(screen.getByText("Checkout this commit"));
     await waitFor(() => expect(error).toHaveBeenCalled());
+  });
+
+  it("reverts a commit (auto-commit) from the menu", async () => {
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("second commit"));
+    fireEvent.click(screen.getByText("Revert commit"));
+    await waitFor(() =>
+      expect(useRepoStore.getState().revertCommit).toHaveBeenCalledWith("b".repeat(40), true),
+    );
+  });
+
+  it("reverts a commit without committing (leaves uncommitted changes)", async () => {
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("second commit"));
+    fireEvent.click(screen.getByText("Revert without committing"));
+    await waitFor(() =>
+      expect(useRepoStore.getState().revertCommit).toHaveBeenCalledWith("b".repeat(40), false),
+    );
   });
 
   it("creates a tag at the commit via the prompt", async () => {

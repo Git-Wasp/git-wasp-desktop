@@ -149,7 +149,7 @@ export function CommitGraph({
   const { viewport, selection, fetchViewport, selectCommit, selectWorkingTree, refresh } =
     useGraphStore();
   const scrollToRow = useGraphStore((s) => s.scrollToRow);
-  const { currentRepo, createBranch, checkoutBranch, renameBranch, deleteBranch, checkoutCommit, createTag } =
+  const { currentRepo, createBranch, checkoutBranch, renameBranch, deleteBranch, checkoutCommit, createTag, revertCommit } =
     useRepoStore();
   const remoteInfo = useGithubStore((s) => s.remoteInfo);
   const startMerge = useMergeStore((s) => s.startMerge);
@@ -328,6 +328,15 @@ export function CommitGraph({
     }
   };
 
+  const handleRevertCommit = async (oid: string, autoCommit: boolean) => {
+    try {
+      await revertCommit(oid, autoCommit);
+      toastSuccess(autoCommit ? "Reverted commit" : "Reverted — changes are uncommitted");
+    } catch (e) {
+      toastError(String(e), { title: "Revert failed" });
+    }
+  };
+
   const commitUrl = (oid: string): string | null =>
     remoteInfo ? `https://${remoteInfo.host}/${remoteInfo.owner}/${remoteInfo.repo}/commit/${oid}` : null;
 
@@ -347,6 +356,12 @@ export function CommitGraph({
         { separator: true },
         { label: "New branch here…", onSelect: () => setPrompt({ kind: "new-branch", oid: node.oid }) },
         { label: "Create tag here…", onSelect: () => setPrompt({ kind: "create-tag", oid: node.oid }) },
+        { separator: true },
+        { label: "Revert commit", onSelect: () => handleRevertCommit(node.oid, true) },
+        {
+          label: "Revert without committing",
+          onSelect: () => handleRevertCommit(node.oid, false),
+        },
       );
 
       const localBranches = node.branchLabels.filter((l) => !l.isRemote && !l.isTag);

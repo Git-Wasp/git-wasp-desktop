@@ -534,8 +534,10 @@ mod tests {
         let outcome = pull_ff(&repo, "origin", "main", None).unwrap();
         assert!(matches!(outcome, PullFfOutcome::FastForwarded));
 
-        // The upstream's new file is written into the working tree...
-        assert_eq!(fs::read_to_string(local.path().join("added.txt")).unwrap(), "hello\n");
+        // The upstream's new file is written into the working tree... (normalise
+        // line endings: a Windows checkout with core.autocrlf=true writes CRLF).
+        let contents = fs::read_to_string(local.path().join("added.txt")).unwrap();
+        assert_eq!(contents.replace("\r\n", "\n"), "hello\n");
 
         // ...and there are no spurious staged/unstaged changes.
         let status = crate::working_tree::get_working_tree_status(&repo).unwrap();

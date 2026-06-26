@@ -25,6 +25,10 @@ interface RepoStore {
   checkoutRemoteBranch: (remoteRef: string) => Promise<void>;
   checkoutCommit: (oid: string) => Promise<void>;
   createTag: (name: string, oid: string, message?: string) => Promise<void>;
+  /** Revert a commit. With `autoCommit` it creates the revert commit; otherwise
+   *  the inverse is left as unstaged working-tree changes. Returns the new
+   *  commit oid (or null when not committed). */
+  revertCommit: (oid: string, autoCommit: boolean) => Promise<string | null>;
   createBranch: (name: string, startPoint?: string) => Promise<void>;
   renameBranch: (oldName: string, newName: string) => Promise<void>;
   deleteBranch: (name: string) => Promise<void>;
@@ -128,6 +132,16 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     createTag: async (name: string, oid: string, message?: string) => {
       await invoke("create_tag", { name, oid, message: message ?? null });
       await get().loadBranches();
+    },
+
+    revertCommit: async (oid: string, autoCommit: boolean) => {
+      const result = await invoke<string | null>("revert_commit", { oid, autoCommit });
+      // A revert either adds a commit or leaves unstaged changes — refresh the
+      // graph and the working-tree status so both are reflected immediately.
+      await invoke("refresh_graph_working_tree_status").catch(() => {});
+      await useGraphStore.getState().refresh();
+      await useWorkingTreeStore.getState().loadStatus();
+      return result;
     },
 
     createBranch: async (name: string, startPoint?: string) => {
