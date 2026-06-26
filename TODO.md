@@ -32,7 +32,15 @@ between sections, and add new ideas under the right heading. Items marked
       lightweight, or annotated when a message is given), plus the existing
       per-branch checkout/rename/delete. New repoStore actions `checkoutCommit` /
       `createTag`; backend unit tests for detached checkout and tag creation.
-- [ ] Right-click actions on branches (delete local, push, etc.)
+- [x] Right-click actions on branches (delete local, push, etc.)
+      — branch actions are now consistent across the graph context menu and the
+      sidebar branch row menu. Graph per-branch menu: Checkout / Push / Merge into
+      current / Rename… / Delete, with the invalid actions (checkout, delete,
+      merge-into-self) hidden for the currently checked-out branch. Sidebar row
+      menu gained Push alongside its Checkout / Merge / Delete. Push targets the
+      specific branch via the existing `push_branch` command (`remoteStore.push`),
+      with success/error toasts; checkout/rename/delete/merge failures also surface
+      as toasts now (no more silent failures). No backend change needed.
 - [x] Integrate user icons via gravatar (in the commit dots) — author gravatars
       render clipped into the commit dots (lane-coloured dot is the fallback).
       Rust `get_avatar` command fetches once per email (d=404 to detect "no
@@ -237,6 +245,7 @@ between sections, and add new ideas under the right heading. Items marked
       — dropped the "Changes" NavBar tab, the `working-tree` view, and the
       standalone `WorkingTreePanel` (+ its test). The shared `StagingPanel` /
       `HunkDiffViewer` stay, reused by the history view's uncommitted-changes flow.
+- [ ] Auto-detect new releases and notifiy user on boot with a toast containing a link to download
 
 ## Theming
 

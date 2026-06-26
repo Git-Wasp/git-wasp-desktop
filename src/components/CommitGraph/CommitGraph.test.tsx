@@ -6,6 +6,7 @@ import { useGraphStore } from "../../stores/graphStore";
 import { useRepoStore } from "../../stores/repoStore";
 import { useGithubStore } from "../../stores/githubStore";
 import { useToastStore } from "../../stores/toastStore";
+import { useRemoteStore } from "../../stores/remoteStore";
 import type { GraphNode, GraphViewport } from "../../types/graph";
 
 const node = (over: Partial<GraphNode>): GraphNode => ({
@@ -147,9 +148,56 @@ describe("CommitGraph context menu", () => {
     fireEvent.contextMenu(screen.getByText("first commit"));
 
     expect(screen.getByText("Copy commit hash")).toBeInTheDocument();
-    expect(screen.getByText("Checkout main")).toBeInTheDocument();
+    // "main" is the checked-out branch: it offers push/rename but not the
+    // invalid checkout/delete-current-branch actions.
+    expect(screen.getByText("Push main")).toBeInTheDocument();
     expect(screen.getByText(/Rename main/)).toBeInTheDocument();
-    expect(screen.getByText("Delete main")).toBeInTheDocument();
+    expect(screen.queryByText("Checkout main")).toBeNull();
+    expect(screen.queryByText("Delete main")).toBeNull();
+  });
+
+  it("offers checkout/push/merge/delete for a non-current branch", () => {
+    useGraphStore.setState({
+      viewport: {
+        totalCount: 2,
+        offset: 0,
+        nodes: [
+          node({
+            oid: "a".repeat(40),
+            summary: "first commit",
+            branchLabels: [{ name: "main", isRemote: false, isTag: false }],
+            isHead: true,
+            row: 0,
+          }),
+          node({
+            oid: "b".repeat(40),
+            summary: "second commit",
+            branchLabels: [{ name: "feature", isRemote: false, isTag: false }],
+            row: 1,
+          }),
+        ],
+      },
+    });
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("second commit"));
+
+    expect(screen.getByText("Checkout feature")).toBeInTheDocument();
+    expect(screen.getByText("Push feature")).toBeInTheDocument();
+    expect(screen.getByText("Merge feature into current")).toBeInTheDocument();
+    expect(screen.getByText("Delete feature")).toBeInTheDocument();
+  });
+
+  it("pushes a branch from the menu with a success toast", async () => {
+    const push = vi.fn().mockResolvedValue(undefined);
+    const success = vi.fn();
+    useRemoteStore.setState({ push });
+    useToastStore.setState({ success });
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("first commit"));
+    fireEvent.click(screen.getByText("Push main"));
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith(undefined, "main"));
+    expect(success).toHaveBeenCalled();
   });
 
   it("copies the full commit hash", () => {

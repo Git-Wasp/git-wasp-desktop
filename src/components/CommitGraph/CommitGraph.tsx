@@ -3,6 +3,7 @@ import { useGraphStore } from "../../stores/graphStore";
 import { useRepoStore } from "../../stores/repoStore";
 import { useGithubStore } from "../../stores/githubStore";
 import { useMergeStore } from "../../stores/mergeStore";
+import { useRemoteStore } from "../../stores/remoteStore";
 import { useAvatarStore } from "../../stores/avatarStore";
 import { useToastStore } from "../../stores/toastStore";
 import { useCommitGraph, GRAPH_PAD_LEFT } from "../../hooks/useCommitGraph";
@@ -152,8 +153,11 @@ export function CommitGraph({
     useRepoStore();
   const remoteInfo = useGithubStore((s) => s.remoteInfo);
   const startMerge = useMergeStore((s) => s.startMerge);
+  const operationStatus = useMergeStore((s) => s.status);
+  const pushBranch = useRemoteStore((s) => s.push);
   const requestAvatars = useAvatarStore((s) => s.request);
   const toastError = useToastStore((s) => s.error);
+  const toastSuccess = useToastStore((s) => s.success);
 
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [prompt, setPrompt] = useState<PromptState | null>(null);
@@ -314,6 +318,16 @@ export function CommitGraph({
     }
   };
 
+  const handlePushBranch = async (name: string) => {
+    try {
+      await pushBranch(undefined, name);
+      toastSuccess(`Pushed ${name}`);
+      await refresh();
+    } catch (e) {
+      toastError(String(e), { title: "Push failed" });
+    }
+  };
+
   const commitUrl = (oid: string): string | null =>
     remoteInfo ? `https://${remoteInfo.host}/${remoteInfo.owner}/${remoteInfo.repo}/commit/${oid}` : null;
 
@@ -339,29 +353,44 @@ export function CommitGraph({
       if (localBranches.length > 0) {
         items.push({ separator: true });
         for (const branch of localBranches) {
+          const isCurrent = branch.name === currentRepo?.headBranch;
+          if (!isCurrent) {
+            items.push({
+              label: `Checkout ${branch.name}`,
+              onSelect: () => runBranchOp(() => checkoutBranch(branch.name)),
+            });
+          }
           items.push({
-            label: `Checkout ${branch.name}`,
-            onSelect: () => runBranchOp(() => checkoutBranch(branch.name)),
+            label: `Push ${branch.name}`,
+            onSelect: () => handlePushBranch(branch.name),
           });
+          if (!isCurrent && operationStatus.kind !== "merge") {
+            items.push({
+              label: `Merge ${branch.name} into current`,
+              onSelect: () => startMerge(branch.name),
+            });
+          }
           items.push({
             label: `Rename ${branch.name}…`,
             onSelect: () => setPrompt({ kind: "rename-branch", branch: branch.name }),
           });
-          items.push({
-            label: `Delete ${branch.name}`,
-            danger: true,
-            onSelect: () => {
-              if (window.confirm(`Delete branch "${branch.name}"?`)) {
-                runBranchOp(() => deleteBranch(branch.name));
-              }
-            },
-          });
+          if (!isCurrent) {
+            items.push({
+              label: `Delete ${branch.name}`,
+              danger: true,
+              onSelect: () => {
+                if (window.confirm(`Delete branch "${branch.name}"?`)) {
+                  runBranchOp(() => deleteBranch(branch.name));
+                }
+              },
+            });
+          }
         }
       }
       return items;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [checkoutBranch, deleteBranch, checkoutCommit, remoteInfo],
+    [checkoutBranch, deleteBranch, checkoutCommit, remoteInfo, currentRepo, operationStatus.kind, startMerge],
   );
 
   const handlePromptConfirm = async (value: string) => {

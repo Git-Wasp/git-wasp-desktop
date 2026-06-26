@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import "@testing-library/jest-dom";
@@ -97,5 +97,21 @@ describe("Sidebar", () => {
     expect(screen.getByText("origin/main")).toBeInTheDocument();
     expect(container.querySelector('[data-icon="laptop"]')).not.toBeNull();
     expect(container.querySelector('[data-icon="github"]')).not.toBeNull();
+  });
+
+  it("pushes a branch from its row menu", async () => {
+    const push = vi.fn().mockResolvedValue(undefined);
+    useRemoteStore.setState({ push });
+    useRepoStore.setState({
+      branches: [
+        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "a", ahead: null, behind: null },
+      ],
+    });
+
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole("button", { name: "feature actions" }));
+    fireEvent.click(screen.getByText("Push branch"));
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith(undefined, "feature"));
   });
 });

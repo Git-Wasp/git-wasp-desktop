@@ -5,6 +5,7 @@ import { useGraphStore } from "../../stores/graphStore";
 import { useGithubStore } from "../../stores/githubStore";
 import { useRemoteStore } from "../../stores/remoteStore";
 import { useMergeStore } from "../../stores/mergeStore";
+import { useToastStore } from "../../stores/toastStore";
 import { StashPanel } from "./StashPanel";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { RowMenu } from "./RowMenu";
@@ -42,8 +43,10 @@ export function Sidebar({ width = 220 }: { width?: number }) {
     useRepoStore();
   const { fetchViewport, revealCommit } = useGraphStore();
   const { remoteInfo } = useGithubStore();
-  const { aheadBehind } = useRemoteStore();
+  const { aheadBehind, push } = useRemoteStore();
   const { status: operationStatus, startMerge } = useMergeStore();
+  const toastSuccess = useToastStore((s) => s.success);
+  const toastError = useToastStore((s) => s.error);
   const [newBranchName, setNewBranchName] = useState("");
   const [showNewBranch, setShowNewBranch] = useState(false);
   const [showCloneDialog, setShowCloneDialog] = useState(false);
@@ -85,6 +88,15 @@ export function Sidebar({ width = 220 }: { width?: number }) {
 
   const handleMergeBranch = async (name: string) => {
     await startMerge(name);
+  };
+
+  const handlePushBranch = async (name: string) => {
+    try {
+      await push(undefined, name);
+      toastSuccess(`Pushed ${name}`);
+    } catch (e) {
+      toastError(String(e), { title: "Push failed" });
+    }
   };
 
   const localBranches = branches.filter((b) => !b.isRemote);
@@ -235,6 +247,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
                       ...(b.isHead
                         ? []
                         : [{ label: "Checkout branch", onSelect: () => handleCheckoutBranch(b.name) }]),
+                      { label: "Push branch", onSelect: () => handlePushBranch(b.name) },
                       ...(b.isHead || operationStatus.kind === "merge"
                         ? []
                         : [{ label: "Merge into current branch", onSelect: () => handleMergeBranch(b.name) }]),
