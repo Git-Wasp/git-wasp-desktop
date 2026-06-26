@@ -61,9 +61,18 @@ const GraphRow = memo(function GraphRow({
   onRowClick: (node: GraphNode, shiftKey: boolean) => void;
   onRowContextMenu: (e: React.MouseEvent, node: GraphNode) => void;
 }) {
-  const cellBg = selected ? "var(--color-bg-selected)" : "transparent";
+  // The checked-out (HEAD) commit's row keeps a permanent muted band so it's
+  // obvious which commit is current; an actual selection takes over with the
+  // normal highlight. (The canvas paints the matching band for the graph column.)
+  const isHeadRow = node.isHead && !node.isWorkingTree;
+  const cellBg = selected
+    ? "var(--color-bg-selected)"
+    : isHeadRow
+      ? "var(--color-graph-head-row-bg)"
+      : "transparent";
   return (
     <div
+      data-head-row={isHeadRow ? "true" : undefined}
       onClick={(e) => onRowClick(node, e.shiftKey)}
       onContextMenu={(e) => onRowContextMenu(e, node)}
       style={{

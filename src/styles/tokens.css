@@ -137,6 +137,9 @@
   --graph-line-width: 2px;
   /* Semi-opaque highlight behind each commit row in the graph column. */
   --color-graph-node-bg: rgba(255, 255, 255, 0.035);
+  /* Permanent muted band behind the checked-out (HEAD) commit's row, so the
+     current commit is obvious even when another row is selected. */
+  --color-graph-head-row-bg: rgba(77, 157, 224, 0.13);
 }
 
 /* Light theme overrides — surface/text/border plus the colour groups that
@@ -184,6 +187,7 @@
   --color-bg-input:    #ffffff;
   --color-bg-hover:    #e3e7ec;
   --color-graph-node-bg: rgba(0, 0, 0, 0.04);
+  --color-graph-head-row-bg: rgba(13, 110, 253, 0.10);
 }
 
 /* === GitHub Dark =========================================================
@@ -236,6 +240,7 @@
   --color-bg-hover:      #21262d;
   --color-accent-hover:  var(--color-accent-secondary);
   --color-graph-node-bg: rgba(255, 255, 255, 0.04);
+  --color-graph-head-row-bg: rgba(56, 139, 253, 0.12);
 }
 
 /* === GitHub Light ========================================================
@@ -291,6 +296,7 @@
   --color-bg-hover:      #eaeef2;
   --color-accent-hover:  var(--color-accent-secondary);
   --color-graph-node-bg: rgba(0, 0, 0, 0.04);
+  --color-graph-head-row-bg: rgba(9, 105, 218, 0.09);
 }
 
 /* === Cobalt2 =============================================================
@@ -344,4 +350,5 @@
   --color-bg-hover:      #1f4662;
   --color-accent-hover:  #ffd84d;
   --color-graph-node-bg: rgba(255, 255, 255, 0.04);
+  --color-graph-head-row-bg: rgba(255, 198, 0, 0.10);
 }

@@ -113,6 +113,16 @@ describe("CommitGraph checked-out indicators", () => {
     expect(screen.getByTestId("head-pulse")).toBeInTheDocument();
   });
 
+  it("marks the checked-out (HEAD) commit row with a permanent muted band", () => {
+    const { container } = render(<CommitGraph />);
+    // The HEAD commit's row carries the head-row flag; non-HEAD rows don't.
+    const headRows = container.querySelectorAll('[data-head-row="true"]');
+    expect(headRows.length).toBe(1);
+    const row = headRows[0] as HTMLElement;
+    // Its cells use the head-row background token (not transparent).
+    expect(row.innerHTML).toContain("var(--color-graph-head-row-bg)");
+  });
+
   it("shows no HEAD pulse when the loaded slice has no HEAD commit", () => {
     useGraphStore.setState({
       viewport: {

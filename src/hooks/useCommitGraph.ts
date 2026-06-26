@@ -84,6 +84,7 @@ export function useCommitGraph(
     const laneColors = laneColorsRef.current;
     const selectedBg = resolveCssVar("--color-bg-selected") || "rgba(77, 157, 224, 0.15)";
     const nodeBg = resolveCssVar("--color-graph-node-bg") || "rgba(255, 255, 255, 0.035)";
+    const headRowBg = resolveCssVar("--color-graph-head-row-bg") || "rgba(77, 157, 224, 0.13)";
     const dpr = window.devicePixelRatio || 1;
 
     const cssW = canvas.clientWidth;
@@ -116,8 +117,16 @@ export function useCommitGraph(
         ctx.fillRect(0, rowTop + 1, cssW, rowHeight - 2);
       }
 
+      // The checked-out (HEAD) commit keeps a permanent muted band so it stays
+      // obvious which commit is current; a selection (below) overrides it.
+      const isSelected = selection.range.has(node.oid);
+      if (node.isHead && !node.isWorkingTree && !isSelected) {
+        ctx.fillStyle = headRowBg;
+        ctx.fillRect(0, rowTop, cssW, rowHeight);
+      }
+
       // Selection band (graph-column portion; the DOM cells match it).
-      if (selection.range.has(node.oid)) {
+      if (isSelected) {
         ctx.fillStyle = selectedBg;
         ctx.fillRect(0, rowTop, cssW, rowHeight);
       }

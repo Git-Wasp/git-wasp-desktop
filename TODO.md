@@ -431,9 +431,15 @@ between sections, and add new ideas under the right heading. Items marked
       selected commit (often HEAD) stops reading as selected. `selectedOid` is
       nulled rather than set to the sentinel so the commit-detail panel never
       tries to resolve it. Selecting any commit afterwards replaces it as before.
-- [ ] Add a permanent "muted" background colour to the entire row of the currently checked
+- [x] Add a permanent "muted" background colour to the entire row of the currently checked
       out branch in the graph view. When actually selected, show the normal highlight colour,
       but make it even more obvious which commit is currently the checked out HEAD
+      — the HEAD commit's row now carries a permanent muted band across the whole
+      row: the DOM branch/message cells use a new `--color-graph-head-row-bg` token
+      and the canvas paints the matching band over the graph column. A real
+      selection overrides it with the usual `--color-bg-selected` highlight. The
+      token is defined per built-in theme (a soft accent tint). Adds to the existing
+      HEAD cues (pulsing dot ring, check pill, left-pointing accent triangle).
 
 ## Other issues
 
