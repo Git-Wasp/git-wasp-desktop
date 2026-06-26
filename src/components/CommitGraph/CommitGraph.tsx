@@ -1,8 +1,10 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useGraphStore } from "../../stores/graphStore";
 import { useRepoStore } from "../../stores/repoStore";
+import { useGithubStore } from "../../stores/githubStore";
 import { useMergeStore } from "../../stores/mergeStore";
 import { useAvatarStore } from "../../stores/avatarStore";
+import { useToastStore } from "../../stores/toastStore";
 import { useCommitGraph, GRAPH_PAD_LEFT } from "../../hooks/useCommitGraph";
 import { ContextMenu, type MenuItem } from "../common/ContextMenu";
 import { PromptDialog } from "../common/PromptDialog";
@@ -33,7 +35,8 @@ interface MenuState {
 
 type PromptState =
   | { kind: "new-branch"; oid: string }
-  | { kind: "rename-branch"; branch: string };
+  | { kind: "rename-branch"; branch: string }
+  | { kind: "create-tag"; oid: string };
 
 /**
  * A single graph row (branch cell · graph gap the canvas shows through · message
@@ -145,9 +148,12 @@ export function CommitGraph({
   const { viewport, selection, fetchViewport, selectCommit, selectWorkingTree, refresh } =
     useGraphStore();
   const scrollToRow = useGraphStore((s) => s.scrollToRow);
-  const { currentRepo, createBranch, checkoutBranch, renameBranch, deleteBranch } = useRepoStore();
+  const { currentRepo, createBranch, checkoutBranch, renameBranch, deleteBranch, checkoutCommit, createTag } =
+    useRepoStore();
+  const remoteInfo = useGithubStore((s) => s.remoteInfo);
   const startMerge = useMergeStore((s) => s.startMerge);
   const requestAvatars = useAvatarStore((s) => s.request);
+  const toastError = useToastStore((s) => s.error);
 
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [prompt, setPrompt] = useState<PromptState | null>(null);
@@ -298,17 +304,36 @@ export function CommitGraph({
   };
 
   const runBranchOp = async (op: () => Promise<void>) => {
-    await op();
-    await refresh();
+    try {
+      await op();
+      await refresh();
+    } catch (e) {
+      // Surface failures (e.g. a checkout refused because it would overwrite
+      // uncommitted changes) instead of swallowing them.
+      toastError(String(e));
+    }
   };
+
+  const commitUrl = (oid: string): string | null =>
+    remoteInfo ? `https://${remoteInfo.host}/${remoteInfo.owner}/${remoteInfo.repo}/commit/${oid}` : null;
 
   const buildMenuItems = useCallback(
     (node: GraphNode): MenuItem[] => {
       const items: MenuItem[] = [
+        { label: "Checkout this commit", onSelect: () => runBranchOp(() => checkoutCommit(node.oid)) },
+        { separator: true },
         { label: "Copy commit hash", onSelect: () => copy(node.oid) },
         { label: "Copy short hash", onSelect: () => copy(node.shortOid) },
-        { label: "New branch here…", onSelect: () => setPrompt({ kind: "new-branch", oid: node.oid }) },
       ];
+      const url = commitUrl(node.oid);
+      if (url) {
+        items.push({ label: "Copy link to commit", onSelect: () => copy(url) });
+      }
+      items.push(
+        { separator: true },
+        { label: "New branch here…", onSelect: () => setPrompt({ kind: "new-branch", oid: node.oid }) },
+        { label: "Create tag here…", onSelect: () => setPrompt({ kind: "create-tag", oid: node.oid }) },
+      );
 
       const localBranches = node.branchLabels.filter((l) => !l.isRemote && !l.isTag);
       if (localBranches.length > 0) {
@@ -336,7 +361,7 @@ export function CommitGraph({
       return items;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [checkoutBranch, deleteBranch],
+    [checkoutBranch, deleteBranch, checkoutCommit, remoteInfo],
   );
 
   const handlePromptConfirm = async (value: string) => {
@@ -348,6 +373,8 @@ export function CommitGraph({
         await createBranch(value, current.oid);
         await checkoutBranch(value);
       });
+    } else if (current.kind === "create-tag") {
+      await runBranchOp(() => createTag(value, current.oid));
     } else {
       await runBranchOp(() => renameBranch(current.branch, value));
     }
@@ -485,8 +512,14 @@ export function CommitGraph({
 
       {prompt && (
         <PromptDialog
-          title={prompt.kind === "new-branch" ? "New branch" : "Rename branch"}
-          label="Branch name"
+          title={
+            prompt.kind === "rename-branch"
+              ? "Rename branch"
+              : prompt.kind === "create-tag"
+                ? "New tag"
+                : "New branch"
+          }
+          label={prompt.kind === "create-tag" ? "Tag name" : "Branch name"}
           initialValue={prompt.kind === "rename-branch" ? prompt.branch : ""}
           confirmLabel={prompt.kind === "rename-branch" ? "Rename" : "Create"}
           onConfirm={handlePromptConfirm}

@@ -43,6 +43,24 @@ pub async fn checkout_remote_branch(
 }
 
 #[tauri::command]
+pub async fn checkout_commit(
+    oid: String,
+    state: State<'_, AppState>,
+) -> Result<RepoInfo, String> {
+    state.checkout_commit(&oid).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_tag(
+    name: String,
+    oid: String,
+    message: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.create_tag(&name, &oid, message.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn create_branch(
     name: String,
     start_point: Option<String>,

@@ -64,6 +64,8 @@ pub fn run() {
             commands::branch::list_branches,
             commands::branch::checkout_branch,
             commands::branch::checkout_remote_branch,
+            commands::branch::checkout_commit,
+            commands::branch::create_tag,
             commands::branch::create_branch,
             commands::branch::rename_branch,
             commands::branch::delete_branch,

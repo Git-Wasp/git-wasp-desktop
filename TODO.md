@@ -18,12 +18,20 @@ between sections, and add new ideas under the right heading. Items marked
 
 ## Commit graph & branches
 
-- [ ] Right-click actions on commits
+- [x] Right-click actions on commits
       - checkout this commit
       - create branch here
       - copy commit hash
       - copy link to this commit on remote
       - create tag here
+      — the commit context menu now offers: Checkout this commit (backend
+      `checkout_commit` — detached HEAD, checkout-before-detach order), Copy commit
+      hash / short hash, Copy link to commit (built from `remoteInfo` as
+      `https://<host>/<owner>/<repo>/commit/<oid>`, shown only when a remote is
+      detected), New branch here…, Create tag here… (backend `create_tag` —
+      lightweight, or annotated when a message is given), plus the existing
+      per-branch checkout/rename/delete. New repoStore actions `checkoutCommit` /
+      `createTag`; backend unit tests for detached checkout and tag creation.
 - [ ] Right-click actions on branches (delete local, push, etc.)
 - [x] Integrate user icons via gravatar (in the commit dots) — author gravatars
       render clipped into the commit dots (lane-coloured dot is the fallback).
@@ -64,6 +72,9 @@ between sections, and add new ideas under the right heading. Items marked
       read-only mode: split/inline toggle, red/green decoration and syntax
       highlighting, but no stage gutters/buttons. Implemented together with the
       right-panel General-UX item below.
+- [ ] Add a "revert commit" option in right click menu for a commit.
+- [ ] Add a "stash changes" option for uncommitted changes to create a new named stash. The stash can be viewed
+      in the commit graph (and clearly shown as a "stash"). Right click on the stash allows me to pop the stash.
 
 ## Working tree & committing
 
@@ -279,6 +290,16 @@ between sections, and add new ideas under the right heading. Items marked
 
 ## Engineering & tooling
 
+- [ ] Replace repeated "magic string" literals with shared TypeScript consts/unions.
+      Audit frontend `if`/`switch` discriminants and sentinels used as bare strings
+      across files — e.g. PromptDialog/`PromptState` kinds ("new-branch",
+      "rename-branch", "create-tag"), the `View` ids, `historyRightMode`
+      ("commit"/"uncommitted"), the `WORKING_TREE` sentinel, diagnostics levels
+      ("error"/"warn"/…), and invoke command names. Where a literal is used in one
+      place a string-union type is already type-safe; the win is for literals
+      repeated across modules or paired with a backend value (define a `const` or
+      `as const` map / enum and reference it). Decide a consistent convention and
+      apply it.
 - [ ] Add Storybook for viewing and refining UI components
 - [ ] GitHub Actions release workflow — tag-triggered matrix, artifacts to Release (Phase 6)
 - [ ] `cargo-deny` / licence audit in CI (Phase 6)

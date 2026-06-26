@@ -49,7 +49,7 @@ fn checkout_local_branch(repo: &Repository, branch_name: &str) -> anyhow::Result
     let mut checkout = git2::build::CheckoutBuilder::new();
     checkout.safe();
     repo.checkout_tree(&obj, Some(&mut checkout))
-        .context("checkout failed — working tree has conflicting changes")?;
+        .context("can't switch — you have uncommitted changes that would be overwritten. Commit or stash them first.")?;
     repo.set_head(&head_ref).context("could not update HEAD")?;
     log_worktree_state(repo, "checkout: post");
     Ok(())
@@ -299,6 +299,51 @@ impl RepoManager {
         self.get_current()?.ok_or_else(|| anyhow::anyhow!("no repo after checkout"))
     }
 
+    /// Check out an arbitrary commit, detaching HEAD. Updates the working tree to
+    /// the commit's tree first (baseline = old HEAD, so files are written), then
+    /// detaches HEAD — same ordering lesson as the fast-forward fix.
+    pub fn checkout_commit(&self, oid_str: &str) -> anyhow::Result<RepoInfo> {
+        log::info!(target: "git", "checkout commit (detached): {oid_str}");
+        self.with_repo(|repo| -> anyhow::Result<()> {
+            let oid = git2::Oid::from_str(oid_str).context("invalid commit oid")?;
+            let commit = repo.find_commit(oid).context("commit not found")?;
+            log_worktree_state(repo, "checkout: pre");
+            let mut checkout = git2::build::CheckoutBuilder::new();
+            checkout.safe();
+            repo.checkout_tree(commit.as_object(), Some(&mut checkout))
+                .context("can't switch — you have uncommitted changes that would be overwritten. Commit or stash them first.")?;
+            repo.set_head_detached(oid).context("could not detach HEAD")?;
+            log_worktree_state(repo, "checkout: post");
+            Ok(())
+        })??;
+        log::info!(target: "git", "checkout commit (detached): {oid_str} ok");
+        self.get_current()?.ok_or_else(|| anyhow::anyhow!("no repo after checkout"))
+    }
+
+    /// Create a tag at `oid`. With a non-empty `message` it's an annotated tag
+    /// (using the repo's signature); otherwise a lightweight tag.
+    pub fn create_tag(&self, name: &str, oid_str: &str, message: Option<&str>) -> anyhow::Result<()> {
+        log::info!(target: "git", "tag: create {name} at {oid_str} (annotated={})", message.is_some());
+        self.with_repo(|repo| -> anyhow::Result<()> {
+            let oid = git2::Oid::from_str(oid_str).context("invalid commit oid")?;
+            let obj = repo.find_object(oid, None).context("commit not found")?;
+            match message.filter(|m| !m.trim().is_empty()) {
+                Some(msg) => {
+                    let sig = repo.signature().context(
+                        "Git user identity not configured. Set user.name and user.email in your .gitconfig.",
+                    )?;
+                    repo.tag(name, &obj, &sig, msg, false)
+                        .with_context(|| format!("failed to create tag: {name}"))?;
+                }
+                None => {
+                    repo.tag_lightweight(name, &obj, false)
+                        .with_context(|| format!("failed to create tag: {name}"))?;
+                }
+            }
+            Ok(())
+        })?
+    }
+
     pub fn create_branch(&self, name: &str, start_oid: Option<&str>) -> anyhow::Result<BranchInfo> {
         log::info!(target: "git", "branch: create {name} (start={})", start_oid.unwrap_or("HEAD"));
         self.with_repo(|repo| -> anyhow::Result<BranchInfo> {
@@ -519,6 +564,14 @@ impl AppState {
         self.manager.checkout_remote_branch(remote_ref)
     }
 
+    pub fn checkout_commit(&self, oid: &str) -> anyhow::Result<RepoInfo> {
+        self.manager.checkout_commit(oid)
+    }
+
+    pub fn create_tag(&self, name: &str, oid: &str, message: Option<&str>) -> anyhow::Result<()> {
+        self.manager.create_tag(name, oid, message)
+    }
+
     pub fn create_branch(&self, name: &str, start_oid: Option<&str>) -> anyhow::Result<BranchInfo> {
         self.manager.create_branch(name, start_oid)
     }
@@ -702,6 +755,104 @@ mod tests {
         let manager = RepoManager::new();
         manager.open(dir.path().to_str().unwrap()).unwrap();
         assert!(manager.checkout_remote_branch("origin/nope").is_err());
+    }
+
+    #[test]
+    fn checkout_commit_detaches_head_at_that_commit() {
+        let (dir, repo) = make_git_repo_with_commit();
+        // Add a second commit so we can detach back onto the first.
+        let first = repo.head().unwrap().peel_to_commit().unwrap().id();
+        {
+            let sig = Signature::now("Test", "test@test.com").unwrap();
+            let parent = repo.find_commit(first).unwrap();
+            let tree = parent.tree().unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "second", &tree, &[&parent]).unwrap();
+        }
+        drop(repo);
+
+        let manager = RepoManager::new();
+        manager.open(dir.path().to_str().unwrap()).unwrap();
+        manager.checkout_commit(&first.to_string()).unwrap();
+
+        manager
+            .with_repo(|r| {
+                assert!(r.head_detached().unwrap(), "HEAD should be detached");
+                assert_eq!(r.head().unwrap().peel_to_commit().unwrap().id(), first);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn checkout_commit_does_not_discard_uncommitted_changes() {
+        // safe() checkout must refuse (not silently overwrite) when a file with
+        // local edits would be changed by the checkout — the edits stay on disk.
+        let (dir, repo) = make_git_repo_with_commit();
+        let path = dir.path().join("f.txt");
+
+        // c1: f.txt = "a"
+        std::fs::write(&path, "a\n").unwrap();
+        let c1;
+        {
+            let mut idx = repo.index().unwrap();
+            idx.add_path(std::path::Path::new("f.txt")).unwrap();
+            idx.write().unwrap();
+            let tree = repo.find_tree(idx.write_tree().unwrap()).unwrap();
+            let sig = Signature::now("Test", "test@test.com").unwrap();
+            let parent = repo.head().unwrap().peel_to_commit().unwrap();
+            c1 = repo.commit(Some("HEAD"), &sig, &sig, "c1", &tree, &[&parent]).unwrap();
+        }
+        // c2 (now HEAD): f.txt = "b"
+        std::fs::write(&path, "b\n").unwrap();
+        {
+            let mut idx = repo.index().unwrap();
+            idx.add_path(std::path::Path::new("f.txt")).unwrap();
+            idx.write().unwrap();
+            let tree = repo.find_tree(idx.write_tree().unwrap()).unwrap();
+            let sig = Signature::now("Test", "test@test.com").unwrap();
+            let parent = repo.head().unwrap().peel_to_commit().unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "c2", &tree, &[&parent]).unwrap();
+        }
+        // Uncommitted local edit that conflicts with c1's version of f.txt.
+        std::fs::write(&path, "local edit\n").unwrap();
+        drop(repo);
+
+        let manager = RepoManager::new();
+        manager.open(dir.path().to_str().unwrap()).unwrap();
+        let result = manager.checkout_commit(&c1.to_string());
+
+        assert!(result.is_err(), "checkout should refuse to overwrite local changes");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "local edit\n",
+            "the uncommitted edit must be preserved",
+        );
+    }
+
+    #[test]
+    fn create_tag_makes_lightweight_and_annotated_tags() {
+        let (dir, repo) = make_git_repo_with_commit();
+        {
+            let mut cfg = repo.config().unwrap();
+            cfg.set_str("user.name", "Test").unwrap();
+            cfg.set_str("user.email", "test@test.com").unwrap();
+        }
+        let head = repo.head().unwrap().peel_to_commit().unwrap().id();
+        drop(repo);
+
+        let manager = RepoManager::new();
+        manager.open(dir.path().to_str().unwrap()).unwrap();
+        manager.create_tag("v1", &head.to_string(), None).unwrap();
+        manager.create_tag("v2", &head.to_string(), Some("release notes")).unwrap();
+
+        manager
+            .with_repo(|r| {
+                assert!(r.find_reference("refs/tags/v1").is_ok(), "lightweight tag missing");
+                // The annotated tag resolves to a tag object.
+                let v2 = r.revparse_single("v2").unwrap();
+                assert!(v2.as_tag().is_some(), "v2 should be an annotated tag");
+                assert_eq!(v2.as_tag().unwrap().target_id(), head);
+            })
+            .unwrap();
     }
 
     #[test]

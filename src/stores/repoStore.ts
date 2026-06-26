@@ -23,6 +23,8 @@ interface RepoStore {
   loadBranches: () => Promise<void>;
   checkoutBranch: (name: string) => Promise<void>;
   checkoutRemoteBranch: (remoteRef: string) => Promise<void>;
+  checkoutCommit: (oid: string) => Promise<void>;
+  createTag: (name: string, oid: string, message?: string) => Promise<void>;
   createBranch: (name: string, startPoint?: string) => Promise<void>;
   renameBranch: (oldName: string, newName: string) => Promise<void>;
   deleteBranch: (name: string) => Promise<void>;
@@ -113,6 +115,18 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     checkoutRemoteBranch: async (remoteRef: string) => {
       const repo = await invoke<RepoInfo>("checkout_remote_branch", { remoteRef });
       set({ currentRepo: repo });
+      await get().loadBranches();
+    },
+
+    // Check out an arbitrary commit (detaches HEAD).
+    checkoutCommit: async (oid: string) => {
+      const repo = await invoke<RepoInfo>("checkout_commit", { oid });
+      set({ currentRepo: repo });
+      await get().loadBranches();
+    },
+
+    createTag: async (name: string, oid: string, message?: string) => {
+      await invoke("create_tag", { name, oid, message: message ?? null });
       await get().loadBranches();
     },
 

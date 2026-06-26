@@ -4,6 +4,8 @@ import "@testing-library/jest-dom";
 import { CommitGraph } from "./CommitGraph";
 import { useGraphStore } from "../../stores/graphStore";
 import { useRepoStore } from "../../stores/repoStore";
+import { useGithubStore } from "../../stores/githubStore";
+import { useToastStore } from "../../stores/toastStore";
 import type { GraphNode, GraphViewport } from "../../types/graph";
 
 const node = (over: Partial<GraphNode>): GraphNode => ({
@@ -65,7 +67,10 @@ beforeEach(() => {
     checkoutBranch: vi.fn().mockResolvedValue(undefined),
     renameBranch: vi.fn().mockResolvedValue(undefined),
     deleteBranch: vi.fn().mockResolvedValue(undefined),
+    checkoutCommit: vi.fn().mockResolvedValue(undefined),
+    createTag: vi.fn().mockResolvedValue(undefined),
   });
+  useGithubStore.setState({ remoteInfo: null });
 });
 
 describe("CommitGraph columns", () => {
@@ -165,6 +170,60 @@ describe("CommitGraph context menu", () => {
       expect(useRepoStore.getState().createBranch).toHaveBeenCalledWith("feature/x", "b".repeat(40)),
     );
     expect(useRepoStore.getState().checkoutBranch).toHaveBeenCalledWith("feature/x");
+  });
+
+  it("offers commit-level actions (checkout this commit, create tag)", () => {
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("second commit"));
+    expect(screen.getByText("Checkout this commit")).toBeInTheDocument();
+    expect(screen.getByText("Create tag here…")).toBeInTheDocument();
+  });
+
+  it("checks out a commit (detached) from the menu", async () => {
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("second commit"));
+    fireEvent.click(screen.getByText("Checkout this commit"));
+    await waitFor(() =>
+      expect(useRepoStore.getState().checkoutCommit).toHaveBeenCalledWith("b".repeat(40)),
+    );
+  });
+
+  it("surfaces a refused checkout as an error toast (no silent failure)", async () => {
+    const error = vi.fn();
+    useToastStore.setState({ error });
+    useRepoStore.setState({
+      checkoutCommit: vi.fn().mockRejectedValue("uncommitted changes would be overwritten"),
+    });
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("second commit"));
+    fireEvent.click(screen.getByText("Checkout this commit"));
+    await waitFor(() => expect(error).toHaveBeenCalled());
+  });
+
+  it("creates a tag at the commit via the prompt", async () => {
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("second commit"));
+    fireEvent.click(screen.getByText("Create tag here…"));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "v1.0" } });
+    fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    await waitFor(() =>
+      expect(useRepoStore.getState().createTag).toHaveBeenCalledWith("v1.0", "b".repeat(40)),
+    );
+  });
+
+  it("shows a copy-link action only when a remote is detected, and copies the URL", () => {
+    // No remote → no link action.
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("first commit"));
+    expect(screen.queryByText("Copy link to commit")).toBeNull();
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    useGithubStore.setState({
+      remoteInfo: { host: "github.com", owner: "o", repo: "r", protocol: "https" },
+    });
+    fireEvent.contextMenu(screen.getByText("first commit"));
+    fireEvent.click(screen.getByText("Copy link to commit"));
+    expect(writeText).toHaveBeenCalledWith(`https://github.com/o/r/commit/${"a".repeat(40)}`);
   });
 });
 
