@@ -235,7 +235,16 @@ between sections, and add new ideas under the right heading. Items marked
 
 ## Config & settings
 
-- [ ] Git identity config (per-repo / global name + email) (v1 scope)
+- [x] Git identity config (per-repo / global name + email) (v1 scope)
+      — new Settings → Git identity section (`GitIdentitySettings`): shows the
+      effective identity used for commits here, a scope toggle (This repository /
+      Global), and name/email inputs prefilled from the chosen scope (falling back
+      to the effective identity). Backend `get_identity_config` (effective + local +
+      global, read per config level) and `set_identity(name, email, global)` —
+      local writes `.git/config`, global writes `~/.gitconfig` (created if missing).
+      `lib/identity.ts` wrappers; backend tests for read + local write + the
+      write mechanism (global file untouched in tests); frontend tests for prefill,
+      scope switch, save, and validation.
 - [ ] Commit signing config (GPG / SSH) (v1 scope)
 - [ ] SSH key management UI (add, view, associate with GitHub accounts) (v1 scope)
 - [ ] `.gitconfig` viewer/editor (v1 scope)

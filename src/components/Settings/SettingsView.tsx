@@ -1,6 +1,7 @@
 import { ThemeManager } from "./ThemeManager";
 import { NotificationSettings } from "./NotificationSettings";
 import { GithubSettings } from "./GithubSettings";
+import { GitIdentitySettings } from "./GitIdentitySettings";
 import { FontSettings } from "./FontSettings";
 import { GraphColorSettings } from "./GraphColorSettings";
 import { DiagnosticsSettings } from "./DiagnosticsSettings";
@@ -26,6 +27,11 @@ export function SettingsView() {
       >
         Settings
       </h1>
+
+      <section style={{ maxWidth: 640, marginBottom: "var(--space-6)" }}>
+        <h2 style={sectionTitleStyle}>Git identity</h2>
+        <GitIdentitySettings />
+      </section>
 
       <section style={{ maxWidth: 640, marginBottom: "var(--space-6)" }}>
         <h2 style={sectionTitleStyle}>GitHub</h2>

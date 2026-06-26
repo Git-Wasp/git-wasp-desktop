@@ -2,10 +2,13 @@ use crate::repo_manager::AppState;
 use crate::working_tree::{
     HeadCommitInfo,
     Identity,
+    IdentityConfig,
     amend_commit_message as wt_amend_commit_message,
     create_commit as wt_create_commit,
     get_commit_identity as wt_get_identity,
+    get_identity_config as wt_get_identity_config,
     head_commit_info as wt_head_commit_info,
+    set_identity as wt_set_identity,
 };
 use tauri::State;
 
@@ -33,6 +36,25 @@ pub async fn get_head_commit_info(state: State<'_, AppState>) -> Result<Option<H
 #[tauri::command]
 pub async fn get_commit_identity(state: State<'_, AppState>) -> Result<Identity, String> {
     state.with_repo(|repo| wt_get_identity(repo))
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_identity_config(state: State<'_, AppState>) -> Result<IdentityConfig, String> {
+    state.with_repo(|repo| wt_get_identity_config(repo))
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_identity(
+    name: String,
+    email: String,
+    global: bool,
+    state: State<'_, AppState>,
+) -> Result<IdentityConfig, String> {
+    state.with_repo(|repo| wt_set_identity(repo, &name, &email, global))
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }

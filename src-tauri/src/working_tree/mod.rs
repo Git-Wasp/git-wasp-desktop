@@ -487,6 +487,86 @@ pub fn get_commit_identity(repo: &Repository) -> anyhow::Result<Identity> {
     })
 }
 
+/// The git identity at each relevant level: the `effective` identity (what a
+/// commit here would use), plus the repo-`local` and `global` overrides when set.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IdentityConfig {
+    pub effective: Identity,
+    pub local: Option<Identity>,
+    pub global: Option<Identity>,
+}
+
+/// Read `user.name`/`user.email` from a single config level. Returns `None` when
+/// neither is set at that level (so the UI can show "not set" rather than blanks).
+fn read_level_identity(config: &git2::Config, level: git2::ConfigLevel) -> Option<Identity> {
+    let snapshot = config.open_level(level).ok()?;
+    let name = snapshot.get_string("user.name").ok();
+    let email = snapshot.get_string("user.email").ok();
+    if name.is_none() && email.is_none() {
+        return None;
+    }
+    Some(Identity { name: name.unwrap_or_default(), email: email.unwrap_or_default() })
+}
+
+pub fn get_identity_config(repo: &Repository) -> anyhow::Result<IdentityConfig> {
+    let config = repo.config().context("failed to read git config")?;
+    let effective = Identity {
+        name: config.get_string("user.name").unwrap_or_default(),
+        email: config.get_string("user.email").unwrap_or_default(),
+    };
+    let local = read_level_identity(&config, git2::ConfigLevel::Local);
+    // git's "global" is XDG (~/.config/git/config) overlaid by ~/.gitconfig.
+    let global = read_level_identity(&config, git2::ConfigLevel::Global)
+        .or_else(|| read_level_identity(&config, git2::ConfigLevel::XDG));
+    Ok(IdentityConfig { effective, local, global })
+}
+
+/// Write `user.name`/`user.email` into the given config (a single level).
+fn write_identity(config: &mut git2::Config, name: &str, email: &str) -> anyhow::Result<()> {
+    config.set_str("user.name", name).context("failed to set user.name")?;
+    config.set_str("user.email", email).context("failed to set user.email")?;
+    Ok(())
+}
+
+/// Open the writable global git config, creating `~/.gitconfig` if no global
+/// config file exists yet (so a first-time "set global identity" doesn't fail).
+fn open_writable_global() -> anyhow::Result<git2::Config> {
+    if let Ok(cfg) = git2::Config::open_default() {
+        if let Ok(global) = cfg.open_level(git2::ConfigLevel::Global) {
+            return Ok(global);
+        }
+    }
+    let home = dirs::home_dir().context("could not determine home directory")?;
+    let path = home.join(".gitconfig");
+    if !path.exists() {
+        std::fs::File::create(&path).context("failed to create global git config")?;
+    }
+    git2::Config::open(&path).context("failed to open global git config")
+}
+
+/// Set the commit identity at the repo-local (`global = false`) or global level,
+/// then return the refreshed config.
+pub fn set_identity(
+    repo: &Repository,
+    name: &str,
+    email: &str,
+    global: bool,
+) -> anyhow::Result<IdentityConfig> {
+    log::info!(target: "git", "identity: set ({} scope)", if global { "global" } else { "local" });
+    if global {
+        let mut cfg = open_writable_global()?;
+        write_identity(&mut cfg, name, email)?;
+    } else {
+        let cfg = repo.config().context("failed to read git config")?;
+        let mut local = cfg
+            .open_level(git2::ConfigLevel::Local)
+            .context("repository has no local config")?;
+        write_identity(&mut local, name, email)?;
+    }
+    get_identity_config(repo)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -841,6 +921,46 @@ mod tests {
         let identity = get_commit_identity(&repo).unwrap();
         assert_eq!(identity.name, "Test User");
         assert_eq!(identity.email, "test@test.com");
+    }
+
+    #[test]
+    fn get_identity_config_reports_effective_and_local() {
+        let (_dir, repo) = init_repo(); // sets a repo-local identity
+        let cfg = get_identity_config(&repo).unwrap();
+        assert_eq!(cfg.effective.name, "Test User");
+        let local = cfg.local.expect("local identity should be present");
+        assert_eq!(local.name, "Test User");
+        assert_eq!(local.email, "test@test.com");
+    }
+
+    #[test]
+    fn set_identity_local_persists_and_updates_effective() {
+        let (_dir, repo) = init_repo();
+        let cfg = set_identity(&repo, "New Name", "new@example.com", false).unwrap();
+
+        assert_eq!(cfg.effective.name, "New Name");
+        let local = cfg.local.expect("local identity");
+        assert_eq!(local.name, "New Name");
+        assert_eq!(local.email, "new@example.com");
+        // Persisted: a fresh read sees it too.
+        assert_eq!(get_commit_identity(&repo).unwrap().name, "New Name");
+    }
+
+    #[test]
+    fn write_identity_sets_both_keys() {
+        // Mechanism test against a throwaway config file — avoids touching the
+        // real global config that the `global` scope would write to.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("standalone.gitconfig");
+        std::fs::File::create(&path).unwrap();
+
+        let mut cfg = git2::Config::open(&path).unwrap();
+        write_identity(&mut cfg, "Solo Dev", "solo@example.com").unwrap();
+        drop(cfg);
+
+        let reopened = git2::Config::open(&path).unwrap();
+        assert_eq!(reopened.get_string("user.name").unwrap(), "Solo Dev");
+        assert_eq!(reopened.get_string("user.email").unwrap(), "solo@example.com");
     }
 
     /// The content of the index (staged) blob for a path, or None if absent.

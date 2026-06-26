@@ -27,6 +27,16 @@ export interface Identity {
   email: string;
 }
 
+/** Git commit identity across config levels (see `get_identity_config`). */
+export interface IdentityConfig {
+  /** What a commit here would actually use. */
+  effective: Identity;
+  /** The repo-local override, when set. */
+  local: Identity | null;
+  /** The global identity, when set. */
+  global: Identity | null;
+}
+
 export interface HeadCommitInfo {
   oid: string;
   message: string;

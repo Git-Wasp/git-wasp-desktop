@@ -88,6 +88,8 @@ pub fn run() {
             commands::commit::amend_commit_message,
             commands::commit::get_head_commit_info,
             commands::commit::get_commit_identity,
+            commands::commit::get_identity_config,
+            commands::commit::set_identity,
             avatar::get_avatar,
             // Stash
             commands::stash::stash_save_cmd,
