@@ -251,24 +251,33 @@ pub fn pull_ff(
         });
     }
 
-    // Fast-forward: update the local ref
+    // Fast-forward. When this is the checked-out branch, update the working tree
+    // and index to the upstream commit *before* moving the ref. Order matters:
+    // HEAD is a symbolic ref to the branch, so moving the branch ref first would
+    // make checkout's baseline (HEAD) equal the target, leaving the working tree
+    // untouched while the index advances — every changed file would then read as
+    // "modified". Checking out first (baseline = old HEAD) writes the files, then
+    // we move the ref.
     let upstream_commit = repo.find_commit(upstream_oid)?;
+    let is_current_branch = repo
+        .head()
+        .ok()
+        .and_then(|h| h.name().map(|n| n == local_ref.as_str()))
+        .unwrap_or(false);
+
+    if is_current_branch {
+        let mut checkout = git2::build::CheckoutBuilder::new();
+        checkout.safe();
+        repo.checkout_tree(upstream_commit.as_object(), Some(&mut checkout))
+            .context("checkout after fast-forward failed")?;
+    }
+
     repo.reference(
         &local_ref,
         upstream_oid,
         true,
         &format!("Fast-forward to {upstream_ref}"),
     )?;
-
-    // Update HEAD and working tree if this is the current branch
-    if let Ok(head) = repo.head() {
-        if head.name() == Some(local_ref.as_str()) {
-            let mut checkout = git2::build::CheckoutBuilder::new();
-            checkout.safe();
-            repo.checkout_tree(upstream_commit.as_object(), Some(&mut checkout))
-                .context("checkout after fast-forward failed")?;
-        }
-    }
 
     log::info!(target: "git", "pull (ff): branch={branch} fast-forwarded to {upstream_oid}");
     Ok(PullFfOutcome::FastForwarded)
@@ -460,6 +469,20 @@ mod tests {
         repo.commit(Some(&branch_ref), &sig, &sig, "advance", &tree, &[&parent]).unwrap()
     }
 
+    /// Adds a commit to the remote `branch` that creates a file, so a
+    /// fast-forward must materialise it in the working tree.
+    fn advance_with_file(repo_path: &Path, branch: &str, name: &str, content: &str) -> git2::Oid {
+        let repo = Repository::open(repo_path).unwrap();
+        let branch_ref = format!("refs/heads/{branch}");
+        let parent = repo.find_reference(&branch_ref).unwrap().peel_to_commit().unwrap();
+        let blob = repo.blob(content.as_bytes()).unwrap();
+        let mut builder = repo.treebuilder(Some(&parent.tree().unwrap())).unwrap();
+        builder.insert(name, blob, 0o100644).unwrap();
+        let tree = repo.find_tree(builder.write().unwrap()).unwrap();
+        let sig = Signature::now("Test", "test@test.com").unwrap();
+        repo.commit(Some(&branch_ref), &sig, &sig, "add file", &tree, &[&parent]).unwrap()
+    }
+
     /// Commits a working-tree file onto the local clone's current HEAD.
     fn commit_local(repo: &Repository, work_dir: &Path, name: &str, content: &str) -> git2::Oid {
         fs::write(work_dir.join(name), content).unwrap();
@@ -493,6 +516,32 @@ mod tests {
         let outcome = pull_ff(&repo, "origin", "main", None).unwrap();
         assert!(matches!(outcome, PullFfOutcome::FastForwarded));
         assert_eq!(repo.refname_to_id("refs/heads/main").unwrap(), new_oid);
+    }
+
+    #[test]
+    fn pull_ff_materialises_new_files_and_leaves_a_clean_tree() {
+        // Regression: a fast-forward used to move the branch ref before checking
+        // out the new tree, so (HEAD being symbolic) the checkout baseline equalled
+        // the target and the working tree was never updated — leaving every changed
+        // file reading as "modified". The working tree must match the new commit
+        // and be clean after a fast-forward.
+        let remote = bare_remote();
+        let local = TempDir::new().unwrap();
+        let repo = clone(remote.path(), local.path());
+
+        advance_with_file(remote.path(), "main", "added.txt", "hello\n");
+
+        let outcome = pull_ff(&repo, "origin", "main", None).unwrap();
+        assert!(matches!(outcome, PullFfOutcome::FastForwarded));
+
+        // The upstream's new file is written into the working tree...
+        assert_eq!(fs::read_to_string(local.path().join("added.txt")).unwrap(), "hello\n");
+
+        // ...and there are no spurious staged/unstaged changes.
+        let status = crate::working_tree::get_working_tree_status(&repo).unwrap();
+        assert!(status.staged.is_empty(), "unexpected staged: {:?}", status.staged);
+        assert!(status.unstaged.is_empty(), "unexpected unstaged: {:?}", status.unstaged);
+        assert!(status.untracked.is_empty(), "unexpected untracked: {:?}", status.untracked);
     }
 
     #[test]

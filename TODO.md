@@ -140,16 +140,20 @@ between sections, and add new ideas under the right heading. Items marked
       store's `applyStagedContent`/`stageFile` (gated on the file being the open
       one, so staging a different file's row doesn't move the selection).
 - [ ] Execute git hooks (pre-commit, pre-push) and show output in a built-in pane
-- [ ] When a branch is checked out and fully committed, checking out another branch
+- [x] When a branch is checked out and fully committed, checking out another branch
       feels like it's not a "clean" checkout and I end up with multiple changes
       in an unstaged state.
-      — Now instrumented for diagnosis (see the logging item under Engineering &
-      tooling): with diagnostic logging on, `checkout_branch` logs the working-tree
-      dirty counts before and after as `checkout: pre/post staged=.. unstaged=..
-      untracked=..`. A clean pre-state turning dirty post-checkout implicates the
-      checkout itself (suspect: index/clean-filter mismatch — `stage_file_content`
-      already bypasses clean filters) rather than pre-existing edits. Root-cause fix
-      pending captured evidence.
+      — Diagnosed via the diagnostic logging: the `checkout: pre/post` counts showed
+      `checkout_branch` itself is clean (0/0/0); the spurious "modified" files
+      actually appeared after a **pull (fast-forward)**. Root cause was the order in
+      `remote_ops::pull_ff`: it moved the branch ref to the upstream commit *before*
+      `checkout_tree`. Since HEAD is a symbolic ref to the branch, moving it made the
+      checkout baseline (HEAD) equal the target, so the working tree was never
+      updated while the index advanced — leaving every changed file reading as
+      modified. Fixed by checking out the new tree first (baseline = old HEAD), then
+      moving the ref. Regression test
+      `pull_ff_materialises_new_files_and_leaves_a_clean_tree` (verified failing
+      before the reorder).
 
 ## PR refinements
 
@@ -422,3 +426,13 @@ between sections, and add new ideas under the right heading. Items marked
       selected commit (often HEAD) stops reading as selected. `selectedOid` is
       nulled rather than set to the sentinel so the commit-detail panel never
       tries to resolve it. Selecting any commit afterwards replaces it as before.
+
+## Other issues
+
+- [ ] When reopening app and "state" is restoring (e.g. when a large repo was previously opened and is now being re-opened) then:
+  - [ ] app remains in the default theme until loading has completed, then switches to previously-selected preferred theme
+        main app window is "blank" and appears to have stalled
+  - [ ] When checking out a branch and there are other branches ahead of that branch (either in the remote or locally), 
+        any commits ahead of the current HEAD are not visible in the graph. They should still be shown and be selectable.
+- [ ] It may be better to have a "loading / splash" screen whilst we're opening the app - have the processes required 
+      to "boot" the app and restore state run in the background whilst the loading screen is active, then show the main app. Bonus points if the loading screen has either a progress bar or spinner and below it states which "task" is being performed as part of the "boot".
