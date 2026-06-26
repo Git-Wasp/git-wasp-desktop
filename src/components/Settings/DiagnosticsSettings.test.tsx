@@ -40,8 +40,8 @@ describe("DiagnosticsSettings", () => {
     await waitFor(() =>
       expect(mockInvoke).toHaveBeenCalledWith("set_diagnostics", { enabled: true }),
     );
+    await waitFor(() => expect(toggle).toBeChecked());
     expect(localStorage.getItem("diagnostics")).toBe("on");
-    expect(toggle).toBeChecked();
   });
 
   it("reveals the log folder", async () => {

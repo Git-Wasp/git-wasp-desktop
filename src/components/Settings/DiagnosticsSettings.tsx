@@ -73,8 +73,16 @@ export function DiagnosticsSettings() {
   }, []);
 
   const handleToggle = async (next: boolean) => {
-    await setDiagnostics(next);
+    // Flip the UI immediately (snappy + avoids a render race), then persist;
+    // revert if the backend call fails.
     setInfo((prev) => (prev ? { ...prev, enabled: next } : prev));
+    setError(null);
+    try {
+      await setDiagnostics(next);
+    } catch (e) {
+      setInfo((prev) => (prev ? { ...prev, enabled: !next } : prev));
+      setError(String(e));
+    }
   };
 
   return (
