@@ -11,12 +11,11 @@ import { PRPanel } from "./components/PRPanel/PRPanel";
 import { MergeEditor } from "./components/Merge/MergeEditor";
 import { SettingsView } from "./components/Settings/SettingsView";
 import { WelcomeView } from "./components/Welcome/WelcomeView";
+import { SplashScreen } from "./components/Splash/SplashScreen";
 import { ToastContainer } from "./components/ui/Toast";
 import { ResizeHandle } from "./components/common/ResizeHandle";
 import { usePersistedWidth } from "./lib/usePersistedWidth";
 import { usePersistedBoolean } from "./lib/usePersistedBoolean";
-import { applyFontPrefs, loadFontPrefs } from "./lib/fonts";
-import { applyGraphPalette, loadGraphPaletteId } from "./lib/graphPalettes";
 import { applyDiagnosticsPref } from "./lib/diagnostics";
 import { useRepoStore } from "./stores/repoStore";
 import { useGraphStore } from "./stores/graphStore";
@@ -28,6 +27,9 @@ import { useThemeStore } from "./stores/themeStore";
 import { useWorkingTreeStore } from "./stores/workingTreeStore";
 
 type View = "history" | "prs" | "settings";
+
+// How many history rows to warm during boot so the graph isn't blank on reveal.
+const BOOT_GRAPH_LIMIT = 150;
 
 export default function App() {
   const { loadCurrentRepo, loadOpenRepos, currentRepo, loadBranches } = useRepoStore();
@@ -56,6 +58,8 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = usePersistedWidth("sidebarWidth", 220, 160, 400);
   const [detailWidth, setDetailWidth] = usePersistedWidth("detailWidth", 380, 280, 720);
   const [sidebarCollapsed, setSidebarCollapsed] = usePersistedBoolean("sidebarCollapsed", false);
+  const [booted, setBooted] = useState(false);
+  const [bootTask, setBootTask] = useState("Starting…");
 
   const enterUncommitted = () => {
     clearSelectedFile();
@@ -83,10 +87,47 @@ export default function App() {
     setView("prs");
   };
 
+  // One-time boot: restore state behind the splash screen, then reveal the app.
+  // Local/cheap work is awaited so the graph isn't blank on reveal; network-bound
+  // work (GitHub) is deferred to after reveal so it can't stall the splash.
   useEffect(() => {
-    loadCurrentRepo();
-    loadOpenRepos();
-  }, [loadCurrentRepo, loadOpenRepos]);
+    let cancelled = false;
+    const task = (t: string) => {
+      if (!cancelled) setBootTask(t);
+    };
+    (async () => {
+      try {
+        task("Loading theme…");
+        await initTheme();
+        task("Restoring session…");
+        await Promise.all([loadCurrentRepo(), loadOpenRepos()]);
+        // Resolve any in-progress merge before reveal so we don't flash the
+        // normal UI and then swap to the merge editor.
+        await loadStatus();
+        if (useRepoStore.getState().currentRepo) {
+          task("Loading history…");
+          // The per-repo effect loads branches/remote/ahead-behind; we also warm
+          // the first graph slice so the graph has content on reveal.
+          await useGraphStore.getState().fetchViewport(0, BOOT_GRAPH_LIMIT).catch(() => {});
+        }
+      } catch {
+        // Boot is best-effort — always reveal the app so the user isn't stuck on
+        // the splash if a restore step fails.
+      } finally {
+        if (!cancelled) setBooted(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [initTheme, loadCurrentRepo, loadOpenRepos, loadStatus]);
+
+  // Network-bound startup work runs after reveal so it can't stall the splash.
+  useEffect(() => {
+    if (!booted) return;
+    init();
+    applyDiagnosticsPref().catch(() => {});
+  }, [booted, init]);
 
   // Load everything scoped to the active repo whenever it changes. This lives at
   // the app root (not in the Sidebar) so it runs even when the sidebar is
@@ -100,25 +141,9 @@ export default function App() {
     loadAheadBehind();
   }, [repoPath, loadBranches, detectRemote, loadAheadBehind]);
 
-  useEffect(() => {
-    initTheme();
-  }, [initTheme]);
-
-  useEffect(() => {
-    applyFontPrefs(loadFontPrefs());
-    applyGraphPalette(loadGraphPaletteId());
-    // Re-apply the user's diagnostics override (if any); no-op otherwise, leaving
-    // the build default (on for dev, off for release).
-    applyDiagnosticsPref().catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    init();
-  }, [init]);
-
-  useEffect(() => {
-    loadStatus();
-  }, [loadStatus]);
+  if (!booted) {
+    return <SplashScreen task={bootTask} />;
+  }
 
   if (operationStatus.kind === "merge") {
     return (

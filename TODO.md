@@ -19,6 +19,11 @@ between sections, and add new ideas under the right heading. Items marked
 ## Commit graph & branches
 
 - [ ] Right-click actions on commits
+      - checkout this commit
+      - create branch here
+      - copy commit hash
+      - copy link to this commit on remote
+      - create tag here
 - [ ] Right-click actions on branches (delete local, push, etc.)
 - [x] Integrate user icons via gravatar (in the commit dots) — author gravatars
       render clipped into the commit dots (lane-coloured dot is the fallback).
@@ -426,13 +431,34 @@ between sections, and add new ideas under the right heading. Items marked
       selected commit (often HEAD) stops reading as selected. `selectedOid` is
       nulled rather than set to the sentinel so the commit-detail panel never
       tries to resolve it. Selecting any commit afterwards replaces it as before.
+- [ ] Add a permanent "muted" background colour to the entire row of the currently checked
+      out branch in the graph view. When actually selected, show the normal highlight colour,
+      but make it even more obvious which commit is currently the checked out HEAD
 
 ## Other issues
 
-- [ ] When reopening app and "state" is restoring (e.g. when a large repo was previously opened and is now being re-opened) then:
-  - [ ] app remains in the default theme until loading has completed, then switches to previously-selected preferred theme
+- [x] When reopening app and "state" is restoring (e.g. when a large repo was previously opened and is now being re-opened) then:
+  - [x] app remains in the default theme until loading has completed, then switches to previously-selected preferred theme
         main app window is "blank" and appears to have stalled
-  - [ ] When checking out a branch and there are other branches ahead of that branch (either in the remote or locally), 
+        — theme flash fixed: the active theme is now cached to localStorage
+        (`cacheActiveTheme`) and applied synchronously in `main.tsx` before the
+        first paint (`applyCachedTheme`), alongside fonts + graph palette (moved out
+        of the post-mount App effect). The backend remains source of truth and
+        re-applies on init. The "blank/stalled" window is covered by the splash
+        screen below.
+  - [x] When checking out a branch and there are other branches ahead of that branch (either in the remote or locally), 
         any commits ahead of the current HEAD are not visible in the graph. They should still be shown and be selectable.
-- [ ] It may be better to have a "loading / splash" screen whilst we're opening the app - have the processes required 
+        — the graph revwalk seeded only from HEAD, hiding anything not an ancestor
+        of HEAD. New `seed_revwalk` pushes every local/remote branch tip + tag (and
+        HEAD), shared by the layout walk and `find_commit_row` so reveal/scroll
+        stays consistent. Regression test
+        `commits_ahead_of_head_on_other_branches_are_included`.
+- [x] It may be better to have a "loading / splash" screen whilst we're opening the app - have the processes required 
       to "boot" the app and restore state run in the background whilst the loading screen is active, then show the main app. Bonus points if the loading screen has either a progress bar or spinner and below it states which "task" is being performed as part of the "boot".
+      — new `SplashScreen` (spinner + current-task label) shown until a one-time
+      boot sequence in `App` completes: loads theme, restores session (current +
+      open repos), resolves merge state, and warms the first graph slice (so the
+      graph isn't blank on reveal). Network-bound work (GitHub) is deferred to
+      after reveal so it can't stall the splash; boot is best-effort and always
+      reveals even if a step fails. The task label steps through "Loading theme…",
+      "Restoring session…", "Loading history…".

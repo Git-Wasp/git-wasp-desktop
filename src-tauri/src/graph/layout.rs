@@ -210,11 +210,48 @@ struct CommitRaw {
     author_timestamp: i64,
 }
 
+/// Seed `walk` from every branch/tag tip and HEAD — not just HEAD. This is what
+/// makes commits on branches that are ahead of (or unrelated to) the checked-out
+/// branch visible and selectable in the graph; pushing only HEAD would hide
+/// everything that isn't an ancestor of HEAD (e.g. a remote branch ahead of the
+/// local one you have checked out). Returns false when nothing could be pushed
+/// (an empty/unborn repository). Shared by the layout walk and `find_commit_row`
+/// so their row orderings agree.
+fn seed_revwalk(repo: &Repository, walk: &mut git2::Revwalk) -> bool {
+    let mut pushed_any = false;
+    if let Ok(refs) = repo.references() {
+        for r in refs.flatten() {
+            if !(r.is_branch() || r.is_remote() || r.is_tag()) {
+                continue; // skip symbolic refs (HEAD, origin/HEAD), notes, stash, etc.
+            }
+            // Tags may be annotated (peel to the commit); branches point at one.
+            let target = if r.is_tag() {
+                r.peel(ObjectType::Commit).ok().map(|o| o.id())
+            } else {
+                r.target()
+            };
+            if let Some(oid) = target {
+                if walk.push(oid).is_ok() {
+                    pushed_any = true;
+                }
+            }
+        }
+    }
+    // Include HEAD explicitly so a detached HEAD (not pointed at by any branch
+    // ref) is still part of the walk.
+    if walk.push_head().is_ok() {
+        pushed_any = true;
+    }
+    pushed_any
+}
+
 fn walk_commits(repo: &Repository, limit: usize) -> anyhow::Result<Vec<CommitRaw>> {
     let mut walk = repo.revwalk().context("failed to create revwalk")?;
-    walk.push_head().context("no HEAD — empty repository?")?;
     walk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME)
         .context("failed to set sort")?;
+    if !seed_revwalk(repo, &mut walk) {
+        return Ok(Vec::new());
+    }
 
     let mut result = Vec::new();
     for oid in walk.take(limit) {
@@ -421,9 +458,11 @@ pub fn find_commit_row(repo: &Repository, oid_str: &str) -> anyhow::Result<Optio
     let wip_offset = if head_id.is_some() && changed_file_count(repo) > 0 { 1 } else { 0 };
 
     let mut walk = repo.revwalk().context("failed to create revwalk")?;
-    walk.push_head().context("no HEAD — empty repository?")?;
     walk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME)
         .context("failed to set sort")?;
+    if !seed_revwalk(repo, &mut walk) {
+        return Ok(None);
+    }
 
     for (i, oid) in walk.enumerate() {
         let oid = oid.context("revwalk error")?;
@@ -517,6 +556,32 @@ mod tests {
         make_commit(&repo, "only", &[]);
         let missing = "0".repeat(40);
         assert_eq!(find_commit_row(&repo, &missing).unwrap(), None);
+    }
+
+    #[test]
+    fn commits_ahead_of_head_on_other_branches_are_included() {
+        // Regression: the walk used to seed only from HEAD, so a branch ahead of
+        // the checked-out one was invisible. Build first→second→third on the
+        // default branch, then check out a branch sitting back at `first`; the
+        // commits ahead must still be laid out and selectable.
+        let (_dir, repo) = init_repo();
+        let c1 = repo.find_commit(make_commit(&repo, "first", &[])).unwrap();
+        let c2 = repo.find_commit(make_commit(&repo, "second", &[&c1])).unwrap();
+        let c3 = make_commit(&repo, "third", &[&c2]);
+        repo.branch("old", &c1, false).unwrap();
+        repo.set_head("refs/heads/old").unwrap();
+
+        let viewport = compute_layout(&repo, 0, 10).unwrap();
+
+        assert_eq!(viewport.total_count, 3, "commits ahead of HEAD should still show");
+        let summaries: Vec<&str> = viewport.nodes.iter().map(|n| n.summary.as_str()).collect();
+        assert!(summaries.contains(&"first"));
+        assert!(summaries.contains(&"second"));
+        assert!(summaries.contains(&"third"));
+        // The ahead commit is reachable by find_commit_row too (so reveal/scroll
+        // works), and the two walks agree on its position.
+        let row = find_commit_row(&repo, &c3.to_string()).unwrap();
+        assert_eq!(row, Some(0), "newest commit (ahead of HEAD) should be row 0");
     }
 
     #[test]

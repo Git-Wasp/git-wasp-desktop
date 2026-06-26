@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { create } from "zustand";
-import { applyTheme, type AppliedTheme } from "../lib/applyTheme";
+import { applyTheme, cacheActiveTheme, type AppliedTheme } from "../lib/applyTheme";
 import type { Appearance } from "../lib/editorTheme";
 
 export interface ThemeInfo {
@@ -76,13 +76,17 @@ export const useThemeStore = create<ThemeStore>((set, get) => ({
     await get().loadThemes();
     const activeId = (await invoke<string | null>("get_active_theme")) ?? "dark";
     const theme = findTheme(get().themes, activeId);
-    applyTheme(toApplied(theme));
+    const applied = toApplied(theme);
+    applyTheme(applied);
+    cacheActiveTheme(applied);
     set({ activeThemeId: theme.id });
   },
 
   setActiveTheme: async (id: string) => {
     const theme = findTheme(get().themes, id);
-    applyTheme(toApplied(theme));
+    const applied = toApplied(theme);
+    applyTheme(applied);
+    cacheActiveTheme(applied);
     set({ activeThemeId: theme.id });
     await invoke("set_active_theme", { id: theme.id });
   },
