@@ -82,7 +82,9 @@ pub fn get_working_tree_status(repo: &Repository) -> anyhow::Result<WorkingTreeS
     let mut opts = StatusOptions::new();
     opts.include_untracked(true).recurse_untracked_dirs(true);
 
-    let statuses = repo.statuses(Some(&mut opts)).context("failed to get repository status")?;
+    let statuses = repo
+        .statuses(Some(&mut opts))
+        .context("failed to get repository status")?;
 
     let mut staged = Vec::new();
     let mut unstaged = Vec::new();
@@ -94,43 +96,87 @@ pub fn get_working_tree_status(repo: &Repository) -> anyhow::Result<WorkingTreeS
 
         // Staged changes (index)
         if s.is_index_new() {
-            staged.push(StatusEntry { path: path.clone(), original_path: None, status: StatusCode::Added });
+            staged.push(StatusEntry {
+                path: path.clone(),
+                original_path: None,
+                status: StatusCode::Added,
+            });
         } else if s.is_index_modified() {
-            staged.push(StatusEntry { path: path.clone(), original_path: None, status: StatusCode::Modified });
+            staged.push(StatusEntry {
+                path: path.clone(),
+                original_path: None,
+                status: StatusCode::Modified,
+            });
         } else if s.is_index_deleted() {
-            staged.push(StatusEntry { path: path.clone(), original_path: None, status: StatusCode::Deleted });
+            staged.push(StatusEntry {
+                path: path.clone(),
+                original_path: None,
+                status: StatusCode::Deleted,
+            });
         } else if s.is_index_renamed() {
-            let old = entry.head_to_index()
-                .and_then(|d| d.old_file().path().and_then(|p| p.to_str()).map(|s| s.to_string()));
-            staged.push(StatusEntry { path: path.clone(), original_path: old, status: StatusCode::Renamed });
+            let old = entry.head_to_index().and_then(|d| {
+                d.old_file()
+                    .path()
+                    .and_then(|p| p.to_str())
+                    .map(|s| s.to_string())
+            });
+            staged.push(StatusEntry {
+                path: path.clone(),
+                original_path: old,
+                status: StatusCode::Renamed,
+            });
         }
 
         // Unstaged / untracked changes (working tree)
         if s.is_wt_new() {
-            untracked.push(StatusEntry { path: path.clone(), original_path: None, status: StatusCode::Added });
+            untracked.push(StatusEntry {
+                path: path.clone(),
+                original_path: None,
+                status: StatusCode::Added,
+            });
         } else if s.is_wt_modified() {
-            unstaged.push(StatusEntry { path: path.clone(), original_path: None, status: StatusCode::Modified });
+            unstaged.push(StatusEntry {
+                path: path.clone(),
+                original_path: None,
+                status: StatusCode::Modified,
+            });
         } else if s.is_wt_deleted() {
-            unstaged.push(StatusEntry { path: path.clone(), original_path: None, status: StatusCode::Deleted });
+            unstaged.push(StatusEntry {
+                path: path.clone(),
+                original_path: None,
+                status: StatusCode::Deleted,
+            });
         } else if s.is_wt_renamed() {
-            unstaged.push(StatusEntry { path: path.clone(), original_path: None, status: StatusCode::Renamed });
+            unstaged.push(StatusEntry {
+                path: path.clone(),
+                original_path: None,
+                status: StatusCode::Renamed,
+            });
         }
     }
 
-    Ok(WorkingTreeStatus { staged, unstaged, untracked })
+    Ok(WorkingTreeStatus {
+        staged,
+        unstaged,
+        untracked,
+    })
 }
 
 pub fn stage_file(repo: &Repository, path: &str) -> anyhow::Result<WorkingTreeStatus> {
     let mut index = repo.index().context("failed to get index")?;
-    let workdir = repo.workdir().context("bare repository has no working directory")?;
+    let workdir = repo
+        .workdir()
+        .context("bare repository has no working directory")?;
     if workdir.join(path).exists() {
-        index.add_path(Path::new(path))
+        index
+            .add_path(Path::new(path))
             .with_context(|| format!("failed to stage: {path}"))?;
     } else {
         // The file is gone from the working tree: stage its deletion. add_path
         // can't do this (there's nothing on disk to add), so remove the index
         // entry instead.
-        index.remove_path(Path::new(path))
+        index
+            .remove_path(Path::new(path))
             .with_context(|| format!("failed to stage deletion: {path}"))?;
     }
     index.write().context("failed to write index")?;
@@ -149,13 +195,17 @@ pub fn unstage_file(repo: &Repository, path: &str) -> anyhow::Result<WorkingTree
 
     if in_head {
         // Modified or deleted: reset the index entry back to HEAD
-        let head = repo.head()?.peel_to_commit().context("HEAD is not a commit")?;
+        let head = repo
+            .head()?
+            .peel_to_commit()
+            .context("HEAD is not a commit")?;
         repo.reset_default(Some(head.as_object()), std::iter::once(path))
             .with_context(|| format!("failed to unstage: {path}"))?;
     } else {
         // New file: just remove from index
         let mut index = repo.index().context("failed to get index")?;
-        index.remove_path(Path::new(path))
+        index
+            .remove_path(Path::new(path))
             .with_context(|| format!("failed to remove from index: {path}"))?;
         index.write().context("failed to write index")?;
     }
@@ -168,7 +218,9 @@ pub fn unstage_file(repo: &Repository, path: &str) -> anyhow::Result<WorkingTree
 /// added file). Marks `is_binary` when either side contains a NUL byte so the
 /// frontend can fall back to whole-file staging.
 pub fn get_stage_file_contents(repo: &Repository, path: &str) -> anyhow::Result<StageFileContents> {
-    let workdir = repo.workdir().context("bare repository has no working directory")?;
+    let workdir = repo
+        .workdir()
+        .context("bare repository has no working directory")?;
     let full_path = workdir.join(path);
     let worktree_exists = full_path.is_file();
     let worktree_bytes = std::fs::read(&full_path).unwrap_or_default();
@@ -250,12 +302,19 @@ pub fn get_commit_file_contents(
 ///
 /// NOTE: writing the blob directly bypasses git's clean filters (autocrlf,
 /// `.gitattributes` filters). Acceptable for v1; revisit if it causes trouble.
-pub fn stage_file_content(repo: &Repository, path: &str, content: &str) -> anyhow::Result<WorkingTreeStatus> {
+pub fn stage_file_content(
+    repo: &Repository,
+    path: &str,
+    content: &str,
+) -> anyhow::Result<WorkingTreeStatus> {
     let mut index = repo.index().context("failed to get index")?;
 
     // Preserve the current index entry's mode where present; otherwise use a
     // regular non-executable blob mode.
-    let mode = index.get_path(Path::new(path), 0).map(|e| e.mode).unwrap_or(0o100644);
+    let mode = index
+        .get_path(Path::new(path), 0)
+        .map(|e| e.mode)
+        .unwrap_or(0o100644);
 
     let entry = git2::IndexEntry {
         ctime: git2::IndexTime::new(0, 0),
@@ -280,7 +339,9 @@ pub fn stage_file_content(repo: &Repository, path: &str, content: &str) -> anyho
 }
 
 pub fn discard_file(repo: &Repository, path: &str) -> anyhow::Result<WorkingTreeStatus> {
-    let workdir = repo.workdir().context("bare repository has no working directory")?;
+    let workdir = repo
+        .workdir()
+        .context("bare repository has no working directory")?;
     let full_path = workdir.join(path);
 
     // Check if file is tracked (exists in HEAD)
@@ -332,7 +393,9 @@ pub fn discard_all(repo: &Repository) -> anyhow::Result<WorkingTreeStatus> {
         .to_path_buf();
     let mut opts = StatusOptions::new();
     opts.include_untracked(true).recurse_untracked_dirs(true);
-    let statuses = repo.statuses(Some(&mut opts)).context("failed to get repository status")?;
+    let statuses = repo
+        .statuses(Some(&mut opts))
+        .context("failed to get repository status")?;
     for entry in statuses.iter() {
         if entry.status().is_wt_new() {
             if let Some(path) = entry.path() {
@@ -348,21 +411,28 @@ pub fn discard_all(repo: &Repository) -> anyhow::Result<WorkingTreeStatus> {
     get_working_tree_status(repo)
 }
 
-enum DiffKind { Unstaged, Staged }
+enum DiffKind {
+    Unstaged,
+    Staged,
+}
 
-fn build_hunk_patch(repo: &Repository, path: &str, hunk_index: usize, kind: DiffKind) -> anyhow::Result<String> {
+fn build_hunk_patch(
+    repo: &Repository,
+    path: &str,
+    hunk_index: usize,
+    kind: DiffKind,
+) -> anyhow::Result<String> {
     let hunks = match kind {
         DiffKind::Unstaged => crate::diff_engine::get_unstaged_diff(repo, path)?.hunks,
         DiffKind::Staged => crate::diff_engine::get_staged_diff(repo, path)?.hunks,
     };
-    let hunk = hunks.into_iter().find(|h| h.index == hunk_index)
+    let hunk = hunks
+        .into_iter()
+        .find(|h| h.index == hunk_index)
         .ok_or_else(|| anyhow::anyhow!("hunk index {hunk_index} out of range"))?;
 
     // Build minimal unified diff patch: file header + single hunk
-    let patch = format!(
-        "--- a/{path}\n+++ b/{path}\n{}",
-        hunk.content
-    );
+    let patch = format!("--- a/{path}\n+++ b/{path}\n{}", hunk.content);
     Ok(patch)
 }
 
@@ -376,9 +446,15 @@ fn git_apply(workdir: &std::path::Path, patch: &str, flags: &[&str]) -> anyhow::
         .stderr(std::process::Stdio::piped())
         .spawn()
         .context("failed to spawn git apply")?;
-    child.stdin.take().unwrap().write_all(patch.as_bytes())
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(patch.as_bytes())
         .context("failed to write patch to git apply stdin")?;
-    let output = child.wait_with_output().context("git apply failed to run")?;
+    let output = child
+        .wait_with_output()
+        .context("git apply failed to run")?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!("git apply failed: {stderr}");
@@ -387,29 +463,37 @@ fn git_apply(workdir: &std::path::Path, patch: &str, flags: &[&str]) -> anyhow::
 }
 
 pub fn stage_hunk(repo: &Repository, path: &str, hunk_index: usize) -> anyhow::Result<()> {
-    let workdir = repo.workdir().context("bare repository has no working directory")?;
+    let workdir = repo
+        .workdir()
+        .context("bare repository has no working directory")?;
     let patch = build_hunk_patch(repo, path, hunk_index, DiffKind::Unstaged)?;
     git_apply(workdir, &patch, &["--cached"])
 }
 
 pub fn unstage_hunk(repo: &Repository, path: &str, hunk_index: usize) -> anyhow::Result<()> {
-    let workdir = repo.workdir().context("bare repository has no working directory")?;
+    let workdir = repo
+        .workdir()
+        .context("bare repository has no working directory")?;
     let patch = build_hunk_patch(repo, path, hunk_index, DiffKind::Staged)?;
     git_apply(workdir, &patch, &["--cached", "--reverse"])
 }
 
 pub fn discard_hunk(repo: &Repository, path: &str, hunk_index: usize) -> anyhow::Result<()> {
-    let workdir = repo.workdir().context("bare repository has no working directory")?;
+    let workdir = repo
+        .workdir()
+        .context("bare repository has no working directory")?;
     let patch = build_hunk_patch(repo, path, hunk_index, DiffKind::Unstaged)?;
     git_apply(workdir, &patch, &["--reverse"])
 }
 
 pub fn create_commit(repo: &Repository, message: &str) -> anyhow::Result<String> {
     let sig = repo.signature().context(
-        "Git user identity not configured. Set user.name and user.email in your .gitconfig."
+        "Git user identity not configured. Set user.name and user.email in your .gitconfig.",
     )?;
     let mut index = repo.index().context("failed to get index")?;
-    let tree_id = index.write_tree().context("failed to write tree — nothing staged to commit")?;
+    let tree_id = index
+        .write_tree()
+        .context("failed to write tree — nothing staged to commit")?;
     let tree = repo.find_tree(tree_id).context("failed to find tree")?;
     let parent = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
     let parents: Vec<&git2::Commit> = parent.iter().collect();
@@ -451,13 +535,17 @@ pub fn revert_commit(
         anyhow::bail!("commit or stash your changes before reverting");
     }
 
-    let head = repo.head()?.peel_to_commit().context("HEAD is not a commit")?;
+    let head = repo
+        .head()?
+        .peel_to_commit()
+        .context("HEAD is not a commit")?;
 
     let mut checkout = git2::build::CheckoutBuilder::new();
     checkout.safe();
     let mut opts = git2::RevertOptions::new();
     opts.checkout_builder(checkout);
-    repo.revert(&commit, Some(&mut opts)).context("revert failed")?;
+    repo.revert(&commit, Some(&mut opts))
+        .context("revert failed")?;
 
     let mut index = repo.index().context("failed to read index")?;
     if index.has_conflicts() {
@@ -479,7 +567,8 @@ pub fn revert_commit(
         // in-progress revert state so it's not "mid-revert".
         repo.reset(head.as_object(), git2::ResetType::Mixed, None)
             .context("failed to unstage revert")?;
-        repo.cleanup_state().context("failed to clean up revert state")?;
+        repo.cleanup_state()
+            .context("failed to clean up revert state")?;
         log::info!(target: "git", "revert: {oid} applied as uncommitted changes");
         return Ok(None);
     }
@@ -493,7 +582,8 @@ pub fn revert_commit(
     let new_oid = repo
         .commit(Some("HEAD"), &sig, &sig, &message, &tree, &[&head])
         .context("failed to create revert commit")?;
-    repo.cleanup_state().context("failed to clean up revert state")?;
+    repo.cleanup_state()
+        .context("failed to clean up revert state")?;
     log::info!(target: "git", "revert: {oid} -> {new_oid}");
     Ok(Some(new_oid.to_string()))
 }
@@ -578,7 +668,10 @@ fn read_level_identity(config: &git2::Config, level: git2::ConfigLevel) -> Optio
     if name.is_none() && email.is_none() {
         return None;
     }
-    Some(Identity { name: name.unwrap_or_default(), email: email.unwrap_or_default() })
+    Some(Identity {
+        name: name.unwrap_or_default(),
+        email: email.unwrap_or_default(),
+    })
 }
 
 pub fn get_identity_config(repo: &Repository) -> anyhow::Result<IdentityConfig> {
@@ -591,13 +684,21 @@ pub fn get_identity_config(repo: &Repository) -> anyhow::Result<IdentityConfig> 
     // git's "global" is XDG (~/.config/git/config) overlaid by ~/.gitconfig.
     let global = read_level_identity(&config, git2::ConfigLevel::Global)
         .or_else(|| read_level_identity(&config, git2::ConfigLevel::XDG));
-    Ok(IdentityConfig { effective, local, global })
+    Ok(IdentityConfig {
+        effective,
+        local,
+        global,
+    })
 }
 
 /// Write `user.name`/`user.email` into the given config (a single level).
 fn write_identity(config: &mut git2::Config, name: &str, email: &str) -> anyhow::Result<()> {
-    config.set_str("user.name", name).context("failed to set user.name")?;
-    config.set_str("user.email", email).context("failed to set user.email")?;
+    config
+        .set_str("user.name", name)
+        .context("failed to set user.name")?;
+    config
+        .set_str("user.email", email)
+        .context("failed to set user.email")?;
     Ok(())
 }
 
@@ -667,7 +768,9 @@ mod tests {
             index.write_tree().unwrap()
         };
         let tree = repo.find_tree(tree_id).unwrap();
-        let oid = repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[]).unwrap();
+        let oid = repo
+            .commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[])
+            .unwrap();
         drop(tree);
         oid
     }
@@ -766,7 +869,11 @@ mod tests {
 
         let status = stage_file(&repo, "file.txt").unwrap();
 
-        let staged = status.staged.iter().find(|e| e.path == "file.txt").expect("staged");
+        let staged = status
+            .staged
+            .iter()
+            .find(|e| e.path == "file.txt")
+            .expect("staged");
         assert!(matches!(staged.status, StatusCode::Deleted));
         assert!(status.unstaged.iter().all(|e| e.path != "file.txt"));
     }
@@ -781,7 +888,11 @@ mod tests {
 
         let status = unstage_file(&repo, "file.txt").unwrap();
 
-        let unstaged = status.unstaged.iter().find(|e| e.path == "file.txt").expect("unstaged");
+        let unstaged = status
+            .unstaged
+            .iter()
+            .find(|e| e.path == "file.txt")
+            .expect("unstaged");
         assert!(matches!(unstaged.status, StatusCode::Deleted));
         assert!(status.staged.iter().all(|e| e.path != "file.txt"));
     }
@@ -895,7 +1006,9 @@ mod tests {
         write_and_stage(&repo, &dir, "b.txt", "2\n");
         let c2 = create_commit(&repo, "add b").unwrap();
 
-        let new_oid = revert_commit(&repo, &c2, true).unwrap().expect("committed revert");
+        let new_oid = revert_commit(&repo, &c2, true)
+            .unwrap()
+            .expect("committed revert");
 
         // b.txt is gone from the working tree, and HEAD is the revert commit whose
         // tree matches the pre-c2 state.
@@ -903,7 +1016,10 @@ mod tests {
         let head = repo.head().unwrap().peel_to_commit().unwrap();
         assert_eq!(head.id().to_string(), new_oid);
         assert!(head.message().unwrap().starts_with("Revert \"add b\""));
-        assert_eq!(head.tree_id(), repo.find_commit(c1.parse().unwrap()).unwrap().tree_id());
+        assert_eq!(
+            head.tree_id(),
+            repo.find_commit(c1.parse().unwrap()).unwrap().tree_id()
+        );
         // Working tree is clean afterwards.
         let status = get_working_tree_status(&repo).unwrap();
         assert!(status.staged.is_empty() && status.unstaged.is_empty());
@@ -921,11 +1037,23 @@ mod tests {
 
         // No commit was created, HEAD is unchanged...
         assert!(result.is_none());
-        assert_eq!(repo.head().unwrap().peel_to_commit().unwrap().id().to_string(), c2);
+        assert_eq!(
+            repo.head()
+                .unwrap()
+                .peel_to_commit()
+                .unwrap()
+                .id()
+                .to_string(),
+            c2
+        );
         // ...and the revert shows as an ordinary *unstaged* change (b removed).
         assert!(!dir.path().join("b.txt").exists());
         let status = get_working_tree_status(&repo).unwrap();
-        assert!(status.staged.is_empty(), "should not be staged: {:?}", status.staged);
+        assert!(
+            status.staged.is_empty(),
+            "should not be staged: {:?}",
+            status.staged
+        );
         assert!(status.unstaged.iter().any(|e| e.path == "b.txt"));
         // No in-progress revert state left behind.
         assert_eq!(repo.state(), git2::RepositoryState::Clean);
@@ -943,7 +1071,10 @@ mod tests {
         let err = revert_commit(&repo, &c2, true).unwrap_err();
         assert!(err.to_string().contains("stash"), "got: {err}");
         // The dirty edit is untouched.
-        assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "dirty\n");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "dirty\n"
+        );
     }
 
     #[test]
@@ -1044,7 +1175,8 @@ mod tests {
         // Pretend the remote is at `second`, then reset local HEAD back to `first`.
         mark_pushed(&repo, second.parse().unwrap());
         let first_commit = repo.find_commit(first.parse().unwrap()).unwrap();
-        repo.reset(first_commit.as_object(), git2::ResetType::Soft, None).unwrap();
+        repo.reset(first_commit.as_object(), git2::ResetType::Soft, None)
+            .unwrap();
 
         assert!(head_commit_is_pushed(&repo).unwrap());
     }
@@ -1112,7 +1244,10 @@ mod tests {
 
         let reopened = git2::Config::open(&path).unwrap();
         assert_eq!(reopened.get_string("user.name").unwrap(), "Solo Dev");
-        assert_eq!(reopened.get_string("user.email").unwrap(), "solo@example.com");
+        assert_eq!(
+            reopened.get_string("user.email").unwrap(),
+            "solo@example.com"
+        );
     }
 
     /// The content of the index (staged) blob for a path, or None if absent.
@@ -1296,11 +1431,21 @@ mod tests {
         let (dir, repo) = init_repo();
         write_and_stage(&repo, &dir, "f.txt", "a\n");
         make_initial_commit(&repo);
-        let mode_before = repo.index().unwrap().get_path(Path::new("f.txt"), 0).unwrap().mode;
+        let mode_before = repo
+            .index()
+            .unwrap()
+            .get_path(Path::new("f.txt"), 0)
+            .unwrap()
+            .mode;
 
         stage_file_content(&repo, "f.txt", "a\nb\n").unwrap();
 
-        let mode_after = repo.index().unwrap().get_path(Path::new("f.txt"), 0).unwrap().mode;
+        let mode_after = repo
+            .index()
+            .unwrap()
+            .get_path(Path::new("f.txt"), 0)
+            .unwrap()
+            .mode;
         assert_eq!(mode_before, mode_after);
     }
 }

@@ -190,14 +190,31 @@ between sections, and add new ideas under the right heading. Items marked
 
 ## PR refinements
 
-- [ ] Improve UX for opening PRs
-  - [ ] Select source branch automatically as current branch
-  - [ ] Select destination branch automatically as main
-  - [ ] Change branch inputs to select from local branches
-  - [ ] Allow adding title and description with formatting
-  - [ ] Add a "continue editing on GitHub" button to pass over to GitHub to open the PR
-  - [ ] Allow choosing an assignee (defaulting to @me)
-  - [ ] Allow adding one or more labels
+- [x] Improve UX for opening PRs
+  - [x] Select source branch automatically as current branch
+  - [x] Select destination branch automatically as main
+  - [x] Change branch inputs to select from local branches
+  - [x] Allow adding title and description with formatting
+  - [x] Add a "continue editing on GitHub" button to pass over to GitHub to open the PR
+  - [x] Allow choosing an assignee (defaulting to @me)
+  - [x] Allow adding one or more labels
+      — `NewPRForm` reworked: head/base are now `<select>`s of *local* branches
+      (remote-only refs excluded; the current value is always kept as an option so
+      an initialBase like "develop" still shows), defaulting to the current branch →
+      main/master. The description gained a Write/Preview markdown toggle (reusing
+      `lib/markdown`'s `renderMarkdown`, same pattern as the commit form). New
+      Assignees field defaults to the connected GitHub login (@me; read from
+      `githubStore.connections[host].login`) and a Labels field; both are
+      comma/newline lists parsed by `lib/githubPr.parseList` (strips a leading @,
+      de-dupes). "Continue on GitHub" opens GitHub's compare page with everything
+      pre-filled via `lib/githubPr.compareUrl` (`expand=1` + title/body/assignees/
+      labels query params; works for GHE hosts) using `plugin-opener`. Backend
+      `create_pull_request` now takes `assignees` + `labels`: after creating the PR
+      it PATCHes `/repos/{owner}/{repo}/issues/{n}` to set them (skipped when both
+      empty, since the create-PR endpoint ignores those fields). New tests: backend
+      httpmock (sets assignees/labels, and skips the PATCH when none), `lib/githubPr`
+      unit tests, and `NewPRForm` tests (local-only options, @me default, sends
+      assignees/labels, Continue-on-GitHub URL).
 
 ## Merge editor (v2 refinements)
 
@@ -241,6 +258,8 @@ between sections, and add new ideas under the right heading. Items marked
       already shows the error string, so the actionable message flows through.
 - [ ] Cross-repo PR/CI notifications via API polling (Phase 6) — overlaps the
       workspace decision above
+- [ ] Consider whether we need the complexity of the token flow we have for GitHub,
+      or whether the user's existing credentials (e.g. ssh key) are enough
 
 ## Config & settings
 

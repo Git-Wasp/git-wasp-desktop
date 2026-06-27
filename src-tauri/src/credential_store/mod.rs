@@ -10,7 +10,10 @@ pub struct KeyringStore;
 
 impl CredentialStore for KeyringStore {
     fn store(&self, host: &str, token: &str) -> anyhow::Result<()> {
-        debug!("credential store: storing token for host={host:?} (service=\"gitclient\", len={})", token.len());
+        debug!(
+            "credential store: storing token for host={host:?} (service=\"gitclient\", len={})",
+            token.len()
+        );
         let result = keyring::Entry::new("gitclient", host)
             .map_err(|e| anyhow::anyhow!("keyring error: {e}"))?
             .set_password(token)
@@ -28,7 +31,10 @@ impl CredentialStore for KeyringStore {
             .map_err(|e| anyhow::anyhow!("keyring error: {e}"))?;
         match entry.get_password() {
             Ok(pw) => {
-                debug!("credential store: found token for host={host:?} (len={})", pw.len());
+                debug!(
+                    "credential store: found token for host={host:?} (len={})",
+                    pw.len()
+                );
                 Ok(Some(pw))
             }
             Err(keyring::Error::NoEntry) => {
@@ -48,7 +54,9 @@ impl CredentialStore for KeyringStore {
         match entry.delete_credential() {
             Ok(()) => Ok(()),
             Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(anyhow::anyhow!("failed to delete credential for {host}: {e}")),
+            Err(e) => Err(anyhow::anyhow!(
+                "failed to delete credential for {host}: {e}"
+            )),
         }
     }
 }
@@ -59,13 +67,18 @@ pub struct InMemoryStore {
 
 impl InMemoryStore {
     pub fn new() -> Self {
-        Self { entries: std::sync::Mutex::new(std::collections::HashMap::new()) }
+        Self {
+            entries: std::sync::Mutex::new(std::collections::HashMap::new()),
+        }
     }
 }
 
 impl CredentialStore for InMemoryStore {
     fn store(&self, host: &str, token: &str) -> anyhow::Result<()> {
-        self.entries.lock().unwrap().insert(host.to_string(), token.to_string());
+        self.entries
+            .lock()
+            .unwrap()
+            .insert(host.to_string(), token.to_string());
         Ok(())
     }
 
@@ -91,7 +104,10 @@ mod tests {
     fn store_and_load_roundtrip() {
         let s = store();
         s.store("github.com", "tok_abc123").unwrap();
-        assert_eq!(s.load("github.com").unwrap(), Some("tok_abc123".to_string()));
+        assert_eq!(
+            s.load("github.com").unwrap(),
+            Some("tok_abc123".to_string())
+        );
     }
 
     #[test]
@@ -120,6 +136,9 @@ mod tests {
         s.store("github.com", "token_gh").unwrap();
         s.store("ghe.corp.com", "token_ghe").unwrap();
         assert_eq!(s.load("github.com").unwrap(), Some("token_gh".to_string()));
-        assert_eq!(s.load("ghe.corp.com").unwrap(), Some("token_ghe".to_string()));
+        assert_eq!(
+            s.load("ghe.corp.com").unwrap(),
+            Some("token_ghe".to_string())
+        );
     }
 }

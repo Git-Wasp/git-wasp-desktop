@@ -18,7 +18,11 @@ pub fn stash_save(repo: &mut Repository, message: Option<&str>) -> anyhow::Resul
     let oid = repo
         .stash_save(&sig, msg, None)
         .context("nothing to stash — working tree is clean")?;
-    Ok(StashEntry { index: 0, message: msg.to_string(), oid: oid.to_string() })
+    Ok(StashEntry {
+        index: 0,
+        message: msg.to_string(),
+        oid: oid.to_string(),
+    })
 }
 
 pub fn stash_list(repo: &mut Repository) -> anyhow::Result<Vec<StashEntry>> {
@@ -36,7 +40,8 @@ pub fn stash_list(repo: &mut Repository) -> anyhow::Result<Vec<StashEntry>> {
 }
 
 pub fn stash_apply(repo: &mut Repository, index: usize) -> anyhow::Result<()> {
-    repo.stash_apply(index, None).context("failed to apply stash")
+    repo.stash_apply(index, None)
+        .context("failed to apply stash")
 }
 
 pub fn stash_pop(repo: &mut Repository, index: usize) -> anyhow::Result<()> {
@@ -78,7 +83,8 @@ mod tests {
         let tree = repo.find_tree(tree_id).unwrap();
         let parent = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
         let parents: Vec<&git2::Commit> = parent.iter().collect();
-        repo.commit(Some("HEAD"), &sig, &sig, "commit", &tree, &parents).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "commit", &tree, &parents)
+            .unwrap();
         drop(tree);
     }
 

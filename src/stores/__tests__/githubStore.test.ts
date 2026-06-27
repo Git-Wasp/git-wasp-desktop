@@ -216,6 +216,8 @@ describe("githubStore", () => {
       body: "body",
       head: "feat/y",
       base: "main",
+      assignees: [],
+      labels: [],
     });
     expect(result).toEqual(pr);
     expect(useGithubStore.getState().pullRequests[0]).toEqual(pr);

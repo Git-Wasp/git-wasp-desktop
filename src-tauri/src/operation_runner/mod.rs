@@ -61,7 +61,10 @@ fn sidecar_path(repo: &Repository) -> PathBuf {
 }
 
 fn write_sidecar(repo: &Repository, state: &OperationState) -> anyhow::Result<()> {
-    let sidecar = SidecarState { kind: state.kind, source_branch: state.source_branch.clone() };
+    let sidecar = SidecarState {
+        kind: state.kind,
+        source_branch: state.source_branch.clone(),
+    };
     let json = serde_json::to_string(&sidecar).context("failed to serialise operation state")?;
     std::fs::write(sidecar_path(repo), json).context("failed to write operation recovery file")?;
     Ok(())
@@ -108,7 +111,10 @@ pub fn derive_status(
                 }
             };
             let conflicts = crate::merge_ops::collect_conflicts(repo)?;
-            Ok(OperationStatus::Merge { source_branch, conflicts })
+            Ok(OperationStatus::Merge {
+                source_branch,
+                conflicts,
+            })
         }
         _ => {
             *cached = None;
@@ -160,7 +166,10 @@ pub fn complete_merge(
 
 /// Aborts the in-progress merge and clears operation state (memory +
 /// sidecar) — mirroring `git merge --abort`'s cleanup.
-pub fn abort_merge(repo: &mut Repository, cached: &mut Option<OperationState>) -> anyhow::Result<()> {
+pub fn abort_merge(
+    repo: &mut Repository,
+    cached: &mut Option<OperationState>,
+) -> anyhow::Result<()> {
     crate::merge_ops::abort_merge(repo)?;
     *cached = None;
     remove_sidecar(repo);
@@ -199,12 +208,14 @@ mod tests {
         let tree_id = index.write_tree().unwrap();
         let tree = repo.find_tree(tree_id).unwrap();
         let sig = Signature::now("Test", "test@test.com").unwrap();
-        repo.commit(Some("HEAD"), &sig, &sig, message, &tree, parents).unwrap()
+        repo.commit(Some("HEAD"), &sig, &sig, message, &tree, parents)
+            .unwrap()
     }
 
     fn checkout_branch(repo: &Repository, name: &str) {
         repo.set_head(&format!("refs/heads/{name}")).unwrap();
-        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force())).unwrap();
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .unwrap();
     }
 
     /// Sets up two branches that conflict on the same line of file.txt and
@@ -217,10 +228,24 @@ mod tests {
 
         repo.branch("theirs", &base, false).unwrap();
         checkout_branch(repo, "theirs");
-        commit_file(repo, dir, "file.txt", "line1\ntheir change\nline3\n", "their change", &[&base]);
+        commit_file(
+            repo,
+            dir,
+            "file.txt",
+            "line1\ntheir change\nline3\n",
+            "their change",
+            &[&base],
+        );
 
         checkout_branch(repo, &current_branch);
-        commit_file(repo, dir, "file.txt", "line1\nour change\nline3\n", "our change", &[&base]);
+        commit_file(
+            repo,
+            dir,
+            "file.txt",
+            "line1\nour change\nline3\n",
+            "our change",
+            &[&base],
+        );
 
         "theirs".to_string()
     }
@@ -249,7 +274,10 @@ mod tests {
         let status = derive_status(&repo, &mut cached).unwrap();
 
         match status {
-            OperationStatus::Merge { source_branch, conflicts } => {
+            OperationStatus::Merge {
+                source_branch,
+                conflicts,
+            } => {
                 assert_eq!(source_branch.as_deref(), Some("theirs"));
                 assert_eq!(conflicts.len(), 1);
             }
@@ -275,7 +303,10 @@ mod tests {
             }
             OperationStatus::None => panic!("expected merge to be recovered from the sidecar"),
         }
-        assert!(recovered_cache.is_some(), "cache should be repopulated from the sidecar");
+        assert!(
+            recovered_cache.is_some(),
+            "cache should be repopulated from the sidecar"
+        );
     }
 
     #[test]
@@ -290,7 +321,10 @@ mod tests {
         let status = derive_status(&repo, &mut cached).unwrap();
 
         match status {
-            OperationStatus::Merge { source_branch, conflicts } => {
+            OperationStatus::Merge {
+                source_branch,
+                conflicts,
+            } => {
                 assert_eq!(source_branch, None);
                 assert_eq!(conflicts.len(), 1);
             }
@@ -309,13 +343,19 @@ mod tests {
         // Simulate `git merge --abort` run from outside the app: git's state
         // goes back to clean, but the sidecar (and our cache) don't know yet.
         crate::merge_ops::abort_merge(&mut repo).unwrap();
-        assert!(sidecar_path(&repo).exists(), "sidecar should still be present before reconciliation");
+        assert!(
+            sidecar_path(&repo).exists(),
+            "sidecar should still be present before reconciliation"
+        );
 
         let status = derive_status(&repo, &mut cached).unwrap();
 
         assert!(matches!(status, OperationStatus::None));
         assert!(cached.is_none());
-        assert!(!sidecar_path(&repo).exists(), "stale sidecar should be removed");
+        assert!(
+            !sidecar_path(&repo).exists(),
+            "stale sidecar should be removed"
+        );
     }
 
     // ---- start_merge / complete_merge / abort_merge state management ----

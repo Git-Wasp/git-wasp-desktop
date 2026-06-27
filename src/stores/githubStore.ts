@@ -33,6 +33,8 @@ interface GithubStore {
     body: string,
     head: string,
     base: string,
+    assignees?: string[],
+    labels?: string[],
   ) => Promise<PullRequest>;
   setPrDraft: (draft: { head: string; base: string } | null) => void;
 }
@@ -147,8 +149,18 @@ export const useGithubStore = create<GithubStore>((set, get) => ({
     body: string,
     head: string,
     base: string,
+    assignees: string[] = [],
+    labels: string[] = [],
   ) => {
-    const pr = await invoke<PullRequest>("create_pull_request", { host, title, body, head, base });
+    const pr = await invoke<PullRequest>("create_pull_request", {
+      host,
+      title,
+      body,
+      head,
+      base,
+      assignees,
+      labels,
+    });
     set((state) => ({ pullRequests: [pr, ...state.pullRequests] }));
     return pr;
   },

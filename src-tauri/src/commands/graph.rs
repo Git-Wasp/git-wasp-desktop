@@ -39,7 +39,8 @@ pub fn get_graph_viewport(
 /// the graph to it. `None` when the commit isn't reachable from HEAD.
 #[tauri::command]
 pub fn find_commit_row(oid: String, state: State<'_, AppState>) -> Result<Option<usize>, String> {
-    state.with_repo(|repo| crate::graph::find_commit_row(repo, &oid))
+    state
+        .with_repo(|repo| crate::graph::find_commit_row(repo, &oid))
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }
@@ -51,5 +52,7 @@ pub fn find_commit_row(oid: String, state: State<'_, AppState>) -> Result<Option
 /// out from the per-scroll viewport fetch.
 #[tauri::command]
 pub fn refresh_graph_working_tree_status(state: State<'_, AppState>) -> Result<(), String> {
-    state.refresh_graph_working_tree_status().map_err(|e| e.to_string())
+    state
+        .refresh_graph_working_tree_status()
+        .map_err(|e| e.to_string())
 }

@@ -16,14 +16,11 @@ pub struct BranchInfo {
 }
 
 #[tauri::command]
-pub async fn list_branches(
-    state: State<'_, AppState>,
-) -> Result<Vec<BranchInfo>, String> {
-    state.with_repo(|repo| {
-        crate::repo_manager::list_branches(repo)
-    })
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())
+pub async fn list_branches(state: State<'_, AppState>) -> Result<Vec<BranchInfo>, String> {
+    state
+        .with_repo(|repo| crate::repo_manager::list_branches(repo))
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -31,7 +28,9 @@ pub async fn checkout_branch(
     branch_name: String,
     state: State<'_, AppState>,
 ) -> Result<RepoInfo, String> {
-    state.checkout_branch(&branch_name).map_err(|e| e.to_string())
+    state
+        .checkout_branch(&branch_name)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -39,14 +38,13 @@ pub async fn checkout_remote_branch(
     remote_ref: String,
     state: State<'_, AppState>,
 ) -> Result<RepoInfo, String> {
-    state.checkout_remote_branch(&remote_ref).map_err(|e| e.to_string())
+    state
+        .checkout_remote_branch(&remote_ref)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn checkout_commit(
-    oid: String,
-    state: State<'_, AppState>,
-) -> Result<RepoInfo, String> {
+pub async fn checkout_commit(oid: String, state: State<'_, AppState>) -> Result<RepoInfo, String> {
     state.checkout_commit(&oid).map_err(|e| e.to_string())
 }
 
@@ -57,7 +55,9 @@ pub async fn create_tag(
     message: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    state.create_tag(&name, &oid, message.as_deref()).map_err(|e| e.to_string())
+    state
+        .create_tag(&name, &oid, message.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -66,7 +66,9 @@ pub async fn create_branch(
     start_point: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<BranchInfo, String> {
-    state.create_branch(&name, start_point.as_deref()).map_err(|e| e.to_string())
+    state
+        .create_branch(&name, start_point.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -75,21 +77,18 @@ pub async fn rename_branch(
     new_name: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    state.rename_branch(&old_name, &new_name).map_err(|e| e.to_string())
+    state
+        .rename_branch(&old_name, &new_name)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn delete_branch(
-    name: String,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn delete_branch(name: String, state: State<'_, AppState>) -> Result<(), String> {
     state.delete_branch(&name).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn get_ahead_behind(
-    state: State<'_, AppState>,
-) -> Result<Vec<AheadBehind>, String> {
+pub async fn get_ahead_behind(state: State<'_, AppState>) -> Result<Vec<AheadBehind>, String> {
     state
         .with_repo(|repo| crate::remote_ops::compute_ahead_behind(repo))
         .map_err(|e| e.to_string())?

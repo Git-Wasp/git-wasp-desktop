@@ -1,7 +1,7 @@
+use crate::working_tree::FileDiffHunks;
 use anyhow::Context;
 use git2::{DiffOptions, Repository};
 use serde::Serialize;
-use crate::working_tree::FileDiffHunks;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -44,9 +44,9 @@ pub fn get_commit_detail(repo: &Repository, oid_str: &str) -> anyhow::Result<Com
     let commit_tree = commit.tree().context("commit has no tree")?;
 
     let mut opts = DiffOptions::new();
-    let diff =
-        repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit_tree), Some(&mut opts))
-            .context("failed to compute diff")?;
+    let diff = repo
+        .diff_tree_to_tree(parent_tree.as_ref(), Some(&commit_tree), Some(&mut opts))
+        .context("failed to compute diff")?;
 
     let stats = diff.stats().context("failed to get diff stats")?;
     let _ = stats; // used per-file below
@@ -62,7 +62,10 @@ pub fn get_commit_detail(repo: &Repository, oid_str: &str) -> anyhow::Result<Com
             .unwrap_or("")
             .to_string();
         let old_path = if delta.status() == git2::Delta::Renamed {
-            old_file.path().and_then(|p| p.to_str()).map(|s| s.to_string())
+            old_file
+                .path()
+                .and_then(|p| p.to_str())
+                .map(|s| s.to_string())
         } else {
             None
         };
@@ -118,7 +121,10 @@ fn collect_hunks(diff: git2::Diff<'_>) -> anyhow::Result<Vec<crate::working_tree
                 hunks.borrow_mut().push(h);
             }
             let idx = hunks.borrow().len();
-            let header = std::str::from_utf8(raw_hunk.header()).unwrap_or("").trim_end().to_string();
+            let header = std::str::from_utf8(raw_hunk.header())
+                .unwrap_or("")
+                .trim_end()
+                .to_string();
             let new_hunk = crate::working_tree::Hunk {
                 index: idx,
                 header: header.clone(),
@@ -166,21 +172,25 @@ pub fn get_unstaged_diff(repo: &Repository, path: &str) -> anyhow::Result<FileDi
         .diff_index_to_workdir(Some(&index), Some(&mut opts))
         .context("failed to compute unstaged diff")?;
     let hunks = collect_hunks(diff)?;
-    Ok(FileDiffHunks { path: path.to_string(), hunks })
+    Ok(FileDiffHunks {
+        path: path.to_string(),
+        hunks,
+    })
 }
 
 pub fn get_staged_diff(repo: &Repository, path: &str) -> anyhow::Result<FileDiffHunks> {
     let index = repo.index().context("failed to get index")?;
-    let head_tree = repo.head()
-        .ok()
-        .and_then(|h| h.peel_to_tree().ok());
+    let head_tree = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
     let mut opts = DiffOptions::new();
     opts.pathspec(path);
     let diff = repo
         .diff_tree_to_index(head_tree.as_ref(), Some(&index), Some(&mut opts))
         .context("failed to compute staged diff")?;
     let hunks = collect_hunks(diff)?;
-    Ok(FileDiffHunks { path: path.to_string(), hunks })
+    Ok(FileDiffHunks {
+        path: path.to_string(),
+        hunks,
+    })
 }
 
 #[cfg(test)]
@@ -206,7 +216,9 @@ mod tests {
             let tree_id = index.write_tree().unwrap();
             let tree = repo.find_tree(tree_id).unwrap();
             let sig = sig();
-            let oid = repo.commit(Some("HEAD"), &sig, &sig, "add file", &tree, &[]).unwrap();
+            let oid = repo
+                .commit(Some("HEAD"), &sig, &sig, "add file", &tree, &[])
+                .unwrap();
             drop(tree);
             oid
         };

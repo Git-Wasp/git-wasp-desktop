@@ -1,5 +1,5 @@
 use git2::Repository;
-use notify::{RecommendedWatcher, RecursiveMode, Watcher, recommended_watcher};
+use notify::{recommended_watcher, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::Path;
 use tauri::{AppHandle, Emitter};
 
@@ -59,8 +59,16 @@ mod tests {
     fn ignores_paths_matched_by_gitignore() {
         let (dir, repo) = repo_with_gitignore("target/\nnode_modules/\ndist/\n");
         let root = dir.path();
-        assert!(is_noise(&repo, root, &root.join("target/debug/build/foo.rs")));
-        assert!(is_noise(&repo, root, &root.join("node_modules/react/index.js")));
+        assert!(is_noise(
+            &repo,
+            root,
+            &root.join("target/debug/build/foo.rs")
+        ));
+        assert!(is_noise(
+            &repo,
+            root,
+            &root.join("node_modules/react/index.js")
+        ));
         assert!(is_noise(&repo, root, &root.join("dist/assets/app.js")));
     }
 

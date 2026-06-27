@@ -24,7 +24,11 @@ pub struct GithubHostConfig {
 
 impl GithubHostConfig {
     pub fn github_com() -> Self {
-        Self { base_url: "https://github.com".to_string(), ca_bundle_path: None, oauth_client_id: None }
+        Self {
+            base_url: "https://github.com".to_string(),
+            ca_bundle_path: None,
+            oauth_client_id: None,
+        }
     }
 }
 
@@ -157,7 +161,10 @@ mod tests {
         );
         let restored: AppConfig =
             serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
-        assert_eq!(restored.open_repos, vec![PathBuf::from("/tmp/a"), PathBuf::from("/tmp/b")]);
+        assert_eq!(
+            restored.open_repos,
+            vec![PathBuf::from("/tmp/a"), PathBuf::from("/tmp/b")]
+        );
         assert_eq!(restored.active_repo_path, Some(PathBuf::from("/tmp/b")));
     }
 

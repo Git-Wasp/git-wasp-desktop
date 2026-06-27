@@ -1,0 +1,59 @@
+import { describe, expect, it } from "vitest";
+import { compareUrl, parseList } from "./githubPr";
+
+describe("parseList", () => {
+  it("splits on commas and newlines, trimming blanks", () => {
+    expect(parseList("alice, bob\n carol ")).toEqual(["alice", "bob", "carol"]);
+  });
+
+  it("strips a leading @ and de-duplicates", () => {
+    expect(parseList("@me, me, @you")).toEqual(["me", "you"]);
+  });
+
+  it("returns an empty array for empty input", () => {
+    expect(parseList("   ")).toEqual([]);
+  });
+});
+
+describe("compareUrl", () => {
+  it("builds a github.com compare URL with expand and the draft fields", () => {
+    const url = compareUrl({
+      host: "github.com",
+      owner: "mike",
+      repo: "gitclient",
+      base: "main",
+      head: "feat/x",
+      title: "Add feature",
+      body: "details",
+    });
+    expect(url).toContain("https://github.com/mike/gitclient/compare/main...feat%2Fx?");
+    expect(url).toContain("expand=1");
+    expect(url).toContain("title=Add+feature");
+    expect(url).toContain("body=details");
+  });
+
+  it("omits title/body when blank and supports GHE hosts", () => {
+    const url = compareUrl({
+      host: "ghe.example.com",
+      owner: "org",
+      repo: "app",
+      base: "main",
+      head: "fix",
+    });
+    expect(url).toBe("https://ghe.example.com/org/app/compare/main...fix?expand=1");
+  });
+
+  it("carries assignees and labels as comma-joined query params", () => {
+    const url = compareUrl({
+      host: "github.com",
+      owner: "mike",
+      repo: "gitclient",
+      base: "main",
+      head: "feat/x",
+      assignees: ["mike", "ann"],
+      labels: ["bug", "ux"],
+    });
+    expect(url).toContain("assignees=mike%2Cann");
+    expect(url).toContain("labels=bug%2Cux");
+  });
+});

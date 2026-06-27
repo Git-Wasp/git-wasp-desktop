@@ -19,8 +19,13 @@ pub async fn delete_theme(id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn set_active_theme(id: Option<String>, state: State<'_, AppState>) -> Result<(), String> {
-    state.set_active_theme(id.as_deref()).map_err(|e| e.to_string())
+pub async fn set_active_theme(
+    id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .set_active_theme(id.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
