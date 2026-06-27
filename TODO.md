@@ -617,7 +617,13 @@ between sections, and add new ideas under the right heading. Items marked
       selection overrides it with the usual `--color-bg-selected` highlight. The
       token is defined per built-in theme (a soft accent tint). Adds to the existing
       HEAD cues (pulsing dot ring, check pill, left-pointing accent triangle).
-- [ ] When showing uncommitted changes and there is a single change, don't pluralise changes in git graph
+- [x] When showing uncommitted changes and there is a single change, don't pluralise changes in git graph
+      — the working-tree graph row now reads "1 uncommitted change" for a single
+      change and "N uncommitted changes" otherwise. Extracted a pure
+      `working_tree_summary(count)` helper in `graph/layout.rs` (used by
+      `working_tree_node`); the frontend renders `node.summary` verbatim
+      (`columns.tsx`), so no frontend change was needed. Backend tests for the
+      singular and plural (incl. 0) cases.
 - [ ] When a "stash" is selected in the git graph, show that it is selected and show the same
       view as if we'd selected a pre-existing commit i.e. show the diff between the stash its direct ancestor
 - [ ] Sometimes there are changes in the repository that are not reflected in the git graph and
