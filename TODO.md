@@ -236,6 +236,16 @@ between sections, and add new ideas under the right heading. Items marked
         notice/label, push-before-create ordering, and the abort-on-push-failure
         path. Follow-up: `remote_ops::push` could set the upstream so a freshly
         pushed branch reads as tracking without a fetch.
+  - [x] Clearer errors when a GitHub App lacks PR permissions — a 403 "Resource
+        not accessible by integration" on create (App has Contents:write so the
+        push succeeds, but not Pull requests:write) is now rewritten by
+        `explain_pr_permission_error` into an actionable message naming the missing
+        "Pull requests: Read and write" (and "Issues: Read and write") permission
+        and how to re-authorize. Also made the assignees/labels PATCH best-effort:
+        the PR is already created, so a failure there (e.g. no Issues:write) now
+        logs a warning and still returns the PR instead of discarding it. Backend
+        tests for both. (Root resolution is on the GitHub App's permissions, not in
+        code.)
 
 ## Merge editor (v2 refinements)
 

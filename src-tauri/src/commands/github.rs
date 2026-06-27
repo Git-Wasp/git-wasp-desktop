@@ -137,6 +137,7 @@ pub async fn list_pull_requests(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn create_pull_request(
     host: String,
     title: String,

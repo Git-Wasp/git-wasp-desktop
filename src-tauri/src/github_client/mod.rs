@@ -450,6 +450,23 @@ pub async fn list_pull_requests(
     Ok(result)
 }
 
+/// Turn GitHub's opaque "Resource not accessible by integration" 403 into an
+/// actionable message. This happens when the GitHub App authorizing the user
+/// lacks the *Pull requests: write* permission — note that pushing only needs
+/// *Contents: write*, so a push can succeed while opening the PR is forbidden.
+fn explain_pr_permission_error(err: anyhow::Error) -> anyhow::Error {
+    let msg = err.to_string();
+    if msg.contains("Resource not accessible") {
+        return anyhow::anyhow!(
+            "Your GitHub authorization isn't allowed to open pull requests. The GitHub App \
+             needs the \"Pull requests: Read and write\" permission (and \"Issues: Read and \
+             write\" to set assignees/labels) — add it in the App's settings, then disconnect \
+             and reconnect under Settings → GitHub to re-authorize. (GitHub said: {msg})"
+        );
+    }
+    err
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn create_pull_request(
     api: &str,
@@ -486,29 +503,41 @@ pub async fn create_pull_request(
         .send()
         .await
         .context("create PR request failed")?;
-    let pr: GhPr = github_json(response, "the created pull request").await?;
+    let pr: GhPr = github_json(response, "the created pull request")
+        .await
+        .map_err(explain_pr_permission_error)?;
 
     // Assignees and labels aren't accepted by the create-PR endpoint; a PR is an
     // issue under the hood, so they're set via a follow-up PATCH to the issue.
-    // Best-effort: the PR already exists, so a failure here shouldn't discard it —
-    // we surface it as an error but only attempt when there's something to set.
+    // Best-effort: the PR is *already created*, so a failure here (e.g. a GitHub
+    // App without "Issues: write") must not discard it — log a warning and return
+    // the PR rather than erroring the whole operation.
     if !assignees.is_empty() || !labels.is_empty() {
         #[derive(Serialize)]
         struct UpdateIssueBody<'a> {
             assignees: &'a [String],
             labels: &'a [String],
         }
-        let response = client
-            .patch(format!("{api}/repos/{owner}/{repo}/issues/{}", pr.number))
-            .bearer_auth(token)
-            .header("Accept", "application/vnd.github+json")
-            .json(&UpdateIssueBody { assignees, labels })
-            .send()
-            .await
-            .context("setting PR assignees/labels failed")?;
-        // We don't need the parsed issue back, but reuse github_json to surface a
-        // clear error (status + GitHub message) on failure.
-        github_json::<serde_json::Value>(response, "the pull request assignees/labels").await?;
+        let patch = async {
+            let response = client
+                .patch(format!("{api}/repos/{owner}/{repo}/issues/{}", pr.number))
+                .bearer_auth(token)
+                .header("Accept", "application/vnd.github+json")
+                .json(&UpdateIssueBody { assignees, labels })
+                .send()
+                .await
+                .context("setting PR assignees/labels failed")?;
+            github_json::<serde_json::Value>(response, "the pull request assignees/labels").await?;
+            anyhow::Ok(())
+        }
+        .await;
+        if let Err(e) = patch {
+            warn!(
+                target: "git",
+                "pull request #{} created, but setting assignees/labels failed: {e}",
+                pr.number
+            );
+        }
     }
 
     Ok(PullRequest {
@@ -1079,6 +1108,80 @@ mod tests {
 
         create.assert();
         update.assert();
+    }
+
+    #[tokio::test]
+    async fn create_pull_request_explains_a_missing_permission_403() {
+        let server = httpmock::MockServer::start();
+        server.mock(|when, then| {
+            when.method(httpmock::Method::POST)
+                .path("/repos/mike/gitclient/pulls");
+            then.status(403).json_body(
+                serde_json::json!({ "message": "Resource not accessible by integration" }),
+            );
+        });
+
+        let err = create_pull_request(
+            &server.base_url(),
+            "mike",
+            "gitclient",
+            "Add feature",
+            "description",
+            "feat/x",
+            "main",
+            &[],
+            &[],
+            "test-token",
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("Pull requests: Read and write"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn create_pull_request_succeeds_even_if_setting_assignees_fails() {
+        let server = httpmock::MockServer::start();
+        let create = server.mock(|when, then| {
+            when.method(httpmock::Method::POST)
+                .path("/repos/mike/gitclient/pulls");
+            then.status(201).json_body(serde_json::json!({
+                "number": 11,
+                "title": "Add feature",
+                "user": { "login": "mike" },
+                "head": { "ref": "feat/x", "sha": "abc123" },
+                "base": { "ref": "main", "sha": "def456" },
+                "html_url": "https://github.com/mike/gitclient/pull/11"
+            }));
+        });
+        // The issue PATCH is forbidden (e.g. no "Issues: write") — must not discard the PR.
+        let update = server.mock(|when, then| {
+            when.method(httpmock::Method::PATCH)
+                .path("/repos/mike/gitclient/issues/11");
+            then.status(403).json_body(
+                serde_json::json!({ "message": "Resource not accessible by integration" }),
+            );
+        });
+
+        let pr = create_pull_request(
+            &server.base_url(),
+            "mike",
+            "gitclient",
+            "Add feature",
+            "description",
+            "feat/x",
+            "main",
+            &["mike".to_string()],
+            &["bug".to_string()],
+            "test-token",
+        )
+        .await
+        .expect("PR creation should still succeed despite the assignees/labels failure");
+
+        create.assert();
+        update.assert();
+        assert_eq!(pr.number, 11);
     }
 
     #[tokio::test]
