@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import "@testing-library/jest-dom";
 import { PruneBranchesDialog } from "./PruneBranchesDialog";
-import { useRepoStore } from "../../stores/repoStore";
 import { useToastStore } from "../../stores/toastStore";
 import type { PrunableBranch } from "../../types/repo";
 

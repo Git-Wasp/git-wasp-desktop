@@ -162,8 +162,13 @@ export function useCommitGraph(
       const yMid = localRow * rowHeight + rowHeight / 2;
       const yNext = yMid + rowHeight;
       node.edges.forEach((edge) => {
-        ctx.strokeStyle = laneColors[edge.colorIndex % 8] || "#4d9de0";
+        // Stash edges are drawn dotted and muted; real history edges are solid.
+        const isStashEdge = edge.kind === "Stash";
+        ctx.strokeStyle = isStashEdge
+          ? resolveCssVar("--color-text-muted") || "#8a8a8a"
+          : laneColors[edge.colorIndex % 8] || "#4d9de0";
         ctx.lineWidth = lineWidth;
+        ctx.setLineDash(isStashEdge ? [3, 3] : []);
         ctx.beginPath();
         const srcX = laneX(edge.srcLane);
         const dstX = laneX(edge.dstLane);
@@ -176,6 +181,7 @@ export function useCommitGraph(
         }
         ctx.stroke();
       });
+      ctx.setLineDash([]);
     });
 
     // Pass 3 — dots and the working-tree marker, on top of the edges.
@@ -190,6 +196,23 @@ export function useCommitGraph(
         ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
         ctx.setLineDash([2, 2]);
         ctx.strokeStyle = resolveCssVar("--color-warning") || "#ff9f0a";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.setLineDash([]);
+        return;
+      }
+
+      // Stash node: a hollow dashed diamond so it reads distinctly from commits.
+      if (node.isStash) {
+        const r = dotRadius + 1;
+        ctx.beginPath();
+        ctx.moveTo(x, y - r);
+        ctx.lineTo(x + r, y);
+        ctx.lineTo(x, y + r);
+        ctx.lineTo(x - r, y);
+        ctx.closePath();
+        ctx.setLineDash([2, 2]);
+        ctx.strokeStyle = resolveCssVar("--color-text-muted") || "#8a8a8a";
         ctx.lineWidth = 2;
         ctx.stroke();
         ctx.setLineDash([]);

@@ -90,13 +90,35 @@ between sections, and add new ideas under the right heading. Items marked
       (so the conflict abort can hard-reset safely); aborts cleanly on conflict.
       `repoStore.revertCommit` refreshes the graph + working-tree status; success/
       error toasts. Backend tests (commit / no-commit / dirty / merge) + menu tests.
-- [ ] Add a "stash changes" option for uncommitted changes to create a new named stash. The stash can be viewed
+- [x] Add a "stash changes" option for uncommitted changes to create a new named stash. The stash can be viewed
       in the commit graph (and clearly shown as a "stash"). Right click on the stash allows me to pop the stash.
+      — right-clicking the "uncommitted changes" row in the graph offers "Stash
+      changes…" (prompts for a name → `stash_save_cmd`). Stashes now render **inline
+      in the graph**, hanging off the commit they were created on: the backend graph
+      layout injects a stash node one row below its base commit (the stash commit's
+      first parent) on a side lane, with **dotted** edges (new `EdgeKind::Stash`) and
+      a dashed diamond marker + "STASH" badge; multiple stashes on one commit stack
+      as a dotted chain. Real commits' lanes are untouched (the base just gains one
+      dotted edge); rows renumber and `find_commit_row` / the cache key account for
+      the injected stash rows (new `stash_fingerprint`). Right-clicking a stash node
+      gives **Pop / Rename… / Delete** (`stash_pop_cmd` / new `stash_rename_cmd` /
+      `stash_drop_cmd`). Rename has no native git equivalent, so it re-stores the
+      same stash commit with the new message via the `git` CLI (drop-then-store;
+      moves the stash to the top — noted). `StashEntry` gained `baseOid`; new
+      `stashStore` (create/pop/drop/rename) refreshes the graph + working tree after
+      each action. Tests: backend (base_oid, rename keeps the commit, stash injected
+      below base, find_commit_row shifted by a stash) + frontend (stash badge/menus,
+      pop, stash-via-prompt, rename prefilled, stashStore commands+refresh).
+      Follow-up: the sidebar StashPanel keeps its own list and won't live-update from
+      graph stash actions yet.
 - [x] Dragging a branch pill no longer selects text on the commits underneath —
       `useGraphDragDrop` adds a `dragging-branch-pill` class to `<body>` for the
       duration of a drag (CSS `user-select: none` + grabbing cursor) and clears any
       selection the initial press started; removed on release/unmount. Test asserts
       the class toggles on drag/release.
+- [ ] Show "tag" pills that are visually distinct to branch pills. Add right-click options
+      like "delete tag", "push tag". Make clear if tags are local/remote/both. Don't provide "push" option
+      if tag is local only. When deleting a tag, confirm whether to also delete from remote. If so, also delete from remote.
 
 ## Working tree & committing
 
@@ -296,6 +318,9 @@ between sections, and add new ideas under the right heading. Items marked
       workspace decision above
 - [ ] Consider whether we need the complexity of the token flow we have for GitHub,
       or whether the user's existing credentials (e.g. ssh key) are enough
+- [ ] If we do keep the GitHub integration, make sure we're using refresh tokens.
+      Tokens are only valid for 8 hours, so we need to use the refresh for a persistent
+      connection.
 
 ## Config & settings
 
@@ -602,3 +627,4 @@ between sections, and add new ideas under the right heading. Items marked
       Its contents don't really matter as long as it's somewhat realistic code inside it. We can then do whatever we need
       to that local repo in terms of forcing merge conflicts etc. We could even clone some small open source project
       locally to have some realistic existing history.
+- [ ] Test failure: Error: src/components/Sidebar/PruneBranchesDialog.test.tsx(6,1): error TS6133: 'useRepoStore' is declared but its value is never read.

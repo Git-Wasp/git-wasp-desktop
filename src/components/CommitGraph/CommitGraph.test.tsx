@@ -7,6 +7,7 @@ import { useRepoStore } from "../../stores/repoStore";
 import { useGithubStore } from "../../stores/githubStore";
 import { useToastStore } from "../../stores/toastStore";
 import { useRemoteStore } from "../../stores/remoteStore";
+import { useStashStore } from "../../stores/stashStore";
 import type { GraphNode, GraphViewport } from "../../types/graph";
 
 const node = (over: Partial<GraphNode>): GraphNode => ({
@@ -347,7 +348,7 @@ describe("CommitGraph working-tree row", () => {
     expect(selectedOid).toBeNull();
   });
 
-  it("does not open a context menu on the working-tree row", () => {
+  it("offers Stash changes (not commit actions) on the working-tree row", () => {
     useGraphStore.setState({
       viewport: {
         totalCount: 1,
@@ -357,6 +358,84 @@ describe("CommitGraph working-tree row", () => {
     });
     render(<CommitGraph onViewChanges={vi.fn()} />);
     fireEvent.contextMenu(screen.getByText("1 uncommitted changes"));
+    expect(screen.getByText("Stash changes…")).toBeInTheDocument();
     expect(screen.queryByText("Copy commit hash")).toBeNull();
+  });
+});
+
+describe("CommitGraph stash", () => {
+  const stashViewport = (): GraphViewport => ({
+    totalCount: 2,
+    offset: 0,
+    nodes: [
+      node({ oid: "a".repeat(40), summary: "base commit", isHead: true, row: 0 }),
+      node({
+        oid: "c".repeat(40),
+        summary: "WIP on main: experiment",
+        isStash: true,
+        stashIndex: 0,
+        lane: 1,
+        row: 1,
+      }),
+    ],
+  });
+
+  beforeEach(() => {
+    useStashStore.setState({
+      create: vi.fn().mockResolvedValue(undefined),
+      pop: vi.fn().mockResolvedValue(undefined),
+      drop: vi.fn().mockResolvedValue(undefined),
+      rename: vi.fn().mockResolvedValue(undefined),
+    });
+    useGraphStore.setState({ viewport: stashViewport() });
+  });
+
+  it("renders a stash node with the stash badge and message", () => {
+    render(<CommitGraph />);
+    expect(screen.getByText("stash")).toBeInTheDocument();
+    expect(screen.getByText("WIP on main: experiment")).toBeInTheDocument();
+  });
+
+  it("offers pop / rename / delete on a stash node and does not select it", () => {
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("WIP on main: experiment"));
+    expect(screen.getByText("Pop stash")).toBeInTheDocument();
+    expect(screen.getByText("Rename stash…")).toBeInTheDocument();
+    expect(screen.getByText("Delete stash")).toBeInTheDocument();
+    expect(selectCommit).not.toHaveBeenCalled();
+  });
+
+  it("pops a stash from the menu", async () => {
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("WIP on main: experiment"));
+    fireEvent.click(screen.getByText("Pop stash"));
+    await waitFor(() => expect(useStashStore.getState().pop).toHaveBeenCalledWith(0));
+  });
+
+  it("stashes the working tree via the prompt", async () => {
+    useGraphStore.setState({
+      viewport: {
+        totalCount: 1,
+        offset: 0,
+        nodes: [node({ oid: "WORKING_TREE", summary: "2 uncommitted changes", isWorkingTree: true })],
+      },
+    });
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("2 uncommitted changes"));
+    fireEvent.click(screen.getByText("Stash changes…"));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "my work" } });
+    fireEvent.click(screen.getByRole("button", { name: /^stash$/i }));
+    await waitFor(() => expect(useStashStore.getState().create).toHaveBeenCalledWith("my work"));
+  });
+
+  it("renames a stash via the prompt (prefilled with the current name)", async () => {
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("WIP on main: experiment"));
+    fireEvent.click(screen.getByText("Rename stash…"));
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    expect(input.value).toBe("WIP on main: experiment");
+    fireEvent.change(input, { target: { value: "renamed" } });
+    fireEvent.click(screen.getByRole("button", { name: /^rename$/i }));
+    await waitFor(() => expect(useStashStore.getState().rename).toHaveBeenCalledWith(0, "renamed"));
   });
 });

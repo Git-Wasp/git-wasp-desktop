@@ -6,6 +6,7 @@ import { useMergeStore } from "../../stores/mergeStore";
 import { useRemoteStore } from "../../stores/remoteStore";
 import { useAvatarStore } from "../../stores/avatarStore";
 import { useToastStore } from "../../stores/toastStore";
+import { useStashStore } from "../../stores/stashStore";
 import { useCommitGraph, GRAPH_PAD_LEFT } from "../../hooks/useCommitGraph";
 import { ContextMenu, type MenuItem } from "../common/ContextMenu";
 import { PromptDialog } from "../common/PromptDialog";
@@ -37,7 +38,9 @@ interface MenuState {
 type PromptState =
   | { kind: "new-branch"; oid: string }
   | { kind: "rename-branch"; branch: string }
-  | { kind: "create-tag"; oid: string };
+  | { kind: "create-tag"; oid: string }
+  | { kind: "stash" }
+  | { kind: "rename-stash"; index: number; current: string };
 
 /**
  * A single graph row (branch cell · graph gap the canvas shows through · message
@@ -158,6 +161,7 @@ export function CommitGraph({
   const requestAvatars = useAvatarStore((s) => s.request);
   const toastError = useToastStore((s) => s.error);
   const toastSuccess = useToastStore((s) => s.success);
+  const stash = useStashStore();
 
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [prompt, setPrompt] = useState<PromptState | null>(null);
@@ -280,6 +284,8 @@ export function CommitGraph({
     (node: GraphNode, shiftKey: boolean) => {
       // Swallow the click that ends a drag so it doesn't also select.
       if (drag.consumeClick()) return;
+      // Stash nodes aren't real history; right-click drives their actions.
+      if (node.isStash) return;
       if (node.isWorkingTree) {
         // Highlight the uncommitted-changes row (and clear any commit selection)
         // so it reads as the current selection, then open the changes view.
@@ -296,12 +302,24 @@ export function CommitGraph({
   const handleRowContextMenu = useCallback(
     (e: React.MouseEvent, node: GraphNode) => {
       e.preventDefault();
-      if (node.isWorkingTree) return;
-      selectCommit(node.oid, false);
+      // The working-tree and stash rows get their own menus; they aren't real
+      // commits, so don't select them as one.
+      if (!node.isWorkingTree && !node.isStash) {
+        selectCommit(node.oid, false);
+      }
       setMenu({ x: e.clientX, y: e.clientY, node });
     },
     [selectCommit],
   );
+
+  const runStashOp = async (op: () => Promise<void>, success: string) => {
+    try {
+      await op();
+      toastSuccess(success);
+    } catch (e) {
+      toastError(String(e));
+    }
+  };
 
   const copy = (text: string) => {
     void navigator.clipboard?.writeText(text);
@@ -342,6 +360,34 @@ export function CommitGraph({
 
   const buildMenuItems = useCallback(
     (node: GraphNode): MenuItem[] => {
+      // The uncommitted-changes row: offer to stash the working tree.
+      if (node.isWorkingTree) {
+        return [{ label: "Stash changes…", onSelect: () => setPrompt({ kind: "stash" }) }];
+      }
+      // A stash node: pop / rename / delete.
+      if (node.isStash) {
+        const index = node.stashIndex ?? 0;
+        return [
+          {
+            label: "Pop stash",
+            onSelect: () => runStashOp(() => stash.pop(index), "Popped stash"),
+          },
+          {
+            label: "Rename stash…",
+            onSelect: () => setPrompt({ kind: "rename-stash", index, current: node.summary }),
+          },
+          { separator: true },
+          {
+            label: "Delete stash",
+            danger: true,
+            onSelect: () => {
+              if (window.confirm(`Delete stash "${node.summary}"?`)) {
+                void runStashOp(() => stash.drop(index), "Deleted stash");
+              }
+            },
+          },
+        ];
+      }
       const items: MenuItem[] = [
         { label: "Checkout this commit", onSelect: () => runBranchOp(() => checkoutCommit(node.oid)) },
         { separator: true },
@@ -419,6 +465,10 @@ export function CommitGraph({
       });
     } else if (current.kind === "create-tag") {
       await runBranchOp(() => createTag(value, current.oid));
+    } else if (current.kind === "stash") {
+      await runStashOp(() => stash.create(value), "Stashed changes");
+    } else if (current.kind === "rename-stash") {
+      await runStashOp(() => stash.rename(current.index, value), "Renamed stash");
     } else {
       await runBranchOp(() => renameBranch(current.branch, value));
     }
@@ -561,11 +611,33 @@ export function CommitGraph({
               ? "Rename branch"
               : prompt.kind === "create-tag"
                 ? "New tag"
-                : "New branch"
+                : prompt.kind === "stash"
+                  ? "Stash changes"
+                  : prompt.kind === "rename-stash"
+                    ? "Rename stash"
+                    : "New branch"
           }
-          label={prompt.kind === "create-tag" ? "Tag name" : "Branch name"}
-          initialValue={prompt.kind === "rename-branch" ? prompt.branch : ""}
-          confirmLabel={prompt.kind === "rename-branch" ? "Rename" : "Create"}
+          label={
+            prompt.kind === "create-tag"
+              ? "Tag name"
+              : prompt.kind === "stash" || prompt.kind === "rename-stash"
+                ? "Stash name"
+                : "Branch name"
+          }
+          initialValue={
+            prompt.kind === "rename-branch"
+              ? prompt.branch
+              : prompt.kind === "rename-stash"
+                ? prompt.current
+                : ""
+          }
+          confirmLabel={
+            prompt.kind === "rename-branch" || prompt.kind === "rename-stash"
+              ? "Rename"
+              : prompt.kind === "stash"
+                ? "Stash"
+                : "Create"
+          }
           onConfirm={handlePromptConfirm}
           onCancel={() => setPrompt(null)}
         />

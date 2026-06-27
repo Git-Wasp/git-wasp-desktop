@@ -17,13 +17,16 @@ export interface GraphNode {
   // Present on the synthetic working-tree node (see graph layout).
   isWorkingTree?: boolean;
   changeCount?: number | null;
+  // Present on stash nodes — drawn dotted, hanging off their base commit.
+  isStash?: boolean;
+  stashIndex?: number | null;
 }
 
 export interface GraphEdge {
   srcLane: number;
   dstLane: number;
   colorIndex: number;
-  kind: "Straight" | "Merge" | "Branch";
+  kind: "Straight" | "Merge" | "Branch" | "Stash";
 }
 
 export interface BranchLabel {

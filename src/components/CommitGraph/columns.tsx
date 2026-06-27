@@ -105,10 +105,31 @@ export function MessageCell({ node }: { node: GraphNode }) {
         fontSize: "var(--font-size-sm)",
       }}
     >
+      {node.isStash && (
+        <span
+          style={{
+            marginRight: "var(--space-2)",
+            padding: "0 var(--space-1)",
+            borderRadius: "var(--radius-sm)",
+            border: "1px dashed var(--color-text-muted)",
+            color: "var(--color-text-muted)",
+            fontSize: "var(--font-size-xs)",
+            fontWeight: "var(--font-weight-semibold)",
+            textTransform: "uppercase",
+            letterSpacing: "0.04em",
+          }}
+        >
+          stash
+        </span>
+      )}
       <span
         style={{
           fontWeight: "var(--font-weight-semibold)",
-          color: wip ? "var(--color-warning)" : "var(--color-text-primary)",
+          color: wip
+            ? "var(--color-warning)"
+            : node.isStash
+              ? "var(--color-text-secondary)"
+              : "var(--color-text-primary)",
         }}
       >
         {node.summary}

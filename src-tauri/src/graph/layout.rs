@@ -37,13 +37,35 @@ pub struct GraphCache {
 struct CacheKey {
     head: Option<Oid>,
     refs_fingerprint: u64,
+    stash_fingerprint: u64,
 }
 
 fn cache_key(repo: &Repository) -> CacheKey {
     CacheKey {
         head: repo.head().ok().and_then(|h| h.target()),
         refs_fingerprint: refs_fingerprint(repo),
+        stash_fingerprint: stash_fingerprint(repo),
     }
+}
+
+/// Order-sensitive fingerprint of the stash list — each entry's commit, message
+/// and position. Flips when a stash is created, dropped, popped or renamed, so
+/// the cached layout (which embeds stash nodes) is rebuilt.
+fn stash_fingerprint(repo: &Repository) -> u64 {
+    let mut acc: u64 = 0;
+    if let Ok(reflog) = repo.reflog("refs/stash") {
+        for i in 0..reflog.len() {
+            let Some(entry) = reflog.get(i) else { continue };
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            i.hash(&mut h);
+            entry.id_new().as_bytes().hash(&mut h);
+            if let Some(m) = entry.message() {
+                m.hash(&mut h);
+            }
+            acc ^= h.finish();
+        }
+    }
+    acc
 }
 
 /// Order-independent fingerprint of all refs (name + direct target). Flips when a
@@ -78,6 +100,7 @@ fn build_full_layout(repo: &Repository) -> anyhow::Result<Vec<GraphNode>> {
     let walk_ms = walk_started.elapsed().as_millis();
 
     let nodes = assign_lanes(&commits, &label_map, head_id);
+    let nodes = inject_stashes(repo, nodes);
     log_full_build(
         repo,
         &commits,
@@ -471,10 +494,147 @@ fn assign_lanes(
             is_head: head_id == Some(*oid),
             is_working_tree: false,
             change_count: None,
+            is_stash: false,
+            stash_index: None,
         });
     }
 
     nodes
+}
+
+/// A stash read from the `refs/stash` reflog. Read this way (not via
+/// `stash_foreach`, which needs `&mut Repository`) so layout stays `&Repository`.
+struct StashRef {
+    index: usize,
+    message: String,
+    oid: Oid,
+    base: Oid,
+}
+
+fn read_stashes(repo: &Repository) -> Vec<StashRef> {
+    let mut out = Vec::new();
+    let Ok(reflog) = repo.reflog("refs/stash") else {
+        return out; // no stashes (ref doesn't exist)
+    };
+    for i in 0..reflog.len() {
+        let Some(entry) = reflog.get(i) else { continue };
+        let oid = entry.id_new();
+        // The stash commit's first parent is the commit it was created on.
+        let Some(base) = repo.find_commit(oid).ok().and_then(|c| c.parent_id(0).ok()) else {
+            continue;
+        };
+        out.push(StashRef {
+            index: i,
+            message: entry.message().unwrap_or("").to_string(),
+            oid,
+            base,
+        });
+    }
+    out
+}
+
+/// Splice stash nodes into the laid-out history, each hanging off the commit it
+/// was created on (its first parent) via dotted edges, on a side lane. Multiple
+/// stashes on the same commit stack downward as a dotted chain. Real commits'
+/// lanes are untouched — only their `row`s shift (renumbered here) and the base
+/// commit gains one dotted edge down to its first stash. Stashes whose base
+/// commit isn't in the layout are skipped.
+fn inject_stashes(repo: &Repository, nodes: Vec<GraphNode>) -> Vec<GraphNode> {
+    let stashes = read_stashes(repo);
+    if stashes.is_empty() {
+        return nodes;
+    }
+
+    // base oid -> its stashes, most-recent first (ascending stash index).
+    let mut by_base: HashMap<String, Vec<&StashRef>> = HashMap::new();
+    for s in &stashes {
+        by_base.entry(s.base.to_string()).or_default().push(s);
+    }
+    for v in by_base.values_mut() {
+        v.sort_by_key(|s| s.index);
+    }
+
+    let mut out: Vec<GraphNode> = Vec::with_capacity(nodes.len() + stashes.len());
+    for node in nodes {
+        let Some(chain) = by_base.get(&node.oid).cloned() else {
+            out.push(node);
+            continue;
+        };
+
+        // Lanes alive going from this commit into the next row, with their
+        // colours — the stash rows must carry these straight through so the real
+        // history lines don't break where a stash is spliced in.
+        let active: Vec<(usize, usize)> = node
+            .edges
+            .iter()
+            .map(|e| (e.dst_lane, e.color_index))
+            .collect();
+        let mut stash_lane = 0;
+        while active.iter().any(|(l, _)| *l == stash_lane) {
+            stash_lane += 1;
+        }
+        let base_lane = node.lane;
+        let base_color = node.color_index;
+
+        // The base commit gains a dotted edge down to the first stash.
+        let mut base = node;
+        base.edges.push(GraphEdge {
+            src_lane: base_lane,
+            dst_lane: stash_lane,
+            color_index: base_color,
+            kind: EdgeKind::Stash,
+        });
+        out.push(base);
+
+        let n = chain.len();
+        for (i, s) in chain.iter().enumerate() {
+            let mut edges: Vec<GraphEdge> = active
+                .iter()
+                .map(|(lane, color)| GraphEdge {
+                    src_lane: *lane,
+                    dst_lane: *lane,
+                    color_index: *color,
+                    kind: EdgeKind::Straight,
+                })
+                .collect();
+            // Continue the dotted stash chain down to the next stash, if any.
+            if i + 1 < n {
+                edges.push(GraphEdge {
+                    src_lane: stash_lane,
+                    dst_lane: stash_lane,
+                    color_index: base_color,
+                    kind: EdgeKind::Stash,
+                });
+            }
+            let oid_str = s.oid.to_string();
+            out.push(GraphNode {
+                short_oid: oid_str[..8].to_string(),
+                oid: oid_str,
+                summary: s.message.clone(),
+                body: String::new(),
+                author_name: String::new(),
+                author_email: String::new(),
+                author_timestamp: 0,
+                lane: stash_lane,
+                row: 0, // renumbered below
+                color_index: base_color,
+                parents: vec![s.base.to_string()],
+                children: Vec::new(),
+                edges,
+                branch_labels: Vec::new(),
+                is_head: false,
+                is_working_tree: false,
+                change_count: None,
+                is_stash: true,
+                stash_index: Some(s.index),
+            });
+        }
+    }
+
+    for (i, node) in out.iter_mut().enumerate() {
+        node.row = i;
+    }
+    out
 }
 
 /// Counts changed files in the working tree (modified/staged/untracked,
@@ -484,29 +644,21 @@ fn assign_lanes(
 /// synthetic working-tree node when the tree is dirty). Returns `None` if the
 /// commit isn't reachable from HEAD (so it has no row in the graph).
 pub fn find_commit_row(repo: &Repository, oid_str: &str) -> anyhow::Result<Option<usize>> {
-    let target = git2::Oid::from_str(oid_str).context("invalid commit oid")?;
-
+    // Build the same full layout the viewport uses (which embeds stash nodes, so
+    // a commit's row reflects any stashes spliced in above it), then look up the
+    // commit's position. The working-tree node (row 0 when dirty) shifts every
+    // commit down by one, mirroring `slice_viewport`.
+    let full = build_full_layout(repo)?;
     let head_id = repo.head().ok().and_then(|h| h.target());
     let wip_offset = if head_id.is_some() && changed_file_count(repo) > 0 {
         1
     } else {
         0
     };
-
-    let mut walk = repo.revwalk().context("failed to create revwalk")?;
-    walk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME)
-        .context("failed to set sort")?;
-    if !seed_revwalk(repo, &mut walk) {
-        return Ok(None);
-    }
-
-    for (i, oid) in walk.enumerate() {
-        let oid = oid.context("revwalk error")?;
-        if oid == target {
-            return Ok(Some(i + wip_offset));
-        }
-    }
-    Ok(None)
+    Ok(full
+        .iter()
+        .position(|n| n.oid == oid_str)
+        .map(|i| i + wip_offset))
 }
 
 fn changed_file_count(repo: &Repository) -> u32 {
@@ -543,6 +695,8 @@ fn working_tree_node(head: &GraphNode, change_count: u32) -> GraphNode {
         is_head: false,
         is_working_tree: true,
         change_count: Some(change_count),
+        is_stash: false,
+        stash_index: None,
     }
 }
 
@@ -590,6 +744,83 @@ mod tests {
             find_commit_row(&repo, &c1.id().to_string()).unwrap(),
             Some(2)
         );
+    }
+
+    /// Repo with two real-file commits (so the working tree can be made dirty
+    /// and stashed). Returns (dir, repo, head_oid).
+    fn repo_with_two_commits() -> (TempDir, Repository, String) {
+        let dir = TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        {
+            let mut cfg = repo.config().unwrap();
+            cfg.set_str("user.name", "Test").unwrap();
+            cfg.set_str("user.email", "t@t.com").unwrap();
+        }
+        let commit_file = |name: &str, content: &str, msg: &str| {
+            std::fs::write(dir.path().join(name), content).unwrap();
+            let mut index = repo.index().unwrap();
+            index.add_path(std::path::Path::new(name)).unwrap();
+            index.write().unwrap();
+            let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+            let parent = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
+            let parents: Vec<&git2::Commit> = parent.iter().collect();
+            repo.commit(Some("HEAD"), &sig(), &sig(), msg, &tree, &parents)
+                .unwrap();
+        };
+        commit_file("f.txt", "v1\n", "first");
+        commit_file("f.txt", "v2\n", "second");
+        let head = repo.head().unwrap().target().unwrap().to_string();
+        (dir, repo, head)
+    }
+
+    #[test]
+    fn stash_node_is_injected_below_its_base_commit() {
+        let (dir, mut repo, head) = repo_with_two_commits();
+        std::fs::write(dir.path().join("f.txt"), "dirty\n").unwrap();
+        crate::stash::stash_save(&mut repo, Some("WIP work")).unwrap();
+
+        let nodes = build_full_layout(&repo).unwrap();
+
+        let base_row = nodes.iter().position(|n| n.oid == head).unwrap();
+        let stash = nodes.iter().find(|n| n.is_stash).expect("a stash node");
+
+        // The stash sits one row below the commit it was created on.
+        assert_eq!(stash.row, base_row + 1);
+        assert_eq!(stash.stash_index, Some(0));
+        assert!(stash.summary.contains("WIP work"));
+
+        // The base commit gained a dotted edge pointing at the stash's lane.
+        let base = &nodes[base_row];
+        assert!(base
+            .edges
+            .iter()
+            .any(|e| matches!(e.kind, EdgeKind::Stash) && e.dst_lane == stash.lane));
+        // The stash is on a side lane, and carries the real history line straight
+        // through (a pass-through edge on the base's lane).
+        assert_ne!(stash.lane, base.lane);
+        assert!(stash
+            .edges
+            .iter()
+            .any(|e| matches!(e.kind, EdgeKind::Straight) && e.src_lane == base.lane));
+    }
+
+    #[test]
+    fn find_commit_row_accounts_for_an_injected_stash() {
+        let (dir, mut repo, _head) = repo_with_two_commits();
+        // Row of the root commit before stashing.
+        let root = build_full_layout(&repo)
+            .unwrap()
+            .iter()
+            .find(|n| n.summary == "first")
+            .map(|n| n.oid.clone())
+            .unwrap();
+        let before = find_commit_row(&repo, &root).unwrap();
+
+        std::fs::write(dir.path().join("f.txt"), "dirty\n").unwrap();
+        crate::stash::stash_save(&mut repo, Some("WIP")).unwrap();
+        // Stash sits above the root (below HEAD), so the root shifts down by one.
+        let after = find_commit_row(&repo, &root).unwrap();
+        assert_eq!(after, before.map(|r| r + 1));
     }
 
     #[test]

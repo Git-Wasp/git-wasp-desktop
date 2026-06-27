@@ -8,6 +8,11 @@ pub struct StashEntry {
     pub index: usize,
     pub message: String,
     pub oid: String,
+    /// The commit the stash was created on (the stash commit's first parent),
+    /// so the graph can draw the stash hanging off that commit. `None` if it
+    /// can't be resolved.
+    #[serde(default)]
+    pub base_oid: Option<String>,
 }
 
 pub fn stash_save(repo: &mut Repository, message: Option<&str>) -> anyhow::Result<StashEntry> {
@@ -18,25 +23,89 @@ pub fn stash_save(repo: &mut Repository, message: Option<&str>) -> anyhow::Resul
     let oid = repo
         .stash_save(&sig, msg, None)
         .context("nothing to stash — working tree is clean")?;
+    let base_oid = repo
+        .find_commit(oid)
+        .ok()
+        .and_then(|c| c.parent_id(0).ok())
+        .map(|p| p.to_string());
     Ok(StashEntry {
         index: 0,
         message: msg.to_string(),
         oid: oid.to_string(),
+        base_oid,
     })
 }
 
 pub fn stash_list(repo: &mut Repository) -> anyhow::Result<Vec<StashEntry>> {
-    let mut entries = Vec::new();
+    // Collect raw entries first — the foreach closure borrows `repo`, so the
+    // base-commit lookups happen after it returns.
+    let mut raw: Vec<(usize, String, git2::Oid)> = Vec::new();
     repo.stash_foreach(|index, message, oid| {
-        entries.push(StashEntry {
-            index,
-            message: message.to_string(),
-            oid: oid.to_string(),
-        });
+        raw.push((index, message.to_string(), *oid));
         true
     })
     .context("failed to list stashes")?;
-    Ok(entries)
+
+    Ok(raw
+        .into_iter()
+        .map(|(index, message, oid)| {
+            let base_oid = repo
+                .find_commit(oid)
+                .ok()
+                .and_then(|c| c.parent_id(0).ok())
+                .map(|p| p.to_string());
+            StashEntry {
+                index,
+                message,
+                oid: oid.to_string(),
+                base_oid,
+            }
+        })
+        .collect())
+}
+
+/// Rename a stash. Git has no native rename, so re-store the same stash commit
+/// with the new message and drop the original — note this moves the renamed
+/// stash to the top (stash@{0}). Uses the `git` CLI (the sanctioned fallback for
+/// gaps in git2; `git stash store` has no libgit2 equivalent).
+pub fn stash_rename(repo: &mut Repository, index: usize, message: &str) -> anyhow::Result<()> {
+    let oid = {
+        let entries = stash_list(repo)?;
+        entries
+            .get(index)
+            .context("stash index out of range")?
+            .oid
+            .clone()
+    };
+    let workdir = repo
+        .workdir()
+        .context("bare repositories have no working tree")?;
+    // Drop the entry first, then re-store the same commit with the new message —
+    // storing it while it's still the current stash@{0} is a no-op that adds no
+    // reflog entry. The commit object survives the drop, so re-storing is safe.
+    let drop = std::process::Command::new("git")
+        .args(["stash", "drop", &format!("stash@{{{index}}}")])
+        .current_dir(workdir)
+        .output()
+        .context("failed to run git stash drop")?;
+    if !drop.status.success() {
+        anyhow::bail!(
+            "git stash drop failed: {}",
+            String::from_utf8_lossy(&drop.stderr).trim()
+        );
+    }
+    let store = std::process::Command::new("git")
+        .args(["stash", "store", "-m", message, &oid])
+        .current_dir(workdir)
+        .output()
+        .context("failed to run git stash store")?;
+    if !store.status.success() {
+        anyhow::bail!(
+            "git stash store failed: {}",
+            String::from_utf8_lossy(&store.stderr).trim()
+        );
+    }
+    Ok(())
 }
 
 pub fn stash_apply(repo: &mut Repository, index: usize) -> anyhow::Result<()> {
@@ -130,5 +199,34 @@ mod tests {
         stash_drop(&mut repo, 0).unwrap();
         let entries = stash_list(&mut repo).unwrap();
         assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn stash_entry_carries_its_base_commit() {
+        let (dir, mut repo) = init_repo();
+        commit_file(&repo, &dir, "file.txt", "original\n");
+        let head = repo.head().unwrap().target().unwrap().to_string();
+        fs::write(dir.path().join("file.txt"), "modified\n").unwrap();
+        stash_save(&mut repo, Some("stash")).unwrap();
+
+        let entries = stash_list(&mut repo).unwrap();
+        assert_eq!(entries[0].base_oid.as_deref(), Some(head.as_str()));
+    }
+
+    #[test]
+    fn stash_rename_changes_the_message_keeping_the_commit() {
+        let (dir, mut repo) = init_repo();
+        commit_file(&repo, &dir, "file.txt", "original\n");
+        fs::write(dir.path().join("file.txt"), "modified\n").unwrap();
+        stash_save(&mut repo, Some("old name")).unwrap();
+        let original_oid = stash_list(&mut repo).unwrap()[0].oid.clone();
+
+        stash_rename(&mut repo, 0, "new name").unwrap();
+
+        let entries = stash_list(&mut repo).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].message.contains("new name"));
+        // Same underlying stash commit — no data lost in the rename.
+        assert_eq!(entries[0].oid, original_oid);
     }
 }

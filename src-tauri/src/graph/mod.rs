@@ -32,6 +32,14 @@ pub struct GraphNode {
     /// Number of changed files, set only on the working-tree node.
     #[serde(default)]
     pub change_count: Option<u32>,
+    /// True for a stash node, drawn hanging off the commit it was created on
+    /// with dotted edges/marker. Its `oid` is the real stash commit oid.
+    #[serde(default)]
+    pub is_stash: bool,
+    /// The stash's index (`stash@{N}`), set only on stash nodes — used by the
+    /// pop/drop/rename actions.
+    #[serde(default)]
+    pub stash_index: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,6 +57,9 @@ pub enum EdgeKind {
     Straight,
     Merge,
     Branch,
+    /// A dotted edge connecting a stash node to the commit it hangs off (or to
+    /// the next stash in a stack). Rendered dashed, not solid.
+    Stash,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

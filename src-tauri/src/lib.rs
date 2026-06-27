@@ -98,6 +98,7 @@ pub fn run() {
             commands::stash::stash_apply_cmd,
             commands::stash::stash_pop_cmd,
             commands::stash::stash_drop_cmd,
+            commands::stash::stash_rename_cmd,
             // Merge / operation runner
             commands::merge::operation_status,
             commands::merge::operation_resume,
