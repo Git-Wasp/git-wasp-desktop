@@ -175,3 +175,54 @@ pub async fn create_pull_request(
     .await
     .map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub async fn list_assignable_users(
+    host: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let token = state
+        .credentials
+        .load(&host)
+        .map_err(|e| e.to_string())?
+        .ok_or("not authenticated — connect your GitHub account first")?;
+
+    let known = state.known_github_hosts().map_err(|e| e.to_string())?;
+    let remote_info = state
+        .with_repo(|repo| crate::remote_ops::detect_remote_info(repo, &known))
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+
+    let base_url = crate::github_client::api_base(&host);
+    crate::github_client::list_assignable_users(
+        &base_url,
+        &remote_info.owner,
+        &remote_info.repo,
+        &token,
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_repo_labels(
+    host: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::github_client::RepoLabel>, String> {
+    let token = state
+        .credentials
+        .load(&host)
+        .map_err(|e| e.to_string())?
+        .ok_or("not authenticated — connect your GitHub account first")?;
+
+    let known = state.known_github_hosts().map_err(|e| e.to_string())?;
+    let remote_info = state
+        .with_repo(|repo| crate::remote_ops::detect_remote_info(repo, &known))
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+
+    let base_url = crate::github_client::api_base(&host);
+    crate::github_client::list_repo_labels(&base_url, &remote_info.owner, &remote_info.repo, &token)
+        .await
+        .map_err(|e| e.to_string())
+}

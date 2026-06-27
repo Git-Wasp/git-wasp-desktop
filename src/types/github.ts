@@ -64,6 +64,12 @@ export interface GithubRepo {
   description: string | null;
 }
 
+export interface RepoLabel {
+  name: string;
+  /** GitHub's 6-hex-digit colour, without a leading "#". */
+  color: string;
+}
+
 export type CiStatus = "success" | "failure" | "pending" | "none";
 
 export interface PullRequest {

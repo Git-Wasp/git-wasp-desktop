@@ -1,25 +1,10 @@
 /**
  * Helpers for the "open a pull request" flow.
  *
- * `parseList` turns a comma/newline-separated free-text field (assignees,
- * labels) into a clean list. `compareUrl` builds GitHub's "open a PR" compare
- * page URL so the user can finish creating the PR on GitHub.com / GHE instead
- * of submitting through the API.
+ * `compareUrl` builds GitHub's "open a PR" compare page URL so the user can
+ * finish creating the PR on GitHub.com / GHE instead of submitting through the
+ * API.
  */
-
-/** Split a free-text field on commas/newlines, trimmed, de-duplicated, no blanks. */
-export function parseList(input: string): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const raw of input.split(/[,\n]/)) {
-    const item = raw.trim().replace(/^@/, "");
-    if (item && !seen.has(item)) {
-      seen.add(item);
-      out.push(item);
-    }
-  }
-  return out;
-}
 
 /**
  * GitHub's compare page pre-fills a PR from the same fields we collect, so

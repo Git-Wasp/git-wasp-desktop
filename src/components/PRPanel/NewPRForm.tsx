@@ -1,12 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useGithubStore } from "../../stores/githubStore";
 import { useRepoStore } from "../../stores/repoStore";
 import type { PullRequest } from "../../types/github";
-import { compareUrl, parseList } from "../../lib/githubPr";
+import { compareUrl } from "../../lib/githubPr";
 import { renderMarkdown } from "../../lib/markdown";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
+import { MultiSelect, type MultiSelectOption } from "../ui/MultiSelect";
 
 const fieldStyle: React.CSSProperties = {
   width: "100%",
@@ -29,6 +30,25 @@ const labelStyle: React.CSSProperties = {
 
 type BodyTab = "write" | "preview";
 
+/** A small swatch + name row for a GitHub label in the picker. */
+function LabelOption({ name, color }: { name: string; color: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)" }}>
+      <span
+        style={{
+          width: 10,
+          height: 10,
+          borderRadius: "50%",
+          flexShrink: 0,
+          background: `#${color}`,
+          border: "1px solid var(--color-border-subtle)",
+        }}
+      />
+      {name}
+    </span>
+  );
+}
+
 export function NewPRForm({
   onCreated,
   onCancel,
@@ -40,10 +60,19 @@ export function NewPRForm({
   initialHead?: string;
   initialBase?: string;
 }) {
-  const { remoteInfo, connections, createPullRequest } = useGithubStore();
+  const {
+    remoteInfo,
+    connections,
+    assignableUsers,
+    repoLabels,
+    loadAssignableUsers,
+    loadRepoLabels,
+    createPullRequest,
+  } = useGithubStore();
   const { currentRepo, branches } = useRepoStore();
 
   const defaultBase = branches.find((b) => b.name === "main" || b.name === "master")?.name ?? "main";
+  const isConnected = !!remoteInfo && connections[remoteInfo.host]?.state === "connected";
   const me = (remoteInfo && connections[remoteInfo.host]?.login) || "";
 
   const [title, setTitle] = useState("");
@@ -51,10 +80,19 @@ export function NewPRForm({
   const [bodyTab, setBodyTab] = useState<BodyTab>("write");
   const [head, setHead] = useState(initialHead ?? currentRepo?.headBranch ?? "");
   const [base, setBase] = useState(initialBase ?? defaultBase);
-  const [assigneesText, setAssigneesText] = useState(me);
-  const [labelsText, setLabelsText] = useState("");
+  const [assignees, setAssignees] = useState<string[]>(me ? [me] : []);
+  const [labels, setLabels] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Populate the assignees/labels pickers from GitHub once we have a working
+  // connection. Best-effort: a failure just leaves the pickers empty (the user
+  // can still open the PR, and "Continue on GitHub" remains available).
+  useEffect(() => {
+    if (!isConnected || !remoteInfo) return;
+    void loadAssignableUsers(remoteInfo.host).catch(() => {});
+    void loadRepoLabels(remoteInfo.host).catch(() => {});
+  }, [isConnected, remoteInfo, loadAssignableUsers, loadRepoLabels]);
 
   // Local branches drive the head/base pickers. Keep whatever's currently
   // selected in the list even if it isn't a known local branch (e.g. an
@@ -64,9 +102,23 @@ export function NewPRForm({
     return Array.from(new Set([selected, ...locals].filter(Boolean)));
   };
 
+  // Union the fetched options with anything already selected, so a selection
+  // (e.g. the @me default before the list loads) stays visible and toggleable.
+  const assigneeOptions: MultiSelectOption[] = useMemo(() => {
+    const values = Array.from(new Set([...assignees, ...assignableUsers]));
+    return values.map((value) => ({ value }));
+  }, [assignees, assignableUsers]);
+
+  const labelOptions: MultiSelectOption[] = useMemo(() => {
+    const known = new Map(repoLabels.map((l) => [l.name, l.color]));
+    const values = Array.from(new Set([...labels, ...repoLabels.map((l) => l.name)]));
+    return values.map((value) => ({
+      value,
+      render: <LabelOption name={value} color={known.get(value) ?? "888888"} />,
+    }));
+  }, [labels, repoLabels]);
+
   const previewHtml = useMemo(() => renderMarkdown(body), [body]);
-  const assignees = useMemo(() => parseList(assigneesText), [assigneesText]);
-  const labels = useMemo(() => parseList(labelsText), [labelsText]);
 
   const canSubmit = !!remoteInfo && !!title.trim() && !!head.trim() && !!base.trim();
 
@@ -205,25 +257,36 @@ export function NewPRForm({
       </div>
 
       <div style={{ display: "flex", gap: "var(--space-2)" }}>
-        <label style={{ flex: 1 }}>
+        <label style={{ flex: 1, minWidth: 0 }}>
           <span style={labelStyle}>Assignees</span>
-          <Input
-            fullWidth
-            placeholder="comma-separated logins"
-            value={assigneesText}
-            onChange={(e) => setAssigneesText(e.target.value)}
+          <MultiSelect
+            ariaLabel="assignees"
+            disabled={!isConnected}
+            options={assigneeOptions}
+            selected={assignees}
+            onChange={setAssignees}
+            placeholder={isConnected ? "None" : "Connect GitHub"}
+            emptyLabel="No assignable users"
           />
         </label>
-        <label style={{ flex: 1 }}>
+        <label style={{ flex: 1, minWidth: 0 }}>
           <span style={labelStyle}>Labels</span>
-          <Input
-            fullWidth
-            placeholder="comma-separated labels"
-            value={labelsText}
-            onChange={(e) => setLabelsText(e.target.value)}
+          <MultiSelect
+            ariaLabel="labels"
+            disabled={!isConnected}
+            options={labelOptions}
+            selected={labels}
+            onChange={setLabels}
+            placeholder={isConnected ? "None" : "Connect GitHub"}
+            emptyLabel="No labels defined"
           />
         </label>
       </div>
+      {!isConnected && (
+        <div style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>
+          Connect your GitHub account (Settings → GitHub) to choose assignees and labels.
+        </div>
+      )}
 
       {error && (
         <div style={{ fontSize: "var(--font-size-sm)", color: "var(--color-danger)" }}>{error}</div>

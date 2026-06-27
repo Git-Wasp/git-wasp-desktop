@@ -203,18 +203,26 @@ between sections, and add new ideas under the right heading. Items marked
       an initialBase like "develop" still shows), defaulting to the current branch →
       main/master. The description gained a Write/Preview markdown toggle (reusing
       `lib/markdown`'s `renderMarkdown`, same pattern as the commit form). New
-      Assignees field defaults to the connected GitHub login (@me; read from
-      `githubStore.connections[host].login`) and a Labels field; both are
-      comma/newline lists parsed by `lib/githubPr.parseList` (strips a leading @,
-      de-dupes). "Continue on GitHub" opens GitHub's compare page with everything
-      pre-filled via `lib/githubPr.compareUrl` (`expand=1` + title/body/assignees/
-      labels query params; works for GHE hosts) using `plugin-opener`. Backend
-      `create_pull_request` now takes `assignees` + `labels`: after creating the PR
-      it PATCHes `/repos/{owner}/{repo}/issues/{n}` to set them (skipped when both
-      empty, since the create-PR endpoint ignores those fields). New tests: backend
-      httpmock (sets assignees/labels, and skips the PATCH when none), `lib/githubPr`
-      unit tests, and `NewPRForm` tests (local-only options, @me default, sends
-      assignees/labels, Continue-on-GitHub URL).
+      Assignees and Labels are now **multi-select pickers populated from GitHub**
+      (not free text): a new `ui/MultiSelect` (built on `Dropdown`, which gained a
+      `fullWidth` prop) lists the repo's assignable users and labels (label rows
+      show a colour swatch), with a filter once the list is long. Backed by new
+      Rust commands `list_assignable_users` (`GET /repos/{o}/{r}/assignees`) and
+      `list_repo_labels` (`GET …/labels`, returns name+colour), loaded into
+      `githubStore` (`assignableUsers`/`repoLabels`) when the form mounts *if the
+      GitHub connection is validated as `connected`*. When not connected both
+      pickers are **disabled** with a "Connect your GitHub account…" hint, to avoid
+      confusion. Assignees still default to the connected login (@me). "Continue on
+      GitHub" opens GitHub's compare page with everything pre-filled via
+      `lib/githubPr.compareUrl` (`expand=1` + title/body/assignees/labels query
+      params; works for GHE hosts) using `plugin-opener`. Backend
+      `create_pull_request` takes `assignees` + `labels`: after creating the PR it
+      PATCHes `/repos/{owner}/{repo}/issues/{n}` to set them (skipped when both
+      empty, since the create-PR endpoint ignores those fields). Tests: backend
+      httpmock for create (sets/skips the PATCH) and the two list commands;
+      `lib/githubPr` (compareUrl), `ui/MultiSelect`, and `NewPRForm` (local-only
+      branch options, disabled-when-disconnected, loads on connect, @me default,
+      sends chosen assignees/labels, Continue-on-GitHub URL).
 
 ## Merge editor (v2 refinements)
 
@@ -507,6 +515,7 @@ between sections, and add new ideas under the right heading. Items marked
       selection overrides it with the usual `--color-bg-selected` highlight. The
       token is defined per built-in theme (a soft accent tint). Adds to the existing
       HEAD cues (pulsing dot ring, check pill, left-pointing accent triangle).
+- [ ] When showing uncommitted changes and there is a single change, don't pluralise changes in git graph
 
 ## Other issues
 

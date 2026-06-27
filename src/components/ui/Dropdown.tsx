@@ -55,6 +55,7 @@ export function Dropdown({
   disabled = false,
   panelMinWidth = 220,
   align = "left",
+  fullWidth = false,
   triggerStyle,
   onOpenChange,
   children,
@@ -64,6 +65,8 @@ export function Dropdown({
   disabled?: boolean;
   panelMinWidth?: number;
   align?: "left" | "right";
+  /** Stretch the trigger (and root) to fill the parent — for use as a form field. */
+  fullWidth?: boolean;
   triggerStyle?: CSSProperties;
   /** Notified whenever the panel opens or closes (e.g. to reset a filter). */
   onOpenChange?: (open: boolean) => void;
@@ -98,7 +101,15 @@ export function Dropdown({
   }, [open]);
 
   return (
-    <div ref={ref} style={{ position: "relative", display: "inline-flex", minWidth: 0 }}>
+    <div
+      ref={ref}
+      style={{
+        position: "relative",
+        display: fullWidth ? "flex" : "inline-flex",
+        width: fullWidth ? "100%" : undefined,
+        minWidth: 0,
+      }}
+    >
       <button
         type="button"
         aria-label={ariaLabel}
@@ -116,7 +127,8 @@ export function Dropdown({
           display: "inline-flex",
           alignItems: "center",
           gap: "var(--space-1)",
-          maxWidth: 240,
+          maxWidth: fullWidth ? "none" : 240,
+          width: fullWidth ? "100%" : undefined,
           minWidth: 0,
           height: "var(--control-height-md)",
           padding: "0 var(--space-2)",

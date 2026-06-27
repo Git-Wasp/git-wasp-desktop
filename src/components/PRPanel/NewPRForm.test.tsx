@@ -12,6 +12,19 @@ vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 const mockInvoke = vi.mocked(invoke);
 const mockOpenUrl = vi.mocked(openUrl);
 
+/** Route invoke by command name so the form's data loads resolve in tests. */
+function routeInvoke(overrides: Record<string, unknown> = {}) {
+  const defaults: Record<string, unknown> = {
+    list_assignable_users: ["mike", "ann"],
+    list_repo_labels: [
+      { name: "bug", color: "d73a4a" },
+      { name: "ux", color: "0e8a16" },
+    ],
+  };
+  const table = { ...defaults, ...overrides };
+  mockInvoke.mockImplementation(async (cmd: string) => table[cmd]);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   useGithubStore.setState({
@@ -19,6 +32,8 @@ beforeEach(() => {
     remoteInfo: { host: "github.com", owner: "mike", repo: "gitclient", protocol: "https" },
     pullRequests: [],
     githubRepos: [],
+    assignableUsers: [],
+    repoLabels: [],
     deviceFlowInit: null,
     isAuthenticating: false,
   });
@@ -32,6 +47,13 @@ beforeEach(() => {
     ],
   });
 });
+
+/** Mark the github.com connection as connected (with a login). */
+function connectAs(login: string) {
+  useGithubStore.setState({
+    connections: { "github.com": { state: "connected", login, message: null } },
+  });
+}
 
 describe("NewPRForm", () => {
   it("pre-fills head with the current branch and base with main", () => {
@@ -62,7 +84,7 @@ describe("NewPRForm", () => {
       ciStatus: "none" as const,
       approvalCount: 0,
     };
-    mockInvoke.mockResolvedValueOnce(createdPr);
+    routeInvoke({ create_pull_request: createdPr });
     const onCreated = vi.fn();
 
     render(<NewPRForm onCreated={onCreated} onCancel={vi.fn()} />);
@@ -85,11 +107,33 @@ describe("NewPRForm", () => {
     expect(onCreated).toHaveBeenCalledWith(createdPr);
   });
 
-  it("defaults the assignee to the connected user and sends assignees + labels", async () => {
-    useGithubStore.setState({
-      connections: { "github.com": { state: "connected", login: "mike", message: null } },
+  it("disables the assignees and labels pickers when GitHub is not connected", () => {
+    render(<NewPRForm onCreated={vi.fn()} onCancel={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "assignees" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "labels" })).toBeDisabled();
+    expect(screen.getByText(/connect your github account/i)).toBeInTheDocument();
+  });
+
+  it("loads assignable users and labels from GitHub when connected", async () => {
+    connectAs("mike");
+    routeInvoke();
+
+    render(<NewPRForm onCreated={vi.fn()} onCancel={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("list_assignable_users", { host: "github.com" });
+      expect(mockInvoke).toHaveBeenCalledWith("list_repo_labels", { host: "github.com" });
     });
-    mockInvoke.mockResolvedValueOnce({
+    // Assignees picker is enabled and defaults to the connected user (@me).
+    const assignees = screen.getByRole("button", { name: "assignees" });
+    expect(assignees).toBeEnabled();
+    expect(assignees).toHaveTextContent("mike");
+  });
+
+  it("sends the chosen assignees (default @me) and a picked label", async () => {
+    connectAs("mike");
+    const createdPr = {
       number: 6,
       title: "T",
       author: "mike",
@@ -98,19 +142,23 @@ describe("NewPRForm", () => {
       url: "u",
       ciStatus: "none" as const,
       approvalCount: 0,
-    });
+    };
+    routeInvoke({ create_pull_request: createdPr });
 
     render(<NewPRForm onCreated={vi.fn()} onCancel={vi.fn()} />);
 
-    expect(screen.getByDisplayValue("mike")).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText(/title/i), { target: { value: "T" } });
-    fireEvent.change(screen.getByPlaceholderText(/labels/i), { target: { value: "bug, ux" } });
+
+    // Open the labels picker and choose "bug" (loaded from GitHub).
+    fireEvent.click(screen.getByRole("button", { name: "labels" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "bug" }));
+
     fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith(
         "create_pull_request",
-        expect.objectContaining({ assignees: ["mike"], labels: ["bug", "ux"] }),
+        expect.objectContaining({ assignees: ["mike"], labels: ["bug"] }),
       );
     });
   });

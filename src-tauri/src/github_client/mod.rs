@@ -526,6 +526,60 @@ pub async fn create_pull_request(
     })
 }
 
+/// A label defined on a repository, for pre-populating the labels picker when
+/// opening a PR. `color` is GitHub's 6-hex-digit string (no leading `#`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoLabel {
+    pub name: String,
+    pub color: String,
+}
+
+/// The logins of users who can be assigned to issues/PRs in this repo (the
+/// repo's collaborators + org members with access). Used to populate the
+/// assignees picker rather than relying on free-text entry.
+pub async fn list_assignable_users(
+    api: &str,
+    owner: &str,
+    repo: &str,
+    token: &str,
+) -> anyhow::Result<Vec<String>> {
+    #[derive(Deserialize)]
+    struct Assignee {
+        login: String,
+    }
+
+    let client = http_client()?;
+    let response = client
+        .get(format!("{api}/repos/{owner}/{repo}/assignees?per_page=100"))
+        .bearer_auth(token)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .context("list assignees request failed")?;
+    let users: Vec<Assignee> = github_json(response, "the repository's assignable users").await?;
+    Ok(users.into_iter().map(|u| u.login).collect())
+}
+
+/// The labels defined on this repo, to populate the labels picker when opening
+/// a PR.
+pub async fn list_repo_labels(
+    api: &str,
+    owner: &str,
+    repo: &str,
+    token: &str,
+) -> anyhow::Result<Vec<RepoLabel>> {
+    let client = http_client()?;
+    let response = client
+        .get(format!("{api}/repos/{owner}/{repo}/labels?per_page=100"))
+        .bearer_auth(token)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .context("list labels request failed")?;
+    github_json(response, "the repository's labels").await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1025,6 +1079,58 @@ mod tests {
 
         create.assert();
         update.assert();
+    }
+
+    #[tokio::test]
+    async fn list_assignable_users_returns_logins() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::GET)
+                .path("/repos/mike/gitclient/assignees");
+            then.status(200).json_body(serde_json::json!([
+                { "login": "mike" },
+                { "login": "ann" }
+            ]));
+        });
+
+        let users = list_assignable_users(&server.base_url(), "mike", "gitclient", "test-token")
+            .await
+            .unwrap();
+
+        mock.assert();
+        assert_eq!(users, vec!["mike".to_string(), "ann".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn list_repo_labels_returns_name_and_color() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::GET)
+                .path("/repos/mike/gitclient/labels");
+            then.status(200).json_body(serde_json::json!([
+                { "name": "bug", "color": "d73a4a" },
+                { "name": "ux", "color": "0e8a16" }
+            ]));
+        });
+
+        let labels = list_repo_labels(&server.base_url(), "mike", "gitclient", "test-token")
+            .await
+            .unwrap();
+
+        mock.assert();
+        assert_eq!(
+            labels,
+            vec![
+                RepoLabel {
+                    name: "bug".to_string(),
+                    color: "d73a4a".to_string()
+                },
+                RepoLabel {
+                    name: "ux".to_string(),
+                    color: "0e8a16".to_string()
+                },
+            ]
+        );
     }
 
     #[tokio::test]

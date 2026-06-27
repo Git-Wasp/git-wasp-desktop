@@ -1,19 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareUrl, parseList } from "./githubPr";
-
-describe("parseList", () => {
-  it("splits on commas and newlines, trimming blanks", () => {
-    expect(parseList("alice, bob\n carol ")).toEqual(["alice", "bob", "carol"]);
-  });
-
-  it("strips a leading @ and de-duplicates", () => {
-    expect(parseList("@me, me, @you")).toEqual(["me", "you"]);
-  });
-
-  it("returns an empty array for empty input", () => {
-    expect(parseList("   ")).toEqual([]);
-  });
-});
+import { compareUrl } from "./githubPr";
 
 describe("compareUrl", () => {
   it("builds a github.com compare URL with expand and the draft fields", () => {

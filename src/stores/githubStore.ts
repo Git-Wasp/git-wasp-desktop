@@ -7,6 +7,7 @@ import type {
   GithubRepo,
   PullRequest,
   RemoteInfo,
+  RepoLabel,
 } from "../types/github";
 
 interface GithubStore {
@@ -14,6 +15,8 @@ interface GithubStore {
   remoteInfo: RemoteInfo | null;
   pullRequests: PullRequest[];
   githubRepos: GithubRepo[];
+  assignableUsers: string[];
+  repoLabels: RepoLabel[];
   deviceFlowInit: DeviceFlowInit | null;
   isAuthenticating: boolean;
   prDraft: { head: string; base: string } | null;
@@ -27,6 +30,8 @@ interface GithubStore {
   logout: (host: string) => Promise<void>;
   loadGithubRepos: (host: string) => Promise<void>;
   loadPullRequests: (host: string) => Promise<void>;
+  loadAssignableUsers: (host: string) => Promise<void>;
+  loadRepoLabels: (host: string) => Promise<void>;
   createPullRequest: (
     host: string,
     title: string,
@@ -44,6 +49,8 @@ export const useGithubStore = create<GithubStore>((set, get) => ({
   remoteInfo: null,
   pullRequests: [],
   githubRepos: [],
+  assignableUsers: [],
+  repoLabels: [],
   deviceFlowInit: null,
   isAuthenticating: false,
   prDraft: null,
@@ -141,6 +148,16 @@ export const useGithubStore = create<GithubStore>((set, get) => ({
   loadPullRequests: async (host: string) => {
     const pullRequests = await invoke<PullRequest[]>("list_pull_requests", { host });
     set({ pullRequests });
+  },
+
+  loadAssignableUsers: async (host: string) => {
+    const assignableUsers = await invoke<string[]>("list_assignable_users", { host });
+    set({ assignableUsers });
+  },
+
+  loadRepoLabels: async (host: string) => {
+    const repoLabels = await invoke<RepoLabel[]>("list_repo_labels", { host });
+    set({ repoLabels });
   },
 
   createPullRequest: async (
