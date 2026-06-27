@@ -111,6 +111,7 @@ pub fn run() {
             // Remote operations
             commands::remote::detect_remote_info,
             commands::remote::fetch_remote,
+            commands::remote::list_prunable_branches,
             commands::remote::pull_branch,
             commands::remote::push_branch,
             commands::remote::clone_repo,

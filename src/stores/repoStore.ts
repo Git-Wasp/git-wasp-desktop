@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
-import type { BranchInfo, RepoEntry, RepoInfo } from "../types/repo";
+import type { BranchInfo, PrunableBranch, RepoEntry, RepoInfo } from "../types/repo";
 import { useGraphStore } from "./graphStore";
 import { useMergeStore } from "./mergeStore";
 import { useWorkingTreeStore } from "./workingTreeStore";
@@ -32,6 +32,7 @@ interface RepoStore {
   createBranch: (name: string, startPoint?: string) => Promise<void>;
   renameBranch: (oldName: string, newName: string) => Promise<void>;
   deleteBranch: (name: string) => Promise<void>;
+  listPrunableBranches: () => Promise<PrunableBranch[]>;
 }
 
 export const useRepoStore = create<RepoStore>((set, get) => {
@@ -157,6 +158,10 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     deleteBranch: async (name: string) => {
       await invoke("delete_branch", { name });
       await get().loadBranches();
+    },
+
+    listPrunableBranches: async () => {
+      return invoke<PrunableBranch[]>("list_prunable_branches");
     },
   };
 });

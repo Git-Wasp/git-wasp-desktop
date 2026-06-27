@@ -34,7 +34,7 @@ describe("remoteStore", () => {
     expect(useRemoteStore.getState().isFetching).toBe(true);
     const result = await promise;
 
-    expect(mockInvoke).toHaveBeenCalledWith("fetch_remote", { remoteName: null });
+    expect(mockInvoke).toHaveBeenCalledWith("fetch_remote", { remoteName: null, prune: false });
     expect(result).toEqual({ updatedRefs: ["refs/heads/main"] });
     expect(useRemoteStore.getState().isFetching).toBe(false);
   });

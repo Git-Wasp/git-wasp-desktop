@@ -21,6 +21,13 @@ export interface BranchInfo {
   behind: number | null;
 }
 
+/** A local branch whose upstream remote-tracking branch is gone — a prune candidate. */
+export interface PrunableBranch {
+  name: string;
+  /** The remote-tracking branch it followed, now gone (e.g. "origin/feature"). */
+  upstream: string;
+}
+
 export interface ChangedFile {
   path: string;
   oldPath: string | null;

@@ -407,8 +407,24 @@ between sections, and add new ideas under the right heading. Items marked
       pre/post working-tree dirty counts at debug to diagnose the next item — and
       tokens/file contents/messages/emails are never logged (PII-safe). Demoted the
       noisy graph-walk + credential-store logs to debug.
-- [ ] "Auto-prune" capability that will remove local branches that are no longer on the remote. Before deleting
+- [x] "Auto-prune" capability that will remove local branches that are no longer on the remote. Before deleting
       show a list of local branches to be removed (all selected by default) so the user can choose to retain a selection
+      — a "Prune" button in the sidebar Branches header opens `PruneBranchesDialog`:
+      it first does a **fetch with prune** (so stale remote-tracking refs are
+      removed), then lists the "gone" branches with checkboxes (all selected),
+      shows each branch's former upstream, and deletes the chosen subset (reusing
+      `repoStore.deleteBranch` per branch, success/failure toasts). Backend:
+      `find_prunable_branches` (config-based detection — a local branch whose
+      `branch.<n>.remote`/`.merge` point at a remote-tracking ref that no longer
+      exists; skips the current branch and local-tracking `.` remotes, since git2's
+      `Branch::upstream()` can't distinguish "gone" from "never had one"), exposed
+      as `list_prunable_branches`. `remote_ops::fetch` gained a `prune` flag
+      (git2 `FetchPrune::On` / `--prune` on the CLI path); `fetch_remote` +
+      `remoteStore.fetch` take an optional `prune`. Best-effort fetch — offline
+      still lists from current refs. Tests: backend detection (gone vs alive vs
+      no-upstream, current-branch excluded), and the dialog (lists all-selected
+      after a prune fetch, empty state, deletes only the selected, lists even when
+      the fetch fails).
 
 ## General UX
 

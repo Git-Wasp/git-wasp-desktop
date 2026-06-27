@@ -13,7 +13,7 @@ interface RemoteStore {
   lastError: string | null;
 
   loadAheadBehind: () => Promise<void>;
-  fetch: (remoteName?: string) => Promise<FetchResult>;
+  fetch: (remoteName?: string, prune?: boolean) => Promise<FetchResult>;
   pull: (mode?: PullMode, remoteName?: string, branch?: string) => Promise<PullResult>;
   push: (remoteName?: string, branch?: string) => Promise<void>;
 }
@@ -30,10 +30,13 @@ export const useRemoteStore = create<RemoteStore>((set, get) => ({
     set({ aheadBehind });
   },
 
-  fetch: async (remoteName?: string) => {
+  fetch: async (remoteName?: string, prune?: boolean) => {
     set({ isFetching: true, lastError: null });
     try {
-      const result = await invoke<FetchResult>("fetch_remote", { remoteName: remoteName ?? null });
+      const result = await invoke<FetchResult>("fetch_remote", {
+        remoteName: remoteName ?? null,
+        prune: prune ?? false,
+      });
       await get().loadAheadBehind();
       return result;
     } catch (e) {

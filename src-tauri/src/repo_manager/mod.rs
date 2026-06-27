@@ -807,6 +807,70 @@ pub fn list_branches(repo: &Repository) -> anyhow::Result<Vec<BranchInfo>> {
     Ok(branches)
 }
 
+/// A local branch whose upstream remote-tracking branch is gone — i.e. it was
+/// tracking a remote branch that no longer exists (the `[origin/x: gone]` state
+/// `git branch -vv` shows). Detection is config-based because git2's
+/// `Branch::upstream()` returns `None` for a gone upstream, indistinguishable
+/// from a branch that never had one.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrunableBranch {
+    pub name: String,
+    /// The remote-tracking branch it followed, now gone (e.g. "origin/feature").
+    pub upstream: String,
+}
+
+/// Local branches safe to prune: those configured to track a remote branch
+/// whose remote-tracking ref is no longer present. The currently checked-out
+/// branch is never included. Pure (no network) — callers should fetch with
+/// prune first so the remote-tracking refs are up to date.
+pub fn find_prunable_branches(repo: &Repository) -> anyhow::Result<Vec<PrunableBranch>> {
+    let config = repo.config().context("failed to read repo config")?;
+    let head_name = repo
+        .head()
+        .ok()
+        .and_then(|h| h.shorthand().map(|s| s.to_string()));
+
+    let mut out = Vec::new();
+    for branch in repo
+        .branches(Some(BranchType::Local))
+        .context("failed to list local branches")?
+    {
+        let (branch, _) = branch.context("invalid branch reference")?;
+        let name = match branch.name()?.map(|s| s.to_string()) {
+            Some(n) => n,
+            None => continue,
+        };
+        // Never offer to delete the branch you're currently on.
+        if head_name.as_deref() == Some(name.as_str()) {
+            continue;
+        }
+        // Both keys present ⇒ the branch is configured to track an upstream.
+        let remote = match config.get_string(&format!("branch.{name}.remote")) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        // "." means it tracks a local branch, not a remote — not a prune target.
+        if remote == "." {
+            continue;
+        }
+        let merge = match config.get_string(&format!("branch.{name}.merge")) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        let short = merge.strip_prefix("refs/heads/").unwrap_or(&merge);
+        let tracking_ref = format!("refs/remotes/{remote}/{short}");
+        // Gone ⇒ the upstream it tracked no longer exists locally.
+        if repo.find_reference(&tracking_ref).is_err() {
+            out.push(PrunableBranch {
+                name,
+                upstream: format!("{remote}/{short}"),
+            });
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1127,6 +1191,62 @@ mod tests {
         assert!(!branches.is_empty());
         let head_branch = branches.iter().find(|b| b.is_head);
         assert!(head_branch.is_some());
+    }
+
+    #[test]
+    fn find_prunable_branches_detects_only_gone_upstreams() {
+        let (_dir, repo) = make_git_repo_with_commit();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+
+        {
+            let mut config = repo.config().unwrap();
+            // "gone": tracks origin/gone, but the remote-tracking ref is absent.
+            repo.branch("gone", &head, false).unwrap();
+            config.set_str("branch.gone.remote", "origin").unwrap();
+            config
+                .set_str("branch.gone.merge", "refs/heads/gone")
+                .unwrap();
+
+            // "alive": tracks origin/alive, and the remote-tracking ref exists.
+            repo.branch("alive", &head, false).unwrap();
+            config.set_str("branch.alive.remote", "origin").unwrap();
+            config
+                .set_str("branch.alive.merge", "refs/heads/alive")
+                .unwrap();
+            repo.reference("refs/remotes/origin/alive", head.id(), true, "test")
+                .unwrap();
+
+            // "local-only": never had an upstream.
+            repo.branch("local-only", &head, false).unwrap();
+        }
+
+        let prunable = find_prunable_branches(&repo).unwrap();
+        let names: Vec<&str> = prunable.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, vec!["gone"]);
+        assert_eq!(prunable[0].upstream, "origin/gone");
+    }
+
+    #[test]
+    fn find_prunable_branches_never_includes_the_current_branch() {
+        let (_dir, repo) = make_git_repo_with_commit();
+        let head_name = repo.head().unwrap().shorthand().unwrap().to_string();
+
+        {
+            let mut config = repo.config().unwrap();
+            // Configure the checked-out branch as if its upstream were gone.
+            config
+                .set_str(&format!("branch.{head_name}.remote"), "origin")
+                .unwrap();
+            config
+                .set_str(
+                    &format!("branch.{head_name}.merge"),
+                    &format!("refs/heads/{head_name}"),
+                )
+                .unwrap();
+        }
+
+        let prunable = find_prunable_branches(&repo).unwrap();
+        assert!(prunable.iter().all(|p| p.name != head_name));
     }
 
     #[test]

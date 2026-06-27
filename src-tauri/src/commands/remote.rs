@@ -15,6 +15,7 @@ pub async fn detect_remote_info(state: State<'_, AppState>) -> Result<RemoteInfo
 #[tauri::command]
 pub async fn fetch_remote(
     remote_name: Option<String>,
+    prune: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<FetchResult, String> {
     let remote = remote_name.as_deref().unwrap_or("origin");
@@ -35,7 +36,17 @@ pub async fn fetch_remote(
         .and_then(|h| state.credentials.load(h).ok().flatten());
 
     state
-        .with_repo(|repo| remote_ops::fetch(repo, remote, token.as_deref()))
+        .with_repo(|repo| remote_ops::fetch(repo, remote, token.as_deref(), prune.unwrap_or(false)))
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_prunable_branches(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::repo_manager::PrunableBranch>, String> {
+    state
+        .with_repo(crate::repo_manager::find_prunable_branches)
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }

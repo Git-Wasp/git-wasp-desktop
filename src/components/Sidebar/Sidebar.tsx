@@ -14,6 +14,7 @@ import { Input } from "../ui/Input";
 import { BranchIcon, GitHubIcon, LaptopIcon } from "../ui/icons";
 import { RemoteActions } from "./RemoteActions";
 import { CloneDialog } from "../GitHub/CloneDialog";
+import { PruneBranchesDialog } from "./PruneBranchesDialog";
 
 const INITIAL_LIMIT = 150;
 
@@ -50,6 +51,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
   const [newBranchName, setNewBranchName] = useState("");
   const [showNewBranch, setShowNewBranch] = useState(false);
   const [showCloneDialog, setShowCloneDialog] = useState(false);
+  const [showPruneDialog, setShowPruneDialog] = useState(false);
   const [selectedRecentPath, setSelectedRecentPath] = useState<string | null>(null);
 
   // GitHub connection is managed in Settings now; the host is still needed for
@@ -159,16 +161,28 @@ export function Sidebar({ width = 220 }: { width?: number }) {
         <CloneDialog host={githubHost} onClose={() => setShowCloneDialog(false)} />
       )}
 
+      {showPruneDialog && <PruneBranchesDialog onClose={() => setShowPruneDialog(false)} />}
+
       {/* Branch list */}
       {currentRepo && (
         <CollapsibleSection
           id="branches"
           title="Branches"
           action={
-            <Button size="sm" onClick={() => setShowNewBranch((v) => !v)}>
-              <BranchIcon size={12} />
-              New
-            </Button>
+            <div style={{ display: "flex", gap: "var(--space-1)" }}>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => setShowPruneDialog(true)}
+                title="Delete local branches whose remote branch is gone"
+              >
+                Prune
+              </Button>
+              <Button size="sm" onClick={() => setShowNewBranch((v) => !v)}>
+                <BranchIcon size={12} />
+                New
+              </Button>
+            </div>
           }
         >
           {showNewBranch && (

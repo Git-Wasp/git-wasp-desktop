@@ -164,11 +164,12 @@ pub fn fetch(
     repo: &Repository,
     remote_name: &str,
     token: Option<&str>,
+    prune: bool,
 ) -> anyhow::Result<FetchResult> {
     // Never log the token; "auth=token/none" records only whether one was used.
     log::info!(
         target: "git",
-        "fetch: remote={remote_name} auth={}",
+        "fetch: remote={remote_name} prune={prune} auth={}",
         if token.is_some() { "token" } else { "none" }
     );
     let mut remote = repo
@@ -178,7 +179,7 @@ pub fn fetch(
 
     if is_ssh_remote(&url) {
         log::debug!(target: "git", "fetch: ssh remote, using git CLI");
-        return fetch_cli(repo, remote_name);
+        return fetch_cli(repo, remote_name, prune);
     }
 
     let updated_refs = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
@@ -195,6 +196,11 @@ pub fn fetch(
     });
     let mut opts = git2::FetchOptions::new();
     opts.remote_callbacks(callbacks);
+    // Prune deletes remote-tracking refs whose remote branch is gone, which is
+    // what makes those local branches detectable as prunable.
+    if prune {
+        opts.prune(git2::FetchPrune::On);
+    }
     remote
         .fetch(&[] as &[&str], Some(&mut opts), None)
         .context("fetch failed")?;
@@ -206,10 +212,14 @@ pub fn fetch(
     Ok(FetchResult { updated_refs: refs })
 }
 
-fn fetch_cli(repo: &Repository, remote_name: &str) -> anyhow::Result<FetchResult> {
+fn fetch_cli(repo: &Repository, remote_name: &str, prune: bool) -> anyhow::Result<FetchResult> {
     let workdir = repo.workdir().context("bare repo not supported")?;
+    let mut args = vec!["fetch", remote_name];
+    if prune {
+        args.push("--prune");
+    }
     let output = std::process::Command::new("git")
-        .args(["fetch", remote_name])
+        .args(&args)
         .current_dir(workdir)
         .output()
         .context("failed to run git fetch")?;
@@ -232,7 +242,7 @@ pub fn pull_ff(
     token: Option<&str>,
 ) -> anyhow::Result<PullFfOutcome> {
     log::info!(target: "git", "pull (ff): remote={remote_name} branch={branch}");
-    fetch(repo, remote_name, token)?;
+    fetch(repo, remote_name, token, false)?;
 
     // Resolve the upstream ref
     let upstream_ref = format!("refs/remotes/{remote_name}/{branch}");
