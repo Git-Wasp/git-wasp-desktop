@@ -339,11 +339,9 @@ between sections, and add new ideas under the right heading. Items marked
       `create_pull_request`. Also made the PR `user` optional (deleted/ghost
       authors → "ghost") so a null author no longer fails the parse. The PR panel
       already shows the error string, so the actionable message flows through.
-- [ ] Cross-repo PR/CI notifications via API polling (Phase 6) — overlaps the
-      workspace decision above
-- [ ] Consider whether we need the complexity of the token flow we have for GitHub,
+- [x] Consider whether we need the complexity of the token flow we have for GitHub,
       or whether the user's existing credentials (e.g. ssh key) are enough
-- [ ] If we do keep the GitHub integration, make sure we're using refresh tokens.
+- [x] If we do keep the GitHub integration, make sure we're using refresh tokens.
       Tokens are only valid for 8 hours, so we need to use the refresh for a persistent
       connection.
 

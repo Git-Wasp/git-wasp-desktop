@@ -2,10 +2,18 @@ use anyhow::Context;
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 
-const GITHUB_CLIENT_ID: &str = match option_env!("GITHUB_OAUTH_CLIENT_ID") {
+const GITHUB_CLIENT_ID_RAW: &str = match option_env!("GITHUB_OAUTH_CLIENT_ID") {
     Some(id) => id,
     None => "dev-placeholder",
 };
+
+/// The configured OAuth client ID, trimmed. `GITHUB_OAUTH_CLIENT_ID` is set in a
+/// human-edited `.cargo/config.toml`, where a stray trailing space silently rides
+/// along into the request and GitHub rejects the unknown client with a 404
+/// ("Not Found") — trimming here guards against that whole class of confusion.
+fn client_id() -> &'static str {
+    GITHUB_CLIENT_ID_RAW.trim()
+}
 
 fn device_code_url(host: &str) -> String {
     if host == "github.com" {
@@ -116,12 +124,12 @@ pub async fn start_device_flow(host: &str) -> anyhow::Result<DeviceFlowInit> {
 }
 
 async fn start_device_flow_at(url: &str) -> anyhow::Result<DeviceFlowInit> {
-    info!("starting GitHub device flow: POST {url} (client_id={GITHUB_CLIENT_ID})");
+    info!("starting GitHub device flow: POST {url} (client_id={})", client_id());
     let client = http_client()?;
     let response = client
         .post(url)
         .header("Accept", "application/json")
-        .form(&[("client_id", GITHUB_CLIENT_ID), ("scope", "repo read:user")])
+        .form(&[("client_id", client_id()), ("scope", "repo read:user")])
         .send()
         .await
         .context("device code request failed")?;
@@ -155,13 +163,13 @@ pub async fn poll_device_flow(
 }
 
 async fn poll_device_flow_at(url: &str, device_code: &str) -> anyhow::Result<DeviceFlowPollResult> {
-    debug!("polling device flow: POST {url} (client_id={GITHUB_CLIENT_ID})");
+    debug!("polling device flow: POST {url} (client_id={})", client_id());
     let client = http_client()?;
     let response = client
         .post(url)
         .header("Accept", "application/json")
         .form(&[
-            ("client_id", GITHUB_CLIENT_ID),
+            ("client_id", client_id()),
             ("device_code", device_code),
             ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
         ])
