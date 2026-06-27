@@ -671,11 +671,21 @@ fn changed_file_count(repo: &Repository) -> u32 {
 
 /// The synthetic node representing uncommitted changes, sitting one row above
 /// HEAD on HEAD's lane with a straight edge down to it.
+/// The working-tree row's summary, pluralising "change" by count
+/// (e.g. "1 uncommitted change" vs "3 uncommitted changes").
+fn working_tree_summary(change_count: u32) -> String {
+    if change_count == 1 {
+        "1 uncommitted change".to_string()
+    } else {
+        format!("{change_count} uncommitted changes")
+    }
+}
+
 fn working_tree_node(head: &GraphNode, change_count: u32) -> GraphNode {
     GraphNode {
         oid: "WORKING_TREE".to_string(),
         short_oid: "WORKING_TREE".to_string(),
-        summary: format!("{change_count} uncommitted changes"),
+        summary: working_tree_summary(change_count),
         body: String::new(),
         author_name: String::new(),
         author_email: String::new(),
@@ -727,6 +737,17 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let repo = Repository::init(dir.path()).unwrap();
         (dir, repo)
+    }
+
+    #[test]
+    fn working_tree_summary_is_singular_for_one_change() {
+        assert_eq!(working_tree_summary(1), "1 uncommitted change");
+    }
+
+    #[test]
+    fn working_tree_summary_is_plural_otherwise() {
+        assert_eq!(working_tree_summary(0), "0 uncommitted changes");
+        assert_eq!(working_tree_summary(2), "2 uncommitted changes");
     }
 
     #[test]

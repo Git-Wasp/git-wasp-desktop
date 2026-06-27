@@ -655,4 +655,7 @@ between sections, and add new ideas under the right heading. Items marked
       Its contents don't really matter as long as it's somewhat realistic code inside it. We can then do whatever we need
       to that local repo in terms of forcing merge conflicts etc. We could even clone some small open source project
       locally to have some realistic existing history.
-- [ ] Test failure: Error: src/components/Sidebar/PruneBranchesDialog.test.tsx(6,1): error TS6133: 'useRepoStore' is declared but its value is never read.
+- [x] Test failure: Error: src/components/Sidebar/PruneBranchesDialog.test.tsx(6,1): error TS6133: 'useRepoStore' is declared but its value is never read.
+      — already resolved in earlier work: the dead `useRepoStore` import was
+      replaced by `useToastStore` (which is used). `tsc --noEmit` is clean and the
+      test passes 4/4.
