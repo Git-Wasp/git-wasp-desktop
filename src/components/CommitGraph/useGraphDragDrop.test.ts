@@ -91,6 +91,18 @@ describe("useGraphDragDrop (DOM pills)", () => {
     expect(onStartPullRequest).toHaveBeenCalledWith("main", "feat");
   });
 
+  it("adds a body class while dragging and removes it on release (to suppress text selection)", () => {
+    const { result } = setup();
+    expect(document.body.classList.contains("dragging-branch-pill")).toBe(false);
+
+    act(() => result.current.onPillPointerDown(down(10, 8), label("main")));
+    act(() => fireWindow("pointermove", 10, 20));
+    expect(document.body.classList.contains("dragging-branch-pill")).toBe(true);
+
+    act(() => fireWindow("pointerup", 10, 20));
+    expect(document.body.classList.contains("dragging-branch-pill")).toBe(false);
+  });
+
   it("consumeClick reports and clears a completed drag", () => {
     const { result } = setup();
     act(() => result.current.onPillPointerDown(down(10, 8), label("main")));

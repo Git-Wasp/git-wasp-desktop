@@ -149,3 +149,11 @@ body,
 .markdown-preview a {
   color: var(--color-accent-primary);
 }
+
+/* While dragging a branch pill in the graph, suppress text selection so the
+   pointer move doesn't highlight commit messages and other text under the drag. */
+body.dragging-branch-pill {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grabbing;
+}

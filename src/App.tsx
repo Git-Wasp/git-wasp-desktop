@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Sidebar } from "./components/Sidebar/Sidebar";
 import { TabBar } from "./components/TabBar/TabBar";
 import { NavBar } from "./components/NavBar/NavBar";
@@ -9,6 +9,7 @@ import { UncommittedPanel } from "./components/WorkingTree/UncommittedPanel";
 import { StageFileEditor } from "./components/WorkingTree/StageFileEditor";
 import { PRPanel } from "./components/PRPanel/PRPanel";
 import { MergeEditor } from "./components/Merge/MergeEditor";
+import { MergeCommitDialog } from "./components/Merge/MergeCommitDialog";
 import { SettingsView } from "./components/Settings/SettingsView";
 import { WelcomeView } from "./components/Welcome/WelcomeView";
 import { SplashScreen } from "./components/Splash/SplashScreen";
@@ -60,6 +61,25 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = usePersistedBoolean("sidebarCollapsed", false);
   const [booted, setBooted] = useState(false);
   const [bootTask, setBootTask] = useState("Starting…");
+
+  // Latches whether the in-progress merge ever had conflicts, so the surface
+  // (full-screen editor vs. floating commit dialog) is decided once at merge
+  // start and doesn't flip when the last conflict is resolved.
+  const [mergeHadConflicts, setMergeHadConflicts] = useState(false);
+  const wasMergingRef = useRef(false);
+  useEffect(() => {
+    const merging = operationStatus.kind === "merge";
+    if (merging) {
+      if (!wasMergingRef.current) {
+        setMergeHadConflicts(operationStatus.conflicts.length > 0);
+      } else if (operationStatus.conflicts.length > 0) {
+        setMergeHadConflicts(true);
+      }
+    } else {
+      setMergeHadConflicts(false);
+    }
+    wasMergingRef.current = merging;
+  }, [operationStatus]);
 
   const enterUncommitted = () => {
     clearSelectedFile();
@@ -145,7 +165,16 @@ export default function App() {
     return <SplashScreen task={bootTask} />;
   }
 
-  if (operationStatus.kind === "merge") {
+  // A merge with conflicts takes over the whole screen (the full-screen editor);
+  // a clean merge keeps the app visible and just floats a commit-message dialog.
+  // `mergeHadConflicts` latches so the editor stays put after the last conflict
+  // is resolved (rather than flipping to the dialog mid-resolution).
+  const mergeInProgress = operationStatus.kind === "merge";
+  const conflictCount = mergeInProgress ? operationStatus.conflicts.length : 0;
+  const showMergeEditor = mergeInProgress && (conflictCount > 0 || mergeHadConflicts);
+  const showMergeCommitDialog = mergeInProgress && !showMergeEditor;
+
+  if (showMergeEditor) {
     return (
       <div
         style={{
@@ -263,6 +292,7 @@ export default function App() {
         )}
       </div>
       </div>
+      {showMergeCommitDialog && <MergeCommitDialog />}
       <ToastContainer />
     </div>
   );

@@ -65,6 +65,11 @@ export function useGraphDragDrop({ onMerge, onStartPullRequest }: UseGraphDragDr
         didDragRef.current = true;
         setDragging(true);
         setDragSource(c.source);
+        // Suppress text selection for the duration of the drag, and clear any
+        // selection the initial press already started, so dragging a pill over
+        // commit rows doesn't highlight their text.
+        document.body.classList.add("dragging-branch-pill");
+        window.getSelection?.()?.removeAllRanges();
       }
       setGhostPos({ x: e.clientX, y: e.clientY });
     };
@@ -76,6 +81,7 @@ export function useGraphDragDrop({ onMerge, onStartPullRequest }: UseGraphDragDr
       candidateRef.current = null;
       draggingRef.current = false;
       dropTargetRef.current = null;
+      document.body.classList.remove("dragging-branch-pill");
       setDragging(false);
       setGhostPos(null);
       setDropTarget(null);
@@ -85,6 +91,7 @@ export function useGraphDragDrop({ onMerge, onStartPullRequest }: UseGraphDragDr
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      document.body.classList.remove("dragging-branch-pill");
     };
   }, []);
 

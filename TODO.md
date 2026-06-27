@@ -92,6 +92,11 @@ between sections, and add new ideas under the right heading. Items marked
       error toasts. Backend tests (commit / no-commit / dirty / merge) + menu tests.
 - [ ] Add a "stash changes" option for uncommitted changes to create a new named stash. The stash can be viewed
       in the commit graph (and clearly shown as a "stash"). Right click on the stash allows me to pop the stash.
+- [x] Dragging a branch pill no longer selects text on the commits underneath —
+      `useGraphDragDrop` adds a `dragging-branch-pill` class to `<body>` for the
+      duration of a drag (CSS `user-select: none` + grabbing cursor) and clears any
+      selection the initial press started; removed on release/unmount. Test asserts
+      the class toggles on drag/release.
 
 ## Working tree & committing
 
@@ -407,6 +412,16 @@ between sections, and add new ideas under the right heading. Items marked
 
 ## General UX
 
+- [x] Clean merge no longer blanks the whole app — a merge with **no conflicts**
+      used to replace the entire UI with the full-screen `MergeEditor`, which then
+      showed only an empty file list + a tiny commit-message input. Now a clean
+      merge keeps the app visible and floats a `MergeCommitDialog` modal (prefilled
+      "Merge branch '<source>' into <current>", Complete merge / Abort, ⌘/Ctrl+Enter
+      to complete, Esc to abort) that refreshes the graph on finish. Conflicted
+      merges still use the full-screen editor: `App` latches `mergeHadConflicts` at
+      merge start so the editor stays put after the last conflict is resolved
+      (rather than flipping to the dialog mid-resolution). Tests for the dialog
+      (prefill, complete-with-edited-message, abort, empty-message disabled).
 - [x] Toast notification system including options for placement (top/middle/bottom + left/right)
       — `toastStore` (success/error/info/warning, auto-dismiss with errors sticky)
       drives a `ToastContainer` mounted at the app root; placement (vertical ×
@@ -567,3 +582,7 @@ between sections, and add new ideas under the right heading. Items marked
       after reveal so it can't stall the splash; boot is best-effort and always
       reveals even if a step fails. The task label steps through "Loading theme…",
       "Restoring session…", "Loading history…".
+- [ ] Perhaps we could create a small local test repo for me to manually test the app's functionality.
+      Its contents don't really matter as long as it's somewhat realistic code inside it. We can then do whatever we need
+      to that local repo in terms of forcing merge conflicts etc. We could even clone some small open source project
+      locally to have some realistic existing history.
