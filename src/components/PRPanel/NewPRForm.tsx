@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useGithubStore } from "../../stores/githubStore";
 import { useRepoStore } from "../../stores/repoStore";
+import { useRemoteStore } from "../../stores/remoteStore";
 import type { PullRequest } from "../../types/github";
-import { compareUrl } from "../../lib/githubPr";
+import { compareUrl, headBranchIsOnRemote } from "../../lib/githubPr";
 import { renderMarkdown } from "../../lib/markdown";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
@@ -70,6 +71,7 @@ export function NewPRForm({
     createPullRequest,
   } = useGithubStore();
   const { currentRepo, branches } = useRepoStore();
+  const push = useRemoteStore((s) => s.push);
 
   const defaultBase = branches.find((b) => b.name === "main" || b.name === "master")?.name ?? "main";
   const isConnected = !!remoteInfo && connections[remoteInfo.host]?.state === "connected";
@@ -84,6 +86,14 @@ export function NewPRForm({
   const [labels, setLabels] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Branches we've pushed in this session. `push` (no `-u`) doesn't create a
+  // local tracking ref, so without this the button would still read "Push &
+  // create PR" after a successful push.
+  const [pushedHeads, setPushedHeads] = useState<string[]>([]);
+
+  // GitHub rejects a PR whose head it hasn't seen, so when the chosen head
+  // hasn't been pushed we push it first as part of opening the PR.
+  const headPushed = headBranchIsOnRemote(head, branches) || pushedHeads.includes(head);
 
   // Populate the assignees/labels pickers from GitHub once we have a working
   // connection. Best-effort: a failure just leaves the pickers empty (the user
@@ -127,6 +137,13 @@ export function NewPRForm({
     setIsSubmitting(true);
     setError(null);
     try {
+      // Push the head branch first when it isn't on the remote yet, otherwise
+      // GitHub 422s the PR. If the push fails we stop and surface the error
+      // rather than letting the create fail with a cryptic message.
+      if (!headPushed) {
+        await push(undefined, head.trim());
+        setPushedHeads((prev) => (prev.includes(head) ? prev : [...prev, head]));
+      }
       const pr = await createPullRequest(
         remoteInfo.host,
         title.trim(),
@@ -288,6 +305,13 @@ export function NewPRForm({
         </div>
       )}
 
+      {!headPushed && head.trim() && (
+        <div style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>
+          <code style={{ color: "var(--color-text-secondary)" }}>{head}</code> hasn&apos;t been pushed
+          yet — it&apos;ll be pushed to the remote when you open the PR.
+        </div>
+      )}
+
       {error && (
         <div style={{ fontSize: "var(--font-size-sm)", color: "var(--color-danger)" }}>{error}</div>
       )}
@@ -311,7 +335,13 @@ export function NewPRForm({
           loading={isSubmitting}
           disabled={isSubmitting || !canSubmit}
         >
-          {isSubmitting ? "Creating…" : "Create"}
+          {isSubmitting
+            ? headPushed
+              ? "Creating…"
+              : "Pushing…"
+            : headPushed
+              ? "Create"
+              : "Push & create PR"}
         </Button>
       </div>
     </div>

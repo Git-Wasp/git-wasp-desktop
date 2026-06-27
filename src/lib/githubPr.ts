@@ -3,8 +3,36 @@
  *
  * `compareUrl` builds GitHub's "open a PR" compare page URL so the user can
  * finish creating the PR on GitHub.com / GHE instead of submitting through the
- * API.
+ * API. `headBranchIsOnRemote` tells the form whether a chosen head branch has
+ * been pushed yet (GitHub rejects a PR whose head it has never seen).
  */
+
+/** The minimal branch shape `headBranchIsOnRemote` needs. */
+export interface BranchRef {
+  name: string;
+  isRemote: boolean;
+  upstream: string | null;
+}
+
+/** Strip the remote name (first path segment) from a remote-tracking ref. */
+function shortRemoteName(name: string): string {
+  const slash = name.indexOf("/");
+  return slash === -1 ? name : name.slice(slash + 1);
+}
+
+/**
+ * Whether the local branch `head` already exists on the remote — i.e. it has a
+ * configured upstream, or a remote-tracking branch of the same short name is
+ * present. Used to decide between "Create" and "Push & create PR": GitHub 422s
+ * a PR whose head branch it hasn't seen, so an unpushed branch must be pushed
+ * first.
+ */
+export function headBranchIsOnRemote(head: string, branches: BranchRef[]): boolean {
+  if (!head) return false;
+  const local = branches.find((b) => !b.isRemote && b.name === head);
+  if (local?.upstream) return true;
+  return branches.some((b) => b.isRemote && shortRemoteName(b.name) === head);
+}
 
 /**
  * GitHub's compare page pre-fills a PR from the same fields we collect, so

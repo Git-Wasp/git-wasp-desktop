@@ -223,6 +223,19 @@ between sections, and add new ideas under the right heading. Items marked
       `lib/githubPr` (compareUrl), `ui/MultiSelect`, and `NewPRForm` (local-only
       branch options, disabled-when-disconnected, loads on connect, @me default,
       sends chosen assignees/labels, Continue-on-GitHub URL).
+  - [x] Push the head branch first when it isn't on the remote yet — GitHub 422s
+        a PR whose head it hasn't seen. New `lib/githubPr.headBranchIsOnRemote`
+        (head has a configured upstream, or a remote-tracking branch of the same
+        short name exists) decides between the two: when the head is unpushed the
+        form shows a "<head> hasn't been pushed yet…" notice and the primary button
+        becomes **Push & create PR** ("Pushing…"/"Creating…" while in flight),
+        pushing via `remoteStore.push` (existing `push_branch`) before creating; a
+        push failure surfaces and stops (no create attempt). Since `push` doesn't
+        set `-u` (no local tracking ref appears), in-session pushed heads are
+        tracked so the button flips back to "Create". Tests cover the helper, the
+        notice/label, push-before-create ordering, and the abort-on-push-failure
+        path. Follow-up: `remote_ops::push` could set the upstream so a freshly
+        pushed branch reads as tracking without a fetch.
 
 ## Merge editor (v2 refinements)
 

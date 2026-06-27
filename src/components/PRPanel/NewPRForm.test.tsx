@@ -41,8 +41,9 @@ beforeEach(() => {
     currentRepo: { name: "gitclient", path: "/repo", headBranch: "feat/x" },
     recentRepos: [],
     branches: [
-      { name: "feat/x", isRemote: false, isHead: true, upstream: null, oid: "a", ahead: null, behind: null },
-      { name: "main", isRemote: false, isHead: false, upstream: null, oid: "b", ahead: null, behind: null },
+      // feat/x is already pushed (has an upstream) so the default flow is a plain "Create".
+      { name: "feat/x", isRemote: false, isHead: true, upstream: "origin/feat/x", oid: "a", ahead: null, behind: null },
+      { name: "main", isRemote: false, isHead: false, upstream: "origin/main", oid: "b", ahead: null, behind: null },
       { name: "origin/main", isRemote: true, isHead: false, upstream: null, oid: "c", ahead: null, behind: null },
     ],
   });
@@ -161,6 +162,70 @@ describe("NewPRForm", () => {
         expect.objectContaining({ assignees: ["mike"], labels: ["bug"] }),
       );
     });
+  });
+
+  /** Replace the branches so the head (feat/x) has no remote counterpart. */
+  function makeHeadUnpushed() {
+    useRepoStore.setState({
+      branches: [
+        { name: "feat/x", isRemote: false, isHead: true, upstream: null, oid: "a", ahead: null, behind: null },
+        { name: "main", isRemote: false, isHead: false, upstream: "origin/main", oid: "b", ahead: null, behind: null },
+        { name: "origin/main", isRemote: true, isHead: false, upstream: null, oid: "c", ahead: null, behind: null },
+      ],
+    });
+  }
+
+  it("warns and offers 'Push & create PR' when the head branch isn't pushed", () => {
+    makeHeadUnpushed();
+    render(<NewPRForm onCreated={vi.fn()} onCancel={vi.fn()} />);
+
+    expect(screen.getByText(/hasn't been pushed yet/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /push & create pr/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^create$/i })).not.toBeInTheDocument();
+  });
+
+  it("pushes the head branch before creating the PR when it isn't on the remote", async () => {
+    makeHeadUnpushed();
+    const createdPr = {
+      number: 8,
+      title: "My PR",
+      author: "mike",
+      headRef: "feat/x",
+      baseRef: "main",
+      url: "u",
+      ciStatus: "none" as const,
+      approvalCount: 0,
+    };
+    routeInvoke({ create_pull_request: createdPr });
+    const onCreated = vi.fn();
+
+    render(<NewPRForm onCreated={onCreated} onCancel={vi.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText(/title/i), { target: { value: "My PR" } });
+    fireEvent.click(screen.getByRole("button", { name: /push & create pr/i }));
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(createdPr));
+    // The branch is pushed first, then the PR is created.
+    expect(mockInvoke).toHaveBeenCalledWith("push_branch", { remoteName: null, branch: "feat/x" });
+    const order = mockInvoke.mock.calls.map((c) => c[0]);
+    expect(order.indexOf("push_branch")).toBeLessThan(order.indexOf("create_pull_request"));
+  });
+
+  it("does not create the PR if the pre-push fails", async () => {
+    makeHeadUnpushed();
+    routeInvoke();
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "push_branch") throw new Error("push rejected");
+      return undefined;
+    });
+    const onCreated = vi.fn();
+
+    render(<NewPRForm onCreated={onCreated} onCancel={vi.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText(/title/i), { target: { value: "My PR" } });
+    fireEvent.click(screen.getByRole("button", { name: /push & create pr/i }));
+
+    await waitFor(() => expect(screen.getByText(/push rejected/i)).toBeInTheDocument());
+    expect(mockInvoke).not.toHaveBeenCalledWith("create_pull_request", expect.anything());
+    expect(onCreated).not.toHaveBeenCalled();
   });
 
   it("opens GitHub's compare page with the draft when Continue on GitHub is clicked", () => {
