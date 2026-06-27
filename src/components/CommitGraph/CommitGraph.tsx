@@ -7,6 +7,8 @@ import { useRemoteStore } from "../../stores/remoteStore";
 import { useAvatarStore } from "../../stores/avatarStore";
 import { useToastStore } from "../../stores/toastStore";
 import { useStashStore } from "../../stores/stashStore";
+import { useTagStore } from "../../stores/tagStore";
+import { TagDeleteDialog } from "./TagDeleteDialog";
 import { useCommitGraph, GRAPH_PAD_LEFT } from "../../hooks/useCommitGraph";
 import { ContextMenu, type MenuItem } from "../common/ContextMenu";
 import { PromptDialog } from "../common/PromptDialog";
@@ -54,6 +56,7 @@ const GraphRow = memo(function GraphRow({
   branchWidth,
   graphWidth,
   currentBranch,
+  isTagOnRemote,
   pillHandlers,
   onRowClick,
   onRowContextMenu,
@@ -64,6 +67,7 @@ const GraphRow = memo(function GraphRow({
   branchWidth: number;
   graphWidth: number;
   currentBranch: string | null;
+  isTagOnRemote: (name: string) => boolean;
   pillHandlers: PillHandlers;
   onRowClick: (node: GraphNode, shiftKey: boolean) => void;
   onRowContextMenu: (e: React.MouseEvent, node: GraphNode) => void;
@@ -105,7 +109,12 @@ const GraphRow = memo(function GraphRow({
           background: cellBg,
         }}
       >
-        <BranchCell node={node} handlers={pillHandlers} currentBranch={currentBranch} />
+        <BranchCell
+          node={node}
+          handlers={pillHandlers}
+          currentBranch={currentBranch}
+          isTagOnRemote={isTagOnRemote}
+        />
       </div>
       {/* graph gap — canvas shows through */}
       <div style={{ width: graphWidth, flexShrink: 0, height: "100%" }} />
@@ -162,9 +171,14 @@ export function CommitGraph({
   const toastError = useToastStore((s) => s.error);
   const toastSuccess = useToastStore((s) => s.success);
   const stash = useStashStore();
+  const remoteTags = useTagStore((s) => s.remoteTags);
+  const pushTag = useTagStore((s) => s.pushTag);
+  const deleteTag = useTagStore((s) => s.deleteTag);
+  const isTagOnRemote = useCallback((name: string) => remoteTags.includes(name), [remoteTags]);
 
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [prompt, setPrompt] = useState<PromptState | null>(null);
+  const [tagDelete, setTagDelete] = useState<{ name: string; onRemote: boolean } | null>(null);
 
   // Resizable, persisted column widths (the message column flexes to fill).
   const [branchWidth, setBranchWidth] = usePersistedWidth("graphBranchColWidth", BRANCH_COL_WIDTH, 100, 400);
@@ -321,6 +335,9 @@ export function CommitGraph({
     }
   };
 
+  // Tag ops share the stash-style success/error toasting.
+  const runTagOp = runStashOp;
+
   const copy = (text: string) => {
     void navigator.clipboard?.writeText(text);
   };
@@ -448,10 +465,31 @@ export function CommitGraph({
           }
         }
       }
+
+      const tags = node.branchLabels.filter((l) => l.isTag);
+      if (tags.length > 0) {
+        items.push({ separator: true });
+        for (const tag of tags) {
+          const onRemote = isTagOnRemote(tag.name);
+          items.push({ label: `Copy tag name (${tag.name})`, onSelect: () => copy(tag.name) });
+          // Only offer push when the tag isn't already on the remote.
+          if (!onRemote) {
+            items.push({
+              label: `Push tag ${tag.name}`,
+              onSelect: () => runTagOp(() => pushTag(tag.name), `Pushed tag ${tag.name}`),
+            });
+          }
+          items.push({
+            label: `Delete tag ${tag.name}`,
+            danger: true,
+            onSelect: () => setTagDelete({ name: tag.name, onRemote }),
+          });
+        }
+      }
       return items;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [checkoutBranch, deleteBranch, checkoutCommit, remoteInfo, currentRepo, operationStatus.kind, startMerge],
+    [checkoutBranch, deleteBranch, checkoutCommit, remoteInfo, currentRepo, operationStatus.kind, startMerge, isTagOnRemote],
   );
 
   const handlePromptConfirm = async (value: string) => {
@@ -553,6 +591,7 @@ export function CommitGraph({
               branchWidth={branchWidth}
               graphWidth={graphWidth}
               currentBranch={currentRepo?.headBranch ?? null}
+              isTagOnRemote={isTagOnRemote}
               pillHandlers={pillHandlers}
               onRowClick={handleRowClick}
               onRowContextMenu={handleRowContextMenu}
@@ -602,6 +641,19 @@ export function CommitGraph({
 
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} items={buildMenuItems(menu.node)} onClose={() => setMenu(null)} />
+      )}
+
+      {tagDelete && (
+        <TagDeleteDialog
+          name={tagDelete.name}
+          onRemote={tagDelete.onRemote}
+          onConfirm={(alsoRemote) => {
+            const { name } = tagDelete;
+            setTagDelete(null);
+            void runTagOp(() => deleteTag(name, alsoRemote), `Deleted tag ${name}`);
+          }}
+          onCancel={() => setTagDelete(null)}
+        />
       )}
 
       {prompt && (

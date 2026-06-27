@@ -15,6 +15,7 @@ import { BranchIcon, GitHubIcon, LaptopIcon } from "../ui/icons";
 import { RemoteActions } from "./RemoteActions";
 import { CloneDialog } from "../GitHub/CloneDialog";
 import { PruneBranchesDialog } from "./PruneBranchesDialog";
+import { PromptDialog } from "../common/PromptDialog";
 
 const INITIAL_LIMIT = 150;
 
@@ -40,9 +41,9 @@ const branchEmptyHintStyle: CSSProperties = {
 };
 
 export function Sidebar({ width = 220 }: { width?: number }) {
-  const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, checkoutBranch, createBranch, deleteBranch } =
+  const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, checkoutBranch, createBranch, deleteBranch, createTag } =
     useRepoStore();
-  const { fetchViewport, revealCommit } = useGraphStore();
+  const { fetchViewport, revealCommit, refresh } = useGraphStore();
   const { remoteInfo } = useGithubStore();
   const { aheadBehind, push } = useRemoteStore();
   const { status: operationStatus, startMerge } = useMergeStore();
@@ -53,6 +54,8 @@ export function Sidebar({ width = 220 }: { width?: number }) {
   const [showCloneDialog, setShowCloneDialog] = useState(false);
   const [showPruneDialog, setShowPruneDialog] = useState(false);
   const [selectedRecentPath, setSelectedRecentPath] = useState<string | null>(null);
+  // The branch being tagged via "Create tag…" (its tip oid), while the name is entered.
+  const [tagBranch, setTagBranch] = useState<{ name: string; oid: string } | null>(null);
 
   // GitHub connection is managed in Settings now; the host is still needed for
   // the "Clone from GitHub…" dialog.
@@ -90,6 +93,19 @@ export function Sidebar({ width = 220 }: { width?: number }) {
 
   const handleMergeBranch = async (name: string) => {
     await startMerge(name);
+  };
+
+  const handleCreateTag = async (tagName: string) => {
+    const target = tagBranch;
+    setTagBranch(null);
+    if (!target) return;
+    try {
+      await createTag(tagName, target.oid);
+      await refresh();
+      toastSuccess(`Created tag ${tagName}`);
+    } catch (e) {
+      toastError(String(e));
+    }
   };
 
   const handlePushBranch = async (name: string) => {
@@ -162,6 +178,16 @@ export function Sidebar({ width = 220 }: { width?: number }) {
       )}
 
       {showPruneDialog && <PruneBranchesDialog onClose={() => setShowPruneDialog(false)} />}
+
+      {tagBranch && (
+        <PromptDialog
+          title="Create tag"
+          label="Tag name"
+          confirmLabel="Create"
+          onConfirm={handleCreateTag}
+          onCancel={() => setTagBranch(null)}
+        />
+      )}
 
       {/* Branch list */}
       {currentRepo && (
@@ -262,6 +288,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
                         ? []
                         : [{ label: "Checkout branch", onSelect: () => handleCheckoutBranch(b.name) }]),
                       { label: "Push branch", onSelect: () => handlePushBranch(b.name) },
+                      { label: "Create tag…", onSelect: () => setTagBranch({ name: b.name, oid: b.oid }) },
                       ...(b.isHead || operationStatus.kind === "merge"
                         ? []
                         : [{ label: "Merge into current branch", onSelect: () => handleMergeBranch(b.name) }]),

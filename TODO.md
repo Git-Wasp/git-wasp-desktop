@@ -116,9 +116,34 @@ between sections, and add new ideas under the right heading. Items marked
       duration of a drag (CSS `user-select: none` + grabbing cursor) and clears any
       selection the initial press started; removed on release/unmount. Test asserts
       the class toggles on drag/release.
-- [ ] Show "tag" pills that are visually distinct to branch pills. Add right-click options
+- [x] Show "tag" pills that are visually distinct to branch pills. Add right-click options
       like "delete tag", "push tag". Make clear if tags are local/remote/both. Don't provide "push" option
       if tag is local only. When deleting a tag, confirm whether to also delete from remote. If so, also delete from remote.
+      — tag pills now carry a **tag glyph** (`TagIcon`) and, when the tag is also on
+      the remote, a small GitHub mark; the tooltip reads "<name> (tag, on remote /
+      local only)". Right-clicking a commit's tag offers **Copy tag name**, **Push
+      tag** and **Delete tag**. Local/remote/"both" is derived from a new
+      `list_remote_tags` (git2 `ls-remote` for HTTPS-with-token, `git ls-remote
+      --tags` for SSH) loaded into a new `tagStore` (`remoteTags`, best-effort on
+      repo activation); a visible tag is local-only or both (the graph only knows
+      local refs, so remote-only tags don't appear). Delete opens a small
+      `TagDeleteDialog` with an "Also delete from the remote" checkbox (shown +
+      default-checked only when the tag is on the remote) → `delete_tag` (git2
+      `tag_delete`) and, if chosen, `delete_remote_tag` (push `:refs/tags/<t>`).
+      Push uses `push_tag` (`refs/tags/<t>:refs/tags/<t>`). Backend mirrors the
+      existing push SSH/HTTPS split via a shared `push_refspec`. Tests: backend
+      (delete_tag removes ref, ls-remote tag parsing) + frontend (tagStore
+      load/push/delete, pill menu push-shown-only-when-local-only, delete dialog
+      local vs also-remote). **NOTE on the spec:** I read "don't provide push if
+      tag is local only" as the inverse of the useful behaviour, so I show **Push**
+      for *local-only* tags (nothing to push once it's already on the remote) — flag
+      if you actually wanted it the other way and it's a one-line flip.
+- [x] "Add tag" option in the right-click menus for commits and branches. — the
+      graph commit menu already had "Create tag here…" (it's the row menu, so it
+      also appears when right-clicking a branch pill in the graph). Added "Create
+      tag…" to the **sidebar local-branch row menu** (the gap): it prompts for a name
+      and tags the branch tip via the existing `createTag`, then refreshes the graph
+      so the new tag pill appears. Sidebar test added.
 
 ## Working tree & committing
 
@@ -595,6 +620,11 @@ between sections, and add new ideas under the right heading. Items marked
       token is defined per built-in theme (a soft accent tint). Adds to the existing
       HEAD cues (pulsing dot ring, check pill, left-pointing accent triangle).
 - [ ] When showing uncommitted changes and there is a single change, don't pluralise changes in git graph
+- [ ] When a "stash" is selected in the git graph, show that it is selected and show the same
+      view as if we'd selected a pre-existing commit i.e. show the diff between the stash its direct ancestor
+- [ ] Sometimes there are changes in the repository that are not reflected in the git graph and
+      I have to close and re-open the app to see the changes. Can we have a regular "background poll"
+      whilst a repository is open/selected and add a "refresh" button to the top panel to "check for changes"
 
 ## Other issues
 

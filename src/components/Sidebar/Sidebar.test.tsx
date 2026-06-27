@@ -29,6 +29,7 @@ beforeEach(() => {
     createBranch: vi.fn().mockResolvedValue(undefined),
     renameBranch: vi.fn().mockResolvedValue(undefined),
     deleteBranch: vi.fn().mockResolvedValue(undefined),
+    createTag: vi.fn().mockResolvedValue(undefined),
   });
 
   useGraphStore.setState({
@@ -38,6 +39,7 @@ beforeEach(() => {
     fetchViewport: vi.fn().mockResolvedValue(undefined),
     selectCommit: vi.fn(),
     revealCommit: vi.fn().mockResolvedValue(undefined),
+    refresh: vi.fn().mockResolvedValue(undefined),
     clearSelection: vi.fn(),
   });
 
@@ -113,5 +115,23 @@ describe("Sidebar", () => {
     fireEvent.click(screen.getByText("Push branch"));
 
     await waitFor(() => expect(push).toHaveBeenCalledWith(undefined, "feature"));
+  });
+
+  it("creates a tag at a branch tip from its row menu", async () => {
+    useRepoStore.setState({
+      branches: [
+        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "abc123", ahead: null, behind: null },
+      ],
+    });
+
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole("button", { name: "feature actions" }));
+    fireEvent.click(screen.getByText("Create tag…"));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "v1.0" } });
+    fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+
+    await waitFor(() =>
+      expect(useRepoStore.getState().createTag).toHaveBeenCalledWith("v1.0", "abc123"),
+    );
   });
 });

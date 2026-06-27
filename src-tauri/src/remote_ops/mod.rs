@@ -353,6 +353,140 @@ pub fn push(
     Ok(())
 }
 
+/// Push an arbitrary refspec, choosing the git CLI for SSH remotes and git2 with
+/// a token for HTTPS — mirroring [`push`]. Used by the tag push/delete ops.
+fn push_refspec(
+    repo: &Repository,
+    remote_name: &str,
+    refspec: &str,
+    token: Option<&str>,
+) -> anyhow::Result<()> {
+    let mut remote = repo
+        .find_remote(remote_name)
+        .with_context(|| format!("remote '{remote_name}' not found"))?;
+    let url = remote.url().unwrap_or("").to_string();
+
+    if is_ssh_remote(&url) {
+        let workdir = repo.workdir().context("bare repo not supported")?;
+        let output = std::process::Command::new("git")
+            .args(["push", remote_name, refspec])
+            .current_dir(workdir)
+            .output()
+            .context("failed to run git push")?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "git push failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        return Ok(());
+    }
+
+    let mut callbacks = git2::RemoteCallbacks::new();
+    if let Some(tok) = token {
+        let tok = tok.to_string();
+        callbacks
+            .credentials(move |_, _, _| git2::Cred::userpass_plaintext("x-access-token", &tok));
+    }
+    let mut opts = git2::PushOptions::new();
+    opts.remote_callbacks(callbacks);
+    remote
+        .push(&[refspec], Some(&mut opts))
+        .context("push failed")
+}
+
+/// Push a tag to the remote (`refs/tags/<tag>:refs/tags/<tag>`).
+pub fn push_tag(
+    repo: &Repository,
+    remote_name: &str,
+    tag: &str,
+    token: Option<&str>,
+) -> anyhow::Result<()> {
+    log::info!(target: "git", "push tag: remote={remote_name} tag={tag}");
+    push_refspec(
+        repo,
+        remote_name,
+        &format!("refs/tags/{tag}:refs/tags/{tag}"),
+        token,
+    )
+}
+
+/// Delete a tag on the remote (push the empty side: `:refs/tags/<tag>`).
+pub fn delete_remote_tag(
+    repo: &Repository,
+    remote_name: &str,
+    tag: &str,
+    token: Option<&str>,
+) -> anyhow::Result<()> {
+    log::info!(target: "git", "delete remote tag: remote={remote_name} tag={tag}");
+    push_refspec(repo, remote_name, &format!(":refs/tags/{tag}"), token)
+}
+
+/// `refs/tags/x` → `Some("x")`; ignores non-tags and peeled `^{}` entries.
+fn tag_short_name(refname: &str) -> Option<String> {
+    let name = refname.strip_prefix("refs/tags/")?;
+    if name.ends_with("^{}") {
+        return None;
+    }
+    Some(name.to_string())
+}
+
+/// Tag short-names from `git ls-remote --tags` output (lines `<sha>\t<ref>`).
+fn parse_ls_remote_tags(stdout: &str) -> Vec<String> {
+    stdout
+        .lines()
+        .filter_map(|line| tag_short_name(line.split('\t').nth(1)?))
+        .collect()
+}
+
+/// The tag short-names present on `remote` — for the local/remote/both indicator.
+/// git2 (with token) for HTTPS, the git CLI for SSH.
+pub fn list_remote_tags(
+    repo: &Repository,
+    remote_name: &str,
+    token: Option<&str>,
+) -> anyhow::Result<Vec<String>> {
+    let mut remote = repo
+        .find_remote(remote_name)
+        .with_context(|| format!("remote '{remote_name}' not found"))?;
+    let url = remote.url().unwrap_or("").to_string();
+
+    if is_ssh_remote(&url) {
+        let workdir = repo.workdir().context("bare repo not supported")?;
+        let output = std::process::Command::new("git")
+            .args(["ls-remote", "--tags", remote_name])
+            .current_dir(workdir)
+            .output()
+            .context("failed to run git ls-remote")?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "git ls-remote failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        return Ok(parse_ls_remote_tags(&String::from_utf8_lossy(
+            &output.stdout,
+        )));
+    }
+
+    let mut callbacks = git2::RemoteCallbacks::new();
+    if let Some(tok) = token {
+        let tok = tok.to_string();
+        callbacks
+            .credentials(move |_, _, _| git2::Cred::userpass_plaintext("x-access-token", &tok));
+    }
+    let conn = remote
+        .connect_auth(git2::Direction::Fetch, Some(callbacks), None)
+        .context("failed to connect to remote")?;
+    let tags = conn
+        .list()
+        .context("failed to list remote refs")?
+        .iter()
+        .filter_map(|h| tag_short_name(h.name()))
+        .collect();
+    Ok(tags)
+}
+
 pub fn clone_repo(url: &str, dest: &std::path::Path, token: Option<&str>) -> anyhow::Result<()> {
     if is_ssh_remote(url) {
         let output = std::process::Command::new("git")
@@ -393,6 +527,28 @@ mod tests {
             "https://github.com".to_string(),
             "https://ghe.corp.com".to_string(),
         ]
+    }
+
+    // ----- tag ref parsing -----
+
+    #[test]
+    fn parse_ls_remote_tags_extracts_names_and_drops_peeled() {
+        let stdout = "\
+abc123\trefs/tags/v1.0\n\
+def456\trefs/tags/v1.0^{}\n\
+789abc\trefs/tags/v2.0\n\
+000000\trefs/heads/main\n";
+        assert_eq!(
+            parse_ls_remote_tags(stdout),
+            vec!["v1.0".to_string(), "v2.0".to_string()]
+        );
+    }
+
+    #[test]
+    fn tag_short_name_strips_prefix_and_ignores_non_tags() {
+        assert_eq!(tag_short_name("refs/tags/v1.0").as_deref(), Some("v1.0"));
+        assert_eq!(tag_short_name("refs/tags/v1.0^{}"), None);
+        assert_eq!(tag_short_name("refs/heads/main"), None);
     }
 
     // ----- detect_remote_info / parse_remote_url -----

@@ -1,6 +1,6 @@
 import type { BranchLabel, GraphNode } from "../../types/graph";
 import { MAX_BODY_CHARS, type PillHandlers } from "./columnModel";
-import { CheckIcon, GitHubIcon, LaptopIcon } from "../ui/icons";
+import { CheckIcon, GitHubIcon, LaptopIcon, TagIcon } from "../ui/icons";
 import { Tooltip } from "../ui/Tooltip";
 
 // --- Branch / Tag cell -------------------------------------------------------
@@ -15,15 +15,23 @@ function BranchPill({
   label,
   handlers,
   isCurrent,
+  tagOnRemote,
 }: {
   label: BranchLabel;
   handlers?: PillHandlers;
   isCurrent?: boolean;
+  /** For tag pills: whether the tag also exists on the remote ("both"). */
+  tagOnRemote?: boolean;
 }) {
   const local = !label.isRemote && !label.isTag;
   const isTarget = handlers?.isDropTarget(label.name) ?? false;
+  const tooltip = isCurrent
+    ? `${label.name} (checked out)`
+    : label.isTag
+      ? `${label.name} (tag, ${tagOnRemote ? "on remote" : "local only"})`
+      : label.name;
   return (
-    <Tooltip label={isCurrent ? `${label.name} (checked out)` : label.name}>
+    <Tooltip label={tooltip}>
     <span
       data-branch={label.name}
       data-local={local ? "true" : "false"}
@@ -54,9 +62,21 @@ function BranchPill({
         gap: "var(--space-1)",
       }}
     >
-      {/* The checked-out branch shows a check; otherwise the provenance marker:
-          laptop for local branches, GitHub for remotes (tags get neither). */}
-      {isCurrent ? <CheckIcon /> : !label.isTag && (label.isRemote ? <GitHubIcon /> : <LaptopIcon />)}
+      {/* The checked-out branch shows a check; tags show a tag glyph (plus a
+          GitHub mark when the tag is also on the remote); branches show their
+          provenance — laptop for local, GitHub for remote. */}
+      {isCurrent ? (
+        <CheckIcon />
+      ) : label.isTag ? (
+        <>
+          <TagIcon />
+          {tagOnRemote && <GitHubIcon />}
+        </>
+      ) : label.isRemote ? (
+        <GitHubIcon />
+      ) : (
+        <LaptopIcon />
+      )}
       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {label.name}
       </span>
@@ -69,11 +89,14 @@ export function BranchCell({
   node,
   handlers,
   currentBranch,
+  isTagOnRemote,
 }: {
   node: GraphNode;
   handlers?: PillHandlers;
   /** The checked-out local branch, so its pill can be marked. */
   currentBranch?: string | null;
+  /** Whether a tag name is also on the remote, for the local/both indicator. */
+  isTagOnRemote?: (name: string) => boolean;
 }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", overflow: "hidden" }}>
@@ -83,6 +106,7 @@ export function BranchCell({
           label={label}
           handlers={handlers}
           isCurrent={!label.isRemote && !label.isTag && label.name === currentBranch}
+          tagOnRemote={label.isTag && (isTagOnRemote?.(label.name) ?? false)}
         />
       ))}
     </div>

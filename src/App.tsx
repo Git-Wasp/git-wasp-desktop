@@ -24,6 +24,7 @@ import { useCommitFileStore } from "./stores/commitFileStore";
 import { useGithubStore } from "./stores/githubStore";
 import { useRemoteStore } from "./stores/remoteStore";
 import { useMergeStore } from "./stores/mergeStore";
+import { useTagStore } from "./stores/tagStore";
 import { useThemeStore } from "./stores/themeStore";
 import { useWorkingTreeStore } from "./stores/workingTreeStore";
 
@@ -42,6 +43,7 @@ export default function App() {
   } = useCommitFileStore();
   const { init, setPrDraft, detectRemote } = useGithubStore();
   const loadAheadBehind = useRemoteStore((s) => s.loadAheadBehind);
+  const loadRemoteTags = useTagStore((s) => s.loadRemoteTags);
   const { status: operationStatus, loadStatus } = useMergeStore();
   const { initTheme } = useThemeStore();
   const {
@@ -159,7 +161,9 @@ export default function App() {
     loadBranches();
     detectRemote();
     loadAheadBehind();
-  }, [repoPath, loadBranches, detectRemote, loadAheadBehind]);
+    // Best-effort: populates the tag local/remote indicator (network ls-remote).
+    void loadRemoteTags();
+  }, [repoPath, loadBranches, detectRemote, loadAheadBehind, loadRemoteTags]);
 
   if (!booted) {
     return <SplashScreen task={bootTask} />;

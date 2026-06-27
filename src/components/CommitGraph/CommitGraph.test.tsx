@@ -8,6 +8,7 @@ import { useGithubStore } from "../../stores/githubStore";
 import { useToastStore } from "../../stores/toastStore";
 import { useRemoteStore } from "../../stores/remoteStore";
 import { useStashStore } from "../../stores/stashStore";
+import { useTagStore } from "../../stores/tagStore";
 import type { GraphNode, GraphViewport } from "../../types/graph";
 
 const node = (over: Partial<GraphNode>): GraphNode => ({
@@ -437,5 +438,76 @@ describe("CommitGraph stash", () => {
     fireEvent.change(input, { target: { value: "renamed" } });
     fireEvent.click(screen.getByRole("button", { name: /^rename$/i }));
     await waitFor(() => expect(useStashStore.getState().rename).toHaveBeenCalledWith(0, "renamed"));
+  });
+});
+
+describe("CommitGraph tags", () => {
+  const taggedViewport = (): GraphViewport => ({
+    totalCount: 1,
+    offset: 0,
+    nodes: [
+      node({
+        oid: "a".repeat(40),
+        summary: "release commit",
+        branchLabels: [{ name: "v1.0", isRemote: false, isTag: true }],
+        isHead: true,
+        row: 0,
+      }),
+    ],
+  });
+
+  beforeEach(() => {
+    useTagStore.setState({
+      remoteTags: [],
+      loaded: true,
+      pushTag: vi.fn().mockResolvedValue(undefined),
+      deleteTag: vi.fn().mockResolvedValue(undefined),
+    });
+    useGraphStore.setState({ viewport: taggedViewport() });
+  });
+
+  it("offers Push tag (local-only) and Delete tag", () => {
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("release commit"));
+    expect(screen.getByText("Push tag v1.0")).toBeInTheDocument();
+    expect(screen.getByText("Delete tag v1.0")).toBeInTheDocument();
+    expect(screen.getByText("Copy tag name (v1.0)")).toBeInTheDocument();
+  });
+
+  it("hides Push tag when the tag is already on the remote", () => {
+    useTagStore.setState({ remoteTags: ["v1.0"] });
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("release commit"));
+    expect(screen.queryByText("Push tag v1.0")).toBeNull();
+    expect(screen.getByText("Delete tag v1.0")).toBeInTheDocument();
+  });
+
+  it("pushes a tag from the menu", async () => {
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("release commit"));
+    fireEvent.click(screen.getByText("Push tag v1.0"));
+    await waitFor(() => expect(useTagStore.getState().pushTag).toHaveBeenCalledWith("v1.0"));
+  });
+
+  it("deletes a tag (local only) via the confirm dialog", async () => {
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("release commit"));
+    fireEvent.click(screen.getByText("Delete tag v1.0"));
+    // Local-only tag → no "also remote" checkbox.
+    expect(screen.queryByText(/also delete from the remote/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^delete$/i }));
+    await waitFor(() => expect(useTagStore.getState().deleteTag).toHaveBeenCalledWith("v1.0", false));
+  });
+
+  it("deletes a tag and the remote copy when on the remote and the box is checked", async () => {
+    useTagStore.setState({ remoteTags: ["v1.0"] });
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("release commit"));
+    fireEvent.click(screen.getByText("Delete tag v1.0"));
+    // On-remote tag → the checkbox is present and checked by default.
+    const checkbox = screen.getByRole("checkbox") as HTMLInputElement;
+    expect(checkbox.checked).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /^delete$/i }));
+    await waitFor(() => expect(useTagStore.getState().deleteTag).toHaveBeenCalledWith("v1.0", true));
   });
 });

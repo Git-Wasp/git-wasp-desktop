@@ -410,6 +410,14 @@ impl RepoManager {
         })?
     }
 
+    pub fn delete_tag(&self, name: &str) -> anyhow::Result<()> {
+        log::info!(target: "git", "tag: delete {name}");
+        self.with_repo(|repo| -> anyhow::Result<()> {
+            repo.tag_delete(name)
+                .with_context(|| format!("failed to delete tag: {name}"))
+        })?
+    }
+
     pub fn create_branch(&self, name: &str, start_oid: Option<&str>) -> anyhow::Result<BranchInfo> {
         log::info!(target: "git", "branch: create {name} (start={})", start_oid.unwrap_or("HEAD"));
         self.with_repo(|repo| -> anyhow::Result<BranchInfo> {
@@ -667,6 +675,10 @@ impl AppState {
 
     pub fn create_tag(&self, name: &str, oid: &str, message: Option<&str>) -> anyhow::Result<()> {
         self.manager.create_tag(name, oid, message)
+    }
+
+    pub fn delete_tag(&self, name: &str) -> anyhow::Result<()> {
+        self.manager.delete_tag(name)
     }
 
     pub fn create_branch(&self, name: &str, start_oid: Option<&str>) -> anyhow::Result<BranchInfo> {
@@ -1051,6 +1063,25 @@ mod tests {
                 assert!(v2.as_tag().is_some(), "v2 should be an annotated tag");
                 assert_eq!(v2.as_tag().unwrap().target_id(), head);
             })
+            .unwrap();
+    }
+
+    #[test]
+    fn delete_tag_removes_the_ref() {
+        let (dir, repo) = make_git_repo_with_commit();
+        let head = repo.head().unwrap().peel_to_commit().unwrap().id();
+        drop(repo);
+
+        let manager = RepoManager::new();
+        manager.open(dir.path().to_str().unwrap()).unwrap();
+        manager.create_tag("v1", &head.to_string(), None).unwrap();
+        manager
+            .with_repo(|r| assert!(r.find_reference("refs/tags/v1").is_ok()))
+            .unwrap();
+
+        manager.delete_tag("v1").unwrap();
+        manager
+            .with_repo(|r| assert!(r.find_reference("refs/tags/v1").is_err()))
             .unwrap();
     }
 

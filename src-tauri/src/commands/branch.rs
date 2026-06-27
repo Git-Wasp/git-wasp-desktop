@@ -88,6 +88,11 @@ pub async fn delete_branch(name: String, state: State<'_, AppState>) -> Result<(
 }
 
 #[tauri::command]
+pub async fn delete_tag(name: String, state: State<'_, AppState>) -> Result<(), String> {
+    state.delete_tag(&name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn get_ahead_behind(state: State<'_, AppState>) -> Result<Vec<AheadBehind>, String> {
     state
         .with_repo(|repo| crate::remote_ops::compute_ahead_behind(repo))

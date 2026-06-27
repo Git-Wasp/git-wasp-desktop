@@ -51,6 +51,64 @@ pub async fn list_prunable_branches(
         .map_err(|e| e.to_string())
 }
 
+/// The stored token for the repo's detected remote host, if any (for remote
+/// operations that need auth on HTTPS). Best-effort: returns `None` rather than
+/// erroring when there's no remote/host/token.
+fn remote_token(state: &State<'_, AppState>) -> Option<String> {
+    let host: Option<String> = state
+        .with_repo(|repo| {
+            let known = state.known_github_hosts().unwrap_or_default();
+            remote_ops::detect_remote_info(repo, &known)
+                .map(|info| info.host)
+                .ok()
+        })
+        .ok()
+        .flatten();
+    host.as_deref()
+        .and_then(|h| state.credentials.load(h).ok().flatten())
+}
+
+#[tauri::command]
+pub async fn push_tag(
+    tag: String,
+    remote_name: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let remote = remote_name.as_deref().unwrap_or("origin");
+    let token = remote_token(&state);
+    state
+        .with_repo(|repo| remote_ops::push_tag(repo, remote, &tag, token.as_deref()))
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_remote_tag(
+    tag: String,
+    remote_name: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let remote = remote_name.as_deref().unwrap_or("origin");
+    let token = remote_token(&state);
+    state
+        .with_repo(|repo| remote_ops::delete_remote_tag(repo, remote, &tag, token.as_deref()))
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_remote_tags(
+    remote_name: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let remote = remote_name.as_deref().unwrap_or("origin");
+    let token = remote_token(&state);
+    state
+        .with_repo(|repo| remote_ops::list_remote_tags(repo, remote, token.as_deref()))
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn pull_branch(
     remote_name: Option<String>,
