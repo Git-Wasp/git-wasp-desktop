@@ -35,7 +35,9 @@ pub fn parse_manifest(id: &str, css: &str) -> ThemeManifest {
             let block = &css[start + 2..start + end_rel];
             for line in block.lines() {
                 let line = line.trim().trim_start_matches('*').trim();
-                let Some((key, value)) = line.split_once(':') else { continue };
+                let Some((key, value)) = line.split_once(':') else {
+                    continue;
+                };
                 let value = value.trim().to_string();
                 if value.is_empty() {
                     continue;
@@ -85,8 +87,12 @@ pub fn list_themes_in(dir: &Path) -> Result<Vec<ThemeManifest>> {
         if path.extension().and_then(|e| e.to_str()) != Some("css") {
             continue;
         }
-        let Some(id) = path.file_stem().and_then(|s| s.to_str()) else { continue };
-        let Ok(css) = std::fs::read_to_string(&path) else { continue };
+        let Some(id) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Ok(css) = std::fs::read_to_string(&path) else {
+            continue;
+        };
         if validate_css(&css).is_err() {
             continue;
         }

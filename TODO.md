@@ -190,14 +190,62 @@ between sections, and add new ideas under the right heading. Items marked
 
 ## PR refinements
 
-- [ ] Improve UX for opening PRs
-  - [ ] Select source branch automatically as current branch
-  - [ ] Select destination branch automatically as main
-  - [ ] Change branch inputs to select from local branches
-  - [ ] Allow adding title and description with formatting
-  - [ ] Add a "continue editing on GitHub" button to pass over to GitHub to open the PR
-  - [ ] Allow choosing an assignee (defaulting to @me)
-  - [ ] Allow adding one or more labels
+- [x] Improve UX for opening PRs
+  - [x] Select source branch automatically as current branch
+  - [x] Select destination branch automatically as main
+  - [x] Change branch inputs to select from local branches
+  - [x] Allow adding title and description with formatting
+  - [x] Add a "continue editing on GitHub" button to pass over to GitHub to open the PR
+  - [x] Allow choosing an assignee (defaulting to @me)
+  - [x] Allow adding one or more labels
+      — `NewPRForm` reworked: head/base are now `<select>`s of *local* branches
+      (remote-only refs excluded; the current value is always kept as an option so
+      an initialBase like "develop" still shows), defaulting to the current branch →
+      main/master. The description gained a Write/Preview markdown toggle (reusing
+      `lib/markdown`'s `renderMarkdown`, same pattern as the commit form). New
+      Assignees and Labels are now **multi-select pickers populated from GitHub**
+      (not free text): a new `ui/MultiSelect` (built on `Dropdown`, which gained a
+      `fullWidth` prop) lists the repo's assignable users and labels (label rows
+      show a colour swatch), with a filter once the list is long. Backed by new
+      Rust commands `list_assignable_users` (`GET /repos/{o}/{r}/assignees`) and
+      `list_repo_labels` (`GET …/labels`, returns name+colour), loaded into
+      `githubStore` (`assignableUsers`/`repoLabels`) when the form mounts *if the
+      GitHub connection is validated as `connected`*. When not connected both
+      pickers are **disabled** with a "Connect your GitHub account…" hint, to avoid
+      confusion. Assignees still default to the connected login (@me). "Continue on
+      GitHub" opens GitHub's compare page with everything pre-filled via
+      `lib/githubPr.compareUrl` (`expand=1` + title/body/assignees/labels query
+      params; works for GHE hosts) using `plugin-opener`. Backend
+      `create_pull_request` takes `assignees` + `labels`: after creating the PR it
+      PATCHes `/repos/{owner}/{repo}/issues/{n}` to set them (skipped when both
+      empty, since the create-PR endpoint ignores those fields). Tests: backend
+      httpmock for create (sets/skips the PATCH) and the two list commands;
+      `lib/githubPr` (compareUrl), `ui/MultiSelect`, and `NewPRForm` (local-only
+      branch options, disabled-when-disconnected, loads on connect, @me default,
+      sends chosen assignees/labels, Continue-on-GitHub URL).
+  - [x] Push the head branch first when it isn't on the remote yet — GitHub 422s
+        a PR whose head it hasn't seen. New `lib/githubPr.headBranchIsOnRemote`
+        (head has a configured upstream, or a remote-tracking branch of the same
+        short name exists) decides between the two: when the head is unpushed the
+        form shows a "<head> hasn't been pushed yet…" notice and the primary button
+        becomes **Push & create PR** ("Pushing…"/"Creating…" while in flight),
+        pushing via `remoteStore.push` (existing `push_branch`) before creating; a
+        push failure surfaces and stops (no create attempt). Since `push` doesn't
+        set `-u` (no local tracking ref appears), in-session pushed heads are
+        tracked so the button flips back to "Create". Tests cover the helper, the
+        notice/label, push-before-create ordering, and the abort-on-push-failure
+        path. Follow-up: `remote_ops::push` could set the upstream so a freshly
+        pushed branch reads as tracking without a fetch.
+  - [x] Clearer errors when a GitHub App lacks PR permissions — a 403 "Resource
+        not accessible by integration" on create (App has Contents:write so the
+        push succeeds, but not Pull requests:write) is now rewritten by
+        `explain_pr_permission_error` into an actionable message naming the missing
+        "Pull requests: Read and write" (and "Issues: Read and write") permission
+        and how to re-authorize. Also made the assignees/labels PATCH best-effort:
+        the PR is already created, so a failure there (e.g. no Issues:write) now
+        logs a warning and still returns the PR instead of discarding it. Backend
+        tests for both. (Root resolution is on the GitHub App's permissions, not in
+        code.)
 
 ## Merge editor (v2 refinements)
 
@@ -241,6 +289,8 @@ between sections, and add new ideas under the right heading. Items marked
       already shows the error string, so the actionable message flows through.
 - [ ] Cross-repo PR/CI notifications via API polling (Phase 6) — overlaps the
       workspace decision above
+- [ ] Consider whether we need the complexity of the token flow we have for GitHub,
+      or whether the user's existing credentials (e.g. ssh key) are enough
 
 ## Config & settings
 
@@ -488,6 +538,7 @@ between sections, and add new ideas under the right heading. Items marked
       selection overrides it with the usual `--color-bg-selected` highlight. The
       token is defined per built-in theme (a soft accent tint). Adds to the existing
       HEAD cues (pulsing dot ring, check pill, left-pointing accent triangle).
+- [ ] When showing uncommitted changes and there is a single change, don't pluralise changes in git graph
 
 ## Other issues
 

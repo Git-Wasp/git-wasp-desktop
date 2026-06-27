@@ -65,7 +65,10 @@ async fn github_json<T: serde::de::DeserializeOwned>(
         .await
         .with_context(|| format!("failed to read {what} response body"))?;
     if !status.is_success() {
-        anyhow::bail!("GitHub API error fetching {what} ({status}): {}", github_error_message(&body));
+        anyhow::bail!(
+            "GitHub API error fetching {what} ({status}): {}",
+            github_error_message(&body)
+        );
     }
     serde_json::from_str(&body)
         .with_context(|| format!("failed to parse {what} (status {status}): {body}"))
@@ -144,7 +147,10 @@ async fn start_device_flow_at(url: &str) -> anyhow::Result<DeviceFlowInit> {
     })
 }
 
-pub async fn poll_device_flow(host: &str, device_code: &str) -> anyhow::Result<DeviceFlowPollResult> {
+pub async fn poll_device_flow(
+    host: &str,
+    device_code: &str,
+) -> anyhow::Result<DeviceFlowPollResult> {
     poll_device_flow_at(&access_token_url(host), device_code).await
 }
 
@@ -167,14 +173,10 @@ async fn poll_device_flow_at(url: &str, device_code: &str) -> anyhow::Result<Dev
         .text()
         .await
         .context("failed to read poll response body")?;
-    let resp: AccessTokenResponse = serde_json::from_str(&body).with_context(|| {
-        format!("failed to parse poll response (status {status}): {body}")
-    })?;
+    let resp: AccessTokenResponse = serde_json::from_str(&body)
+        .with_context(|| format!("failed to parse poll response (status {status}): {body}"))?;
 
-    let has_token = resp
-        .access_token
-        .as_deref()
-        .is_some_and(|t| !t.is_empty());
+    let has_token = resp.access_token.as_deref().is_some_and(|t| !t.is_empty());
     info!(
         "poll response: status={status} has_access_token={has_token} error={:?}",
         resp.error
@@ -201,7 +203,9 @@ async fn poll_device_flow_at(url: &str, device_code: &str) -> anyhow::Result<Dev
         }),
         Some(other) => {
             warn!("device authorization terminated with error: {other}");
-            Err(anyhow::anyhow!("GitHub device authorization failed: {other}"))
+            Err(anyhow::anyhow!(
+                "GitHub device authorization failed: {other}"
+            ))
         }
     }
 }
@@ -358,12 +362,18 @@ pub fn aggregate_ci_status(runs: &[GhCheckRun]) -> CiStatus {
         return CiStatus::None;
     }
     let is_failed = |r: &GhCheckRun| {
-        matches!(r.conclusion.as_deref(), Some("failure") | Some("timed_out") | Some("cancelled"))
+        matches!(
+            r.conclusion.as_deref(),
+            Some("failure") | Some("timed_out") | Some("cancelled")
+        )
     };
     if runs.iter().any(is_failed) {
         return CiStatus::Failure;
     }
-    if runs.iter().any(|r| r.status != "completed" || r.conclusion.is_none()) {
+    if runs
+        .iter()
+        .any(|r| r.status != "completed" || r.conclusion.is_none())
+    {
         return CiStatus::Pending;
     }
     CiStatus::Success
@@ -378,7 +388,9 @@ pub async fn list_pull_requests(
     let client = http_client()?;
 
     let response = client
-        .get(format!("{base}/repos/{owner}/{repo}/pulls?state=open&per_page=50"))
+        .get(format!(
+            "{base}/repos/{owner}/{repo}/pulls?state=open&per_page=50"
+        ))
         .bearer_auth(token)
         .header("Accept", "application/vnd.github+json")
         .send()
@@ -391,7 +403,9 @@ pub async fn list_pull_requests(
         let sha = &pr.head.sha;
 
         let ci_status = match client
-            .get(format!("{base}/repos/{owner}/{repo}/commits/{sha}/check-runs?per_page=100"))
+            .get(format!(
+                "{base}/repos/{owner}/{repo}/commits/{sha}/check-runs?per_page=100"
+            ))
             .bearer_auth(token)
             .header("Accept", "application/vnd.github+json")
             .send()
@@ -405,7 +419,10 @@ pub async fn list_pull_requests(
         };
 
         let reviews: Vec<GhReview> = match client
-            .get(format!("{base}/repos/{owner}/{repo}/pulls/{}/reviews", pr.number))
+            .get(format!(
+                "{base}/repos/{owner}/{repo}/pulls/{}/reviews",
+                pr.number
+            ))
             .bearer_auth(token)
             .header("Accept", "application/vnd.github+json")
             .send()
@@ -419,7 +436,10 @@ pub async fn list_pull_requests(
         result.push(PullRequest {
             number: pr.number,
             title: pr.title,
-            author: pr.user.map(|u| u.login).unwrap_or_else(|| "ghost".to_string()),
+            author: pr
+                .user
+                .map(|u| u.login)
+                .unwrap_or_else(|| "ghost".to_string()),
             head_ref: pr.head.ref_name,
             base_ref: pr.base.ref_name,
             url: pr.html_url,
@@ -430,6 +450,24 @@ pub async fn list_pull_requests(
     Ok(result)
 }
 
+/// Turn GitHub's opaque "Resource not accessible by integration" 403 into an
+/// actionable message. This happens when the GitHub App authorizing the user
+/// lacks the *Pull requests: write* permission — note that pushing only needs
+/// *Contents: write*, so a push can succeed while opening the PR is forbidden.
+fn explain_pr_permission_error(err: anyhow::Error) -> anyhow::Error {
+    let msg = err.to_string();
+    if msg.contains("Resource not accessible") {
+        return anyhow::anyhow!(
+            "Your GitHub authorization isn't allowed to open pull requests. The GitHub App \
+             needs the \"Pull requests: Read and write\" permission (and \"Issues: Read and \
+             write\" to set assignees/labels) — add it in the App's settings, then disconnect \
+             and reconnect under Settings → GitHub to re-authorize. (GitHub said: {msg})"
+        );
+    }
+    err
+}
+
+#[allow(clippy::too_many_arguments)]
 pub async fn create_pull_request(
     api: &str,
     owner: &str,
@@ -438,6 +476,8 @@ pub async fn create_pull_request(
     body: &str,
     head: &str,
     base: &str,
+    assignees: &[String],
+    labels: &[String],
     token: &str,
 ) -> anyhow::Result<PullRequest> {
     let client = http_client()?;
@@ -454,22 +494,119 @@ pub async fn create_pull_request(
         .post(format!("{api}/repos/{owner}/{repo}/pulls"))
         .bearer_auth(token)
         .header("Accept", "application/vnd.github+json")
-        .json(&CreatePrBody { title, body, head, base })
+        .json(&CreatePrBody {
+            title,
+            body,
+            head,
+            base,
+        })
         .send()
         .await
         .context("create PR request failed")?;
-    let pr: GhPr = github_json(response, "the created pull request").await?;
+    let pr: GhPr = github_json(response, "the created pull request")
+        .await
+        .map_err(explain_pr_permission_error)?;
+
+    // Assignees and labels aren't accepted by the create-PR endpoint; a PR is an
+    // issue under the hood, so they're set via a follow-up PATCH to the issue.
+    // Best-effort: the PR is *already created*, so a failure here (e.g. a GitHub
+    // App without "Issues: write") must not discard it — log a warning and return
+    // the PR rather than erroring the whole operation.
+    if !assignees.is_empty() || !labels.is_empty() {
+        #[derive(Serialize)]
+        struct UpdateIssueBody<'a> {
+            assignees: &'a [String],
+            labels: &'a [String],
+        }
+        let patch = async {
+            let response = client
+                .patch(format!("{api}/repos/{owner}/{repo}/issues/{}", pr.number))
+                .bearer_auth(token)
+                .header("Accept", "application/vnd.github+json")
+                .json(&UpdateIssueBody { assignees, labels })
+                .send()
+                .await
+                .context("setting PR assignees/labels failed")?;
+            github_json::<serde_json::Value>(response, "the pull request assignees/labels").await?;
+            anyhow::Ok(())
+        }
+        .await;
+        if let Err(e) = patch {
+            warn!(
+                target: "git",
+                "pull request #{} created, but setting assignees/labels failed: {e}",
+                pr.number
+            );
+        }
+    }
 
     Ok(PullRequest {
         number: pr.number,
         title: pr.title,
-        author: pr.user.map(|u| u.login).unwrap_or_else(|| "ghost".to_string()),
+        author: pr
+            .user
+            .map(|u| u.login)
+            .unwrap_or_else(|| "ghost".to_string()),
         head_ref: pr.head.ref_name,
         base_ref: pr.base.ref_name,
         url: pr.html_url,
         ci_status: CiStatus::None,
         approval_count: 0,
     })
+}
+
+/// A label defined on a repository, for pre-populating the labels picker when
+/// opening a PR. `color` is GitHub's 6-hex-digit string (no leading `#`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoLabel {
+    pub name: String,
+    pub color: String,
+}
+
+/// The logins of users who can be assigned to issues/PRs in this repo (the
+/// repo's collaborators + org members with access). Used to populate the
+/// assignees picker rather than relying on free-text entry.
+pub async fn list_assignable_users(
+    api: &str,
+    owner: &str,
+    repo: &str,
+    token: &str,
+) -> anyhow::Result<Vec<String>> {
+    #[derive(Deserialize)]
+    struct Assignee {
+        login: String,
+    }
+
+    let client = http_client()?;
+    let response = client
+        .get(format!("{api}/repos/{owner}/{repo}/assignees?per_page=100"))
+        .bearer_auth(token)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .context("list assignees request failed")?;
+    let users: Vec<Assignee> = github_json(response, "the repository's assignable users").await?;
+    Ok(users.into_iter().map(|u| u.login).collect())
+}
+
+/// The labels defined on this repo, to populate the labels picker when opening
+/// a PR.
+pub async fn list_repo_labels(
+    api: &str,
+    owner: &str,
+    repo: &str,
+    token: &str,
+) -> anyhow::Result<Vec<RepoLabel>> {
+    let client = http_client()?;
+    let response = client
+        .get(format!("{api}/repos/{owner}/{repo}/labels?per_page=100"))
+        .bearer_auth(token)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .context("list labels request failed")?;
+    github_json(response, "the repository's labels").await
 }
 
 #[cfg(test)]
@@ -535,7 +672,8 @@ mod tests {
     async fn start_device_flow_parses_init_response() {
         let server = httpmock::MockServer::start();
         let mock = server.mock(|when, then| {
-            when.method(httpmock::Method::POST).path("/login/device/code");
+            when.method(httpmock::Method::POST)
+                .path("/login/device/code");
             then.status(200).json_body(serde_json::json!({
                 "device_code": "device-abc",
                 "user_code": "WXYZ-1234",
@@ -559,8 +697,10 @@ mod tests {
     async fn start_device_flow_surfaces_error_body_on_parse_failure() {
         let server = httpmock::MockServer::start();
         let mock = server.mock(|when, then| {
-            when.method(httpmock::Method::POST).path("/login/device/code");
-            then.status(404).json_body(serde_json::json!({ "error": "Not Found" }));
+            when.method(httpmock::Method::POST)
+                .path("/login/device/code");
+            then.status(404)
+                .json_body(serde_json::json!({ "error": "Not Found" }));
         });
 
         let err = start_device_flow_at(&format!("{}/login/device/code", server.base_url()))
@@ -569,24 +709,34 @@ mod tests {
 
         mock.assert();
         let message = format!("{err:#}");
-        assert!(message.contains("404"), "expected status in error, got: {message}");
-        assert!(message.contains("Not Found"), "expected response body in error, got: {message}");
+        assert!(
+            message.contains("404"),
+            "expected status in error, got: {message}"
+        );
+        assert!(
+            message.contains("Not Found"),
+            "expected response body in error, got: {message}"
+        );
     }
 
     #[tokio::test]
     async fn poll_device_flow_pending_is_not_done() {
         let server = httpmock::MockServer::start();
         let mock = server.mock(|when, then| {
-            when.method(httpmock::Method::POST).path("/login/oauth/access_token");
+            when.method(httpmock::Method::POST)
+                .path("/login/oauth/access_token");
             then.status(200).json_body(serde_json::json!({
                 "access_token": null,
                 "error": "authorization_pending"
             }));
         });
 
-        let result = poll_device_flow_at(&format!("{}/login/oauth/access_token", server.base_url()), "device-abc")
-            .await
-            .unwrap();
+        let result = poll_device_flow_at(
+            &format!("{}/login/oauth/access_token", server.base_url()),
+            "device-abc",
+        )
+        .await
+        .unwrap();
 
         mock.assert();
         assert!(!result.done);
@@ -598,57 +748,75 @@ mod tests {
     async fn poll_device_flow_slow_down_is_not_done() {
         let server = httpmock::MockServer::start();
         let mock = server.mock(|when, then| {
-            when.method(httpmock::Method::POST).path("/login/oauth/access_token");
+            when.method(httpmock::Method::POST)
+                .path("/login/oauth/access_token");
             then.status(200).json_body(serde_json::json!({
                 "access_token": null,
                 "error": "slow_down"
             }));
         });
 
-        let result = poll_device_flow_at(&format!("{}/login/oauth/access_token", server.base_url()), "device-abc")
-            .await
-            .unwrap();
+        let result = poll_device_flow_at(
+            &format!("{}/login/oauth/access_token", server.base_url()),
+            "device-abc",
+        )
+        .await
+        .unwrap();
 
         mock.assert();
         assert!(!result.done);
         assert!(result.token.is_none());
-        assert!(result.slow_down, "slow_down responses must be reported so the caller can back off");
+        assert!(
+            result.slow_down,
+            "slow_down responses must be reported so the caller can back off"
+        );
     }
 
     #[tokio::test]
     async fn poll_device_flow_terminal_error_surfaces_as_error() {
         let server = httpmock::MockServer::start();
         let mock = server.mock(|when, then| {
-            when.method(httpmock::Method::POST).path("/login/oauth/access_token");
+            when.method(httpmock::Method::POST)
+                .path("/login/oauth/access_token");
             then.status(200).json_body(serde_json::json!({
                 "access_token": null,
                 "error": "expired_token"
             }));
         });
 
-        let err = poll_device_flow_at(&format!("{}/login/oauth/access_token", server.base_url()), "device-abc")
-            .await
-            .unwrap_err();
+        let err = poll_device_flow_at(
+            &format!("{}/login/oauth/access_token", server.base_url()),
+            "device-abc",
+        )
+        .await
+        .unwrap_err();
 
         mock.assert();
         let message = format!("{err:#}");
-        assert!(message.contains("expired_token"), "expected the GitHub error in the message, got: {message}");
+        assert!(
+            message.contains("expired_token"),
+            "expected the GitHub error in the message, got: {message}"
+        );
     }
 
     #[tokio::test]
     async fn poll_device_flow_done_returns_token() {
         let server = httpmock::MockServer::start();
         let mock = server.mock(|when, then| {
-            when.method(httpmock::Method::POST).path("/login/oauth/access_token");
+            when.method(httpmock::Method::POST)
+                .path("/login/oauth/access_token");
             then.status(200).json_body(serde_json::json!({
                 "access_token": "gho_secrettoken",
                 "error": null
             }));
         });
 
-        let result = poll_device_flow_at(&format!("{}/login/oauth/access_token", server.base_url()), "device-abc")
-            .await
-            .unwrap();
+        let result = poll_device_flow_at(
+            &format!("{}/login/oauth/access_token", server.base_url()),
+            "device-abc",
+        )
+        .await
+        .unwrap();
 
         mock.assert();
         assert!(result.done);
@@ -688,7 +856,8 @@ mod tests {
     async fn list_pull_requests_aggregates_ci_and_approvals() {
         let server = httpmock::MockServer::start();
         let prs_mock = server.mock(|when, then| {
-            when.method(httpmock::Method::GET).path("/repos/mike/gitclient/pulls");
+            when.method(httpmock::Method::GET)
+                .path("/repos/mike/gitclient/pulls");
             then.status(200).json_body(serde_json::json!([
                 {
                     "number": 42,
@@ -749,7 +918,8 @@ mod tests {
             when.method(httpmock::Method::GET)
                 .path("/user")
                 .header("authorization", "Bearer good-token");
-            then.status(200).json_body(serde_json::json!({ "login": "mike" }));
+            then.status(200)
+                .json_body(serde_json::json!({ "login": "mike" }));
         });
 
         let result = check_token(&server.base_url(), "good-token").await.unwrap();
@@ -763,10 +933,13 @@ mod tests {
         let server = httpmock::MockServer::start();
         let mock = server.mock(|when, then| {
             when.method(httpmock::Method::GET).path("/user");
-            then.status(401).json_body(serde_json::json!({ "message": "Bad credentials" }));
+            then.status(401)
+                .json_body(serde_json::json!({ "message": "Bad credentials" }));
         });
 
-        let result = check_token(&server.base_url(), "stale-token").await.unwrap();
+        let result = check_token(&server.base_url(), "stale-token")
+            .await
+            .unwrap();
 
         mock.assert();
         assert!(matches!(result, AuthCheck::Invalid));
@@ -780,7 +953,9 @@ mod tests {
             then.status(500).body("upstream boom");
         });
 
-        let err = check_token(&server.base_url(), "good-token").await.unwrap_err();
+        let err = check_token(&server.base_url(), "good-token")
+            .await
+            .unwrap_err();
 
         mock.assert();
         // A 500 is transient — surfaced as an error, not a revoked token.
@@ -791,7 +966,8 @@ mod tests {
     async fn list_pull_requests_surfaces_a_clear_error_on_api_failure() {
         let server = httpmock::MockServer::start();
         let mock = server.mock(|when, then| {
-            when.method(httpmock::Method::GET).path("/repos/mike/gitclient/pulls");
+            when.method(httpmock::Method::GET)
+                .path("/repos/mike/gitclient/pulls");
             then.status(401)
                 .json_body(serde_json::json!({ "message": "Bad credentials" }));
         });
@@ -804,7 +980,10 @@ mod tests {
         let message = format!("{err:#}");
         // The old behaviour surfaced a cryptic "failed to parse PRs"; now the
         // status and GitHub's message come through.
-        assert!(message.contains("401"), "expected status in error, got: {message}");
+        assert!(
+            message.contains("401"),
+            "expected status in error, got: {message}"
+        );
         assert!(
             message.contains("Bad credentials"),
             "expected GitHub's message in error, got: {message}"
@@ -819,7 +998,8 @@ mod tests {
     async fn list_pull_requests_tolerates_a_null_author() {
         let server = httpmock::MockServer::start();
         let prs_mock = server.mock(|when, then| {
-            when.method(httpmock::Method::GET).path("/repos/mike/gitclient/pulls");
+            when.method(httpmock::Method::GET)
+                .path("/repos/mike/gitclient/pulls");
             then.status(200).json_body(serde_json::json!([
                 {
                     "number": 9,
@@ -871,6 +1051,8 @@ mod tests {
             "description",
             "feat/x",
             "main",
+            &[],
+            &[],
             "test-token",
         )
         .await
@@ -880,5 +1062,218 @@ mod tests {
         assert_eq!(pr.number, 7);
         assert_eq!(pr.head_ref, "feat/x");
         assert_eq!(pr.base_ref, "main");
+    }
+
+    #[tokio::test]
+    async fn create_pull_request_sets_assignees_and_labels() {
+        let server = httpmock::MockServer::start();
+        let create = server.mock(|when, then| {
+            when.method(httpmock::Method::POST)
+                .path("/repos/mike/gitclient/pulls");
+            then.status(201).json_body(serde_json::json!({
+                "number": 7,
+                "title": "Add feature",
+                "user": { "login": "mike" },
+                "head": { "ref": "feat/x", "sha": "abc123" },
+                "base": { "ref": "main", "sha": "def456" },
+                "html_url": "https://github.com/mike/gitclient/pull/7"
+            }));
+        });
+        // The follow-up PATCH to the issue carries the assignees + labels.
+        let update = server.mock(|when, then| {
+            when.method(httpmock::Method::PATCH)
+                .path("/repos/mike/gitclient/issues/7")
+                .json_body(serde_json::json!({
+                    "assignees": ["mike"],
+                    "labels": ["bug", "ux"]
+                }));
+            then.status(200)
+                .json_body(serde_json::json!({ "number": 7 }));
+        });
+
+        create_pull_request(
+            &server.base_url(),
+            "mike",
+            "gitclient",
+            "Add feature",
+            "description",
+            "feat/x",
+            "main",
+            &["mike".to_string()],
+            &["bug".to_string(), "ux".to_string()],
+            "test-token",
+        )
+        .await
+        .unwrap();
+
+        create.assert();
+        update.assert();
+    }
+
+    #[tokio::test]
+    async fn create_pull_request_explains_a_missing_permission_403() {
+        let server = httpmock::MockServer::start();
+        server.mock(|when, then| {
+            when.method(httpmock::Method::POST)
+                .path("/repos/mike/gitclient/pulls");
+            then.status(403).json_body(
+                serde_json::json!({ "message": "Resource not accessible by integration" }),
+            );
+        });
+
+        let err = create_pull_request(
+            &server.base_url(),
+            "mike",
+            "gitclient",
+            "Add feature",
+            "description",
+            "feat/x",
+            "main",
+            &[],
+            &[],
+            "test-token",
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("Pull requests: Read and write"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn create_pull_request_succeeds_even_if_setting_assignees_fails() {
+        let server = httpmock::MockServer::start();
+        let create = server.mock(|when, then| {
+            when.method(httpmock::Method::POST)
+                .path("/repos/mike/gitclient/pulls");
+            then.status(201).json_body(serde_json::json!({
+                "number": 11,
+                "title": "Add feature",
+                "user": { "login": "mike" },
+                "head": { "ref": "feat/x", "sha": "abc123" },
+                "base": { "ref": "main", "sha": "def456" },
+                "html_url": "https://github.com/mike/gitclient/pull/11"
+            }));
+        });
+        // The issue PATCH is forbidden (e.g. no "Issues: write") — must not discard the PR.
+        let update = server.mock(|when, then| {
+            when.method(httpmock::Method::PATCH)
+                .path("/repos/mike/gitclient/issues/11");
+            then.status(403).json_body(
+                serde_json::json!({ "message": "Resource not accessible by integration" }),
+            );
+        });
+
+        let pr = create_pull_request(
+            &server.base_url(),
+            "mike",
+            "gitclient",
+            "Add feature",
+            "description",
+            "feat/x",
+            "main",
+            &["mike".to_string()],
+            &["bug".to_string()],
+            "test-token",
+        )
+        .await
+        .expect("PR creation should still succeed despite the assignees/labels failure");
+
+        create.assert();
+        update.assert();
+        assert_eq!(pr.number, 11);
+    }
+
+    #[tokio::test]
+    async fn list_assignable_users_returns_logins() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::GET)
+                .path("/repos/mike/gitclient/assignees");
+            then.status(200).json_body(serde_json::json!([
+                { "login": "mike" },
+                { "login": "ann" }
+            ]));
+        });
+
+        let users = list_assignable_users(&server.base_url(), "mike", "gitclient", "test-token")
+            .await
+            .unwrap();
+
+        mock.assert();
+        assert_eq!(users, vec!["mike".to_string(), "ann".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn list_repo_labels_returns_name_and_color() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::GET)
+                .path("/repos/mike/gitclient/labels");
+            then.status(200).json_body(serde_json::json!([
+                { "name": "bug", "color": "d73a4a" },
+                { "name": "ux", "color": "0e8a16" }
+            ]));
+        });
+
+        let labels = list_repo_labels(&server.base_url(), "mike", "gitclient", "test-token")
+            .await
+            .unwrap();
+
+        mock.assert();
+        assert_eq!(
+            labels,
+            vec![
+                RepoLabel {
+                    name: "bug".to_string(),
+                    color: "d73a4a".to_string()
+                },
+                RepoLabel {
+                    name: "ux".to_string(),
+                    color: "0e8a16".to_string()
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn create_pull_request_skips_issue_patch_when_no_assignees_or_labels() {
+        let server = httpmock::MockServer::start();
+        server.mock(|when, then| {
+            when.method(httpmock::Method::POST)
+                .path("/repos/mike/gitclient/pulls");
+            then.status(201).json_body(serde_json::json!({
+                "number": 7,
+                "title": "Add feature",
+                "user": { "login": "mike" },
+                "head": { "ref": "feat/x", "sha": "abc123" },
+                "base": { "ref": "main", "sha": "def456" },
+                "html_url": "https://github.com/mike/gitclient/pull/7"
+            }));
+        });
+        let update = server.mock(|when, then| {
+            when.method(httpmock::Method::PATCH)
+                .path("/repos/mike/gitclient/issues/7");
+            then.status(200)
+                .json_body(serde_json::json!({ "number": 7 }));
+        });
+
+        create_pull_request(
+            &server.base_url(),
+            "mike",
+            "gitclient",
+            "Add feature",
+            "description",
+            "feat/x",
+            "main",
+            &[],
+            &[],
+            "test-token",
+        )
+        .await
+        .unwrap();
+
+        // No assignees/labels → the issue PATCH must not be made.
+        assert_eq!(update.calls(), 0);
     }
 }

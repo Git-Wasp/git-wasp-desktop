@@ -78,7 +78,13 @@ fn build_full_layout(repo: &Repository) -> anyhow::Result<Vec<GraphNode>> {
     let walk_ms = walk_started.elapsed().as_millis();
 
     let nodes = assign_lanes(&commits, &label_map, head_id);
-    log_full_build(repo, &commits, &nodes, walk_ms, started.elapsed().as_millis());
+    log_full_build(
+        repo,
+        &commits,
+        &nodes,
+        walk_ms,
+        started.elapsed().as_millis(),
+    );
     Ok(nodes)
 }
 
@@ -121,7 +127,12 @@ fn log_full_build(
 /// working-tree node when the tree is dirty and row 0 is in view. Pure
 /// indexing — no git work — since `change_count` is supplied by the caller
 /// from the cache rather than rescanned here.
-fn slice_viewport(full: &[GraphNode], change_count: u32, offset: usize, limit: usize) -> GraphViewport {
+fn slice_viewport(
+    full: &[GraphNode],
+    change_count: u32,
+    offset: usize,
+    limit: usize,
+) -> GraphViewport {
     // A dirty working tree adds a synthetic node at row 0 (above HEAD). It is
     // always counted in total_count so the scroll height is offset-independent,
     // but only emitted when row 0 is in view (offset == 0). It needs a commit to
@@ -147,7 +158,11 @@ fn slice_viewport(full: &[GraphNode], change_count: u32, offset: usize, limit: u
     }
     nodes.append(&mut commit_nodes);
 
-    GraphViewport { nodes, total_count, offset }
+    GraphViewport {
+        nodes,
+        total_count,
+        offset,
+    }
 }
 
 /// Cache-free layout. Lays out the whole history every call — the cache-free
@@ -181,11 +196,20 @@ pub fn compute_layout_cached(
     if stale {
         let nodes = build_full_layout(repo)?;
         let change_count = changed_file_count(repo);
-        *cache = Some(GraphCache { key, nodes, change_count });
+        *cache = Some(GraphCache {
+            key,
+            nodes,
+            change_count,
+        });
     }
     // `stale` guarantees the cache is populated here.
     let cached = cache.as_ref().expect("cache populated above");
-    Ok(slice_viewport(&cached.nodes, cached.change_count, offset, limit))
+    Ok(slice_viewport(
+        &cached.nodes,
+        cached.change_count,
+        offset,
+        limit,
+    ))
 }
 
 /// Re-scans the working tree and updates the cached dirty-file count, without
@@ -263,7 +287,15 @@ fn walk_commits(repo: &Repository, limit: usize) -> anyhow::Result<Vec<CommitRaw
         let author_name = commit.author().name().unwrap_or("").to_string();
         let author_email = commit.author().email().unwrap_or("").to_string();
         let author_timestamp = commit.author().when().seconds();
-        result.push(CommitRaw { oid, parents, summary, body, author_name, author_email, author_timestamp });
+        result.push(CommitRaw {
+            oid,
+            parents,
+            summary,
+            body,
+            author_name,
+            author_email,
+            author_timestamp,
+        });
     }
     Ok(result)
 }
@@ -455,7 +487,11 @@ pub fn find_commit_row(repo: &Repository, oid_str: &str) -> anyhow::Result<Optio
     let target = git2::Oid::from_str(oid_str).context("invalid commit oid")?;
 
     let head_id = repo.head().ok().and_then(|h| h.target());
-    let wip_offset = if head_id.is_some() && changed_file_count(repo) > 0 { 1 } else { 0 };
+    let wip_offset = if head_id.is_some() && changed_file_count(repo) > 0 {
+        1
+    } else {
+        0
+    };
 
     let mut walk = repo.revwalk().context("failed to create revwalk")?;
     walk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME)
@@ -529,7 +565,8 @@ mod tests {
         let sig = sig();
         let tree_id = empty_tree(repo);
         let tree = repo.find_tree(tree_id).unwrap();
-        repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, parents).unwrap()
+        repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, parents)
+            .unwrap()
     }
 
     fn init_repo() -> (TempDir, Repository) {
@@ -542,12 +579,17 @@ mod tests {
     fn find_commit_row_matches_layout_order() {
         let (_dir, repo) = init_repo();
         let c1 = repo.find_commit(make_commit(&repo, "first", &[])).unwrap();
-        let c2 = repo.find_commit(make_commit(&repo, "second", &[&c1])).unwrap();
+        let c2 = repo
+            .find_commit(make_commit(&repo, "second", &[&c1]))
+            .unwrap();
         let c3 = make_commit(&repo, "third", &[&c2]);
 
         // Newest first: third is row 0, first is row 2.
         assert_eq!(find_commit_row(&repo, &c3.to_string()).unwrap(), Some(0));
-        assert_eq!(find_commit_row(&repo, &c1.id().to_string()).unwrap(), Some(2));
+        assert_eq!(
+            find_commit_row(&repo, &c1.id().to_string()).unwrap(),
+            Some(2)
+        );
     }
 
     #[test]
@@ -566,14 +608,19 @@ mod tests {
         // commits ahead must still be laid out and selectable.
         let (_dir, repo) = init_repo();
         let c1 = repo.find_commit(make_commit(&repo, "first", &[])).unwrap();
-        let c2 = repo.find_commit(make_commit(&repo, "second", &[&c1])).unwrap();
+        let c2 = repo
+            .find_commit(make_commit(&repo, "second", &[&c1]))
+            .unwrap();
         let c3 = make_commit(&repo, "third", &[&c2]);
         repo.branch("old", &c1, false).unwrap();
         repo.set_head("refs/heads/old").unwrap();
 
         let viewport = compute_layout(&repo, 0, 10).unwrap();
 
-        assert_eq!(viewport.total_count, 3, "commits ahead of HEAD should still show");
+        assert_eq!(
+            viewport.total_count, 3,
+            "commits ahead of HEAD should still show"
+        );
         let summaries: Vec<&str> = viewport.nodes.iter().map(|n| n.summary.as_str()).collect();
         assert!(summaries.contains(&"first"));
         assert!(summaries.contains(&"second"));
@@ -581,14 +628,20 @@ mod tests {
         // The ahead commit is reachable by find_commit_row too (so reveal/scroll
         // works), and the two walks agree on its position.
         let row = find_commit_row(&repo, &c3.to_string()).unwrap();
-        assert_eq!(row, Some(0), "newest commit (ahead of HEAD) should be row 0");
+        assert_eq!(
+            row,
+            Some(0),
+            "newest commit (ahead of HEAD) should be row 0"
+        );
     }
 
     #[test]
     fn linear_history_all_in_lane_zero() {
         let (_dir, repo) = init_repo();
         let c1 = repo.find_commit(make_commit(&repo, "first", &[])).unwrap();
-        let c2 = repo.find_commit(make_commit(&repo, "second", &[&c1])).unwrap();
+        let c2 = repo
+            .find_commit(make_commit(&repo, "second", &[&c1]))
+            .unwrap();
         make_commit(&repo, "third", &[&c2]);
 
         let viewport = compute_layout(&repo, 0, 10).unwrap();
@@ -621,7 +674,9 @@ mod tests {
     fn linear_history_has_straight_connecting_edges() {
         let (_dir, repo) = init_repo();
         let c1 = repo.find_commit(make_commit(&repo, "first", &[])).unwrap();
-        let c2 = repo.find_commit(make_commit(&repo, "second", &[&c1])).unwrap();
+        let c2 = repo
+            .find_commit(make_commit(&repo, "second", &[&c1]))
+            .unwrap();
         make_commit(&repo, "third", &[&c2]);
 
         let viewport = compute_layout(&repo, 0, 10).unwrap();
@@ -632,13 +687,19 @@ mod tests {
             assert!(
                 node.edges
                     .iter()
-                    .any(|e| matches!(e.kind, EdgeKind::Straight) && e.src_lane == 0 && e.dst_lane == 0),
+                    .any(|e| matches!(e.kind, EdgeKind::Straight)
+                        && e.src_lane == 0
+                        && e.dst_lane == 0),
                 "node {} missing its straight continuation edge",
                 node.summary,
             );
         }
         // The root commit (no parent) has no outgoing edge.
-        let root = viewport.nodes.iter().find(|n| n.parents.is_empty()).unwrap();
+        let root = viewport
+            .nodes
+            .iter()
+            .find(|n| n.parents.is_empty())
+            .unwrap();
         assert!(root.edges.is_empty());
     }
 
@@ -678,7 +739,9 @@ mod tests {
         let (dir, repo) = init_repo();
         let mut parent = repo.find_commit(make_commit(&repo, "c0", &[])).unwrap();
         for i in 1..6 {
-            parent = repo.find_commit(make_commit(&repo, &format!("c{i}"), &[&parent])).unwrap();
+            parent = repo
+                .find_commit(make_commit(&repo, &format!("c{i}"), &[&parent]))
+                .unwrap();
         }
         std::fs::write(dir.path().join("x.txt"), "y").unwrap(); // uncommitted
 
@@ -699,12 +762,14 @@ mod tests {
         let b1 = {
             let sig = sig();
             let tree = repo.find_tree(empty_tree(&repo)).unwrap();
-            repo.find_commit(repo.commit(None, &sig, &sig, "b1", &tree, &[]).unwrap()).unwrap()
+            repo.find_commit(repo.commit(None, &sig, &sig, "b1", &tree, &[]).unwrap())
+                .unwrap()
         };
         let b2 = {
             let sig = sig();
             let tree = repo.find_tree(empty_tree(&repo)).unwrap();
-            repo.find_commit(repo.commit(None, &sig, &sig, "b2", &tree, &[&b1]).unwrap()).unwrap()
+            repo.find_commit(repo.commit(None, &sig, &sig, "b2", &tree, &[&b1]).unwrap())
+                .unwrap()
         };
         // Merge B into A (HEAD moves to the merge commit).
         make_commit(&repo, "merge", &[&a2, &b2]);
@@ -712,9 +777,15 @@ mod tests {
         let viewport = compute_layout(&repo, 0, 100).unwrap();
         let summaries: Vec<String> = viewport.nodes.iter().map(|n| n.summary.clone()).collect();
 
-        assert_eq!(viewport.total_count, 5, "all five commits should be laid out");
+        assert_eq!(
+            viewport.total_count, 5,
+            "all five commits should be laid out"
+        );
         for expected in ["merge", "a2", "a1", "b2", "b1"] {
-            assert!(summaries.contains(&expected.to_string()), "missing {expected}: {summaries:?}");
+            assert!(
+                summaries.contains(&expected.to_string()),
+                "missing {expected}: {summaries:?}"
+            );
         }
     }
 
@@ -723,25 +794,39 @@ mod tests {
         // History B is much OLDER than history A, and merged into A. With a
         // TOPOLOGICAL|TIME walk this is the case most likely to misbehave.
         let (_dir, repo) = init_repo();
-        fn at(repo: &Repository, msg: &str, secs: i64, parents: &[&git2::Commit], head: bool) -> git2::Oid {
+        fn at(
+            repo: &Repository,
+            msg: &str,
+            secs: i64,
+            parents: &[&git2::Commit],
+            head: bool,
+        ) -> git2::Oid {
             let sig = git2::Signature::new("T", "t@t", &git2::Time::new(secs, 0)).unwrap();
             let tree = repo.find_tree(empty_tree(repo)).unwrap();
             let target = if head { Some("HEAD") } else { None };
-            repo.commit(target, &sig, &sig, msg, &tree, parents).unwrap()
+            repo.commit(target, &sig, &sig, msg, &tree, parents)
+                .unwrap()
         }
 
         let a1 = repo.find_commit(at(&repo, "a1", 1_000, &[], true)).unwrap();
-        let a2 = repo.find_commit(at(&repo, "a2", 2_000, &[&a1], true)).unwrap();
+        let a2 = repo
+            .find_commit(at(&repo, "a2", 2_000, &[&a1], true))
+            .unwrap();
         // Older, unrelated history.
         let b1 = repo.find_commit(at(&repo, "b1", 10, &[], false)).unwrap();
-        let b2 = repo.find_commit(at(&repo, "b2", 20, &[&b1], false)).unwrap();
+        let b2 = repo
+            .find_commit(at(&repo, "b2", 20, &[&b1], false))
+            .unwrap();
         at(&repo, "merge", 3_000, &[&a2, &b2], true);
 
         let viewport = compute_layout(&repo, 0, 100).unwrap();
         let summaries: Vec<String> = viewport.nodes.iter().map(|n| n.summary.clone()).collect();
         assert_eq!(viewport.total_count, 5, "got: {summaries:?}");
         for expected in ["merge", "a2", "a1", "b2", "b1"] {
-            assert!(summaries.contains(&expected.to_string()), "missing {expected}: {summaries:?}");
+            assert!(
+                summaries.contains(&expected.to_string()),
+                "missing {expected}: {summaries:?}"
+            );
         }
     }
 
@@ -749,13 +834,17 @@ mod tests {
     fn merge_commit_uses_two_lanes() {
         let (_dir, repo) = init_repo();
         let root = repo.find_commit(make_commit(&repo, "root", &[])).unwrap();
-        let b1 = repo.find_commit(make_commit(&repo, "branch-1", &[&root])).unwrap();
+        let b1 = repo
+            .find_commit(make_commit(&repo, "branch-1", &[&root]))
+            .unwrap();
         // b2 is a second branch off root — create without touching HEAD
         let b2 = {
             let sig = sig();
             let tree_id = empty_tree(&repo);
             let tree = repo.find_tree(tree_id).unwrap();
-            let oid = repo.commit(None, &sig, &sig, "branch-2", &tree, &[&root]).unwrap();
+            let oid = repo
+                .commit(None, &sig, &sig, "branch-2", &tree, &[&root])
+                .unwrap();
             drop(tree);
             repo.find_commit(oid).unwrap()
         };
@@ -816,14 +905,20 @@ mod tests {
 
         let mut cache = None;
         let before = compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
-        assert!(before.nodes[0].branch_labels.iter().all(|l| l.name != "feature"));
+        assert!(before.nodes[0]
+            .branch_labels
+            .iter()
+            .all(|l| l.name != "feature"));
 
         // Create a branch at HEAD without moving HEAD — only refs change.
         let head = repo.head().unwrap().peel_to_commit().unwrap();
         repo.branch("feature", &head, false).unwrap();
 
         let after = compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
-        assert!(after.nodes[0].branch_labels.iter().any(|l| l.name == "feature"));
+        assert!(after.nodes[0]
+            .branch_labels
+            .iter()
+            .any(|l| l.name == "feature"));
     }
 
     #[test]

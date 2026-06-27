@@ -122,6 +122,8 @@ pub fn run() {
             commands::github::list_github_repos,
             commands::github::list_pull_requests,
             commands::github::create_pull_request,
+            commands::github::list_assignable_users,
+            commands::github::list_repo_labels,
             // Themes
             commands::theme::list_custom_themes,
             commands::theme::import_theme,

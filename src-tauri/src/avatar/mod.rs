@@ -74,7 +74,9 @@ async fn fetch(base_url: &str, hash: &str, size: u32) -> anyhow::Result<Option<V
     // d=404 makes Gravatar return a 404 (rather than a generated fallback) when
     // the email has no avatar, so we can record a real "no avatar" miss.
     let url = format!("{base_url}/{hash}?s={size}&d=404");
-    let resp = reqwest::get(&url).await.context("gravatar request failed")?;
+    let resp = reqwest::get(&url)
+        .await
+        .context("gravatar request failed")?;
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
         return Ok(None);
     }

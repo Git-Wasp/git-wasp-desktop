@@ -19,7 +19,10 @@ pub async fn operation_abort(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn merge_start(branch_name: String, state: State<'_, AppState>) -> Result<MergeOutcome, String> {
+pub async fn merge_start(
+    branch_name: String,
+    state: State<'_, AppState>,
+) -> Result<MergeOutcome, String> {
     state.merge_start(&branch_name).map_err(|e| e.to_string())
 }
 
@@ -29,7 +32,9 @@ pub async fn merge_resolve_file(
     content: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<ConflictedFile>, String> {
-    state.merge_resolve_file(&path, &content).map_err(|e| e.to_string())
+    state
+        .merge_resolve_file(&path, &content)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -38,7 +43,9 @@ pub async fn merge_resolve_with_side(
     side: ConflictSide,
     state: State<'_, AppState>,
 ) -> Result<Vec<ConflictedFile>, String> {
-    state.merge_resolve_with_side(&path, side).map_err(|e| e.to_string())
+    state
+        .merge_resolve_with_side(&path, side)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -46,7 +53,9 @@ pub async fn merge_resolve_with_deletion(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<ConflictedFile>, String> {
-    state.merge_resolve_with_deletion(&path).map_err(|e| e.to_string())
+    state
+        .merge_resolve_with_deletion(&path)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

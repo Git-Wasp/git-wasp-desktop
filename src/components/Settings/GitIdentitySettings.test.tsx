@@ -21,9 +21,14 @@ describe("GitIdentitySettings", () => {
     mockInvoke.mockResolvedValueOnce(config); // get_identity_config
     render(<GitIdentitySettings />);
 
-    await waitFor(() => expect(screen.getByText(/Local Dev/)).toBeInTheDocument());
-    expect(screen.getByLabelText("Identity name")).toHaveValue("Local Dev");
+    // The inputs are prefilled by a passive effect that runs *after* the effect
+    // which loads config and renders the effective-identity text — so wait on the
+    // input value itself, not the text, or the assertion can race the prefill.
+    await waitFor(() =>
+      expect(screen.getByLabelText("Identity name")).toHaveValue("Local Dev"),
+    );
     expect(screen.getByLabelText("Identity email")).toHaveValue("local@example.com");
+    expect(screen.getByText(/Local Dev/)).toBeInTheDocument();
   });
 
   it("prefills from the global scope when switched", async () => {

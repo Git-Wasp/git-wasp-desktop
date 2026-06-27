@@ -5,9 +5,7 @@ use tauri::State;
 
 #[tauri::command]
 pub async fn detect_remote_info(state: State<'_, AppState>) -> Result<RemoteInfo, String> {
-    let known_hosts: Vec<String> = state
-        .known_github_hosts()
-        .map_err(|e| e.to_string())?;
+    let known_hosts: Vec<String> = state.known_github_hosts().map_err(|e| e.to_string())?;
     state
         .with_repo(|repo| remote_ops::detect_remote_info(repo, &known_hosts))
         .map_err(|e| e.to_string())?
@@ -57,14 +55,17 @@ pub async fn pull_branch(
             let host = remote_ops::detect_remote_info(repo, &known)
                 .map(|info| info.host)
                 .ok();
-            let head = repo.head().ok().and_then(|h| {
-                h.shorthand().map(|s| s.to_string())
-            });
+            let head = repo
+                .head()
+                .ok()
+                .and_then(|h| h.shorthand().map(|s| s.to_string()));
             (host, head)
         })
         .map_err(|e| e.to_string())?;
 
-    let branch_name = branch.or(head_branch).ok_or("could not determine current branch")?;
+    let branch_name = branch
+        .or(head_branch)
+        .ok_or("could not determine current branch")?;
     let token = host
         .as_deref()
         .and_then(|h| state.credentials.load(h).ok().flatten());
@@ -86,12 +87,13 @@ pub async fn pull_branch(
                     "cannot fast-forward: local branch has diverged from upstream".to_string(),
                 );
             }
-            match state.merge_start(&remote_branch).map_err(|e| e.to_string())? {
+            match state
+                .merge_start(&remote_branch)
+                .map_err(|e| e.to_string())?
+            {
                 MergeOutcome::Clean => {
                     state
-                        .merge_complete(&format!(
-                            "Merge remote-tracking branch '{remote_branch}'"
-                        ))
+                        .merge_complete(&format!("Merge remote-tracking branch '{remote_branch}'"))
                         .map_err(|e| e.to_string())?;
                     Ok(PullResult::Merged)
                 }
@@ -115,14 +117,17 @@ pub async fn push_branch(
             let host = remote_ops::detect_remote_info(repo, &known)
                 .map(|info| info.host)
                 .ok();
-            let head = repo.head().ok().and_then(|h| {
-                h.shorthand().map(|s| s.to_string())
-            });
+            let head = repo
+                .head()
+                .ok()
+                .and_then(|h| h.shorthand().map(|s| s.to_string()));
             (host, head)
         })
         .map_err(|e| e.to_string())?;
 
-    let branch_name = branch.or(head_branch).ok_or("could not determine current branch")?;
+    let branch_name = branch
+        .or(head_branch)
+        .ok_or("could not determine current branch")?;
     let token = host
         .as_deref()
         .and_then(|h| state.credentials.load(h).ok().flatten());

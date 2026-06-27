@@ -15,27 +15,23 @@ pub async fn open_repo(
     app_handle: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<RepoInfo, String> {
-    state.open_repo(&path, Some(app_handle)).map_err(|e| e.to_string())
+    state
+        .open_repo(&path, Some(app_handle))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn get_recent_repos(
-    state: State<'_, AppState>,
-) -> Result<Vec<RepoEntry>, String> {
+pub async fn get_recent_repos(state: State<'_, AppState>) -> Result<Vec<RepoEntry>, String> {
     state.get_recent_repos().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn get_current_repo(
-    state: State<'_, AppState>,
-) -> Result<Option<RepoInfo>, String> {
+pub async fn get_current_repo(state: State<'_, AppState>) -> Result<Option<RepoInfo>, String> {
     state.get_current_repo().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn list_open_repos(
-    state: State<'_, AppState>,
-) -> Result<Vec<RepoInfo>, String> {
+pub async fn list_open_repos(state: State<'_, AppState>) -> Result<Vec<RepoInfo>, String> {
     state.list_open_repos().map_err(|e| e.to_string())
 }
 
@@ -45,7 +41,9 @@ pub async fn activate_repo(
     app_handle: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<RepoInfo, String> {
-    state.activate_repo(&path, Some(app_handle)).map_err(|e| e.to_string())
+    state
+        .activate_repo(&path, Some(app_handle))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -54,5 +52,7 @@ pub async fn close_repo(
     app_handle: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Option<RepoInfo>, String> {
-    state.close_repo(&path, Some(app_handle)).map_err(|e| e.to_string())
+    state
+        .close_repo(&path, Some(app_handle))
+        .map_err(|e| e.to_string())
 }

@@ -7,6 +7,7 @@ import type {
   GithubRepo,
   PullRequest,
   RemoteInfo,
+  RepoLabel,
 } from "../types/github";
 
 interface GithubStore {
@@ -14,6 +15,8 @@ interface GithubStore {
   remoteInfo: RemoteInfo | null;
   pullRequests: PullRequest[];
   githubRepos: GithubRepo[];
+  assignableUsers: string[];
+  repoLabels: RepoLabel[];
   deviceFlowInit: DeviceFlowInit | null;
   isAuthenticating: boolean;
   prDraft: { head: string; base: string } | null;
@@ -27,12 +30,16 @@ interface GithubStore {
   logout: (host: string) => Promise<void>;
   loadGithubRepos: (host: string) => Promise<void>;
   loadPullRequests: (host: string) => Promise<void>;
+  loadAssignableUsers: (host: string) => Promise<void>;
+  loadRepoLabels: (host: string) => Promise<void>;
   createPullRequest: (
     host: string,
     title: string,
     body: string,
     head: string,
     base: string,
+    assignees?: string[],
+    labels?: string[],
   ) => Promise<PullRequest>;
   setPrDraft: (draft: { head: string; base: string } | null) => void;
 }
@@ -42,6 +49,8 @@ export const useGithubStore = create<GithubStore>((set, get) => ({
   remoteInfo: null,
   pullRequests: [],
   githubRepos: [],
+  assignableUsers: [],
+  repoLabels: [],
   deviceFlowInit: null,
   isAuthenticating: false,
   prDraft: null,
@@ -141,14 +150,34 @@ export const useGithubStore = create<GithubStore>((set, get) => ({
     set({ pullRequests });
   },
 
+  loadAssignableUsers: async (host: string) => {
+    const assignableUsers = await invoke<string[]>("list_assignable_users", { host });
+    set({ assignableUsers });
+  },
+
+  loadRepoLabels: async (host: string) => {
+    const repoLabels = await invoke<RepoLabel[]>("list_repo_labels", { host });
+    set({ repoLabels });
+  },
+
   createPullRequest: async (
     host: string,
     title: string,
     body: string,
     head: string,
     base: string,
+    assignees: string[] = [],
+    labels: string[] = [],
   ) => {
-    const pr = await invoke<PullRequest>("create_pull_request", { host, title, body, head, base });
+    const pr = await invoke<PullRequest>("create_pull_request", {
+      host,
+      title,
+      body,
+      head,
+      base,
+      assignees,
+      labels,
+    });
     set((state) => ({ pullRequests: [pr, ...state.pullRequests] }));
     return pr;
   },

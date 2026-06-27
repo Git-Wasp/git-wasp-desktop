@@ -96,8 +96,15 @@ fn repo_info(repo: &Repository) -> RepoInfo {
         .and_then(|n| n.to_str())
         .unwrap_or(&path)
         .to_string();
-    let head_branch = repo.head().ok().and_then(|h| h.shorthand().map(|s| s.to_string()));
-    RepoInfo { name, path, head_branch }
+    let head_branch = repo
+        .head()
+        .ok()
+        .and_then(|h| h.shorthand().map(|s| s.to_string()));
+    RepoInfo {
+        name,
+        path,
+        head_branch,
+    }
 }
 
 impl RepoManager {
@@ -111,15 +118,21 @@ impl RepoManager {
 
     // Lock order is always active → repos → config; every helper below obeys it.
     fn repos_lock(&self) -> anyhow::Result<MutexGuard<'_, Vec<OpenRepo>>> {
-        self.repos.lock().map_err(|_| anyhow::anyhow!("repos lock poisoned"))
+        self.repos
+            .lock()
+            .map_err(|_| anyhow::anyhow!("repos lock poisoned"))
     }
 
     fn active_lock(&self) -> anyhow::Result<MutexGuard<'_, Option<String>>> {
-        self.active.lock().map_err(|_| anyhow::anyhow!("active lock poisoned"))
+        self.active
+            .lock()
+            .map_err(|_| anyhow::anyhow!("active lock poisoned"))
     }
 
     fn config_lock(&self) -> anyhow::Result<MutexGuard<'_, AppConfig>> {
-        self.config.lock().map_err(|_| anyhow::anyhow!("config lock poisoned"))
+        self.config
+            .lock()
+            .map_err(|_| anyhow::anyhow!("config lock poisoned"))
     }
 
     /// Run `f` against the active repo and its operation state under one lock —
@@ -129,9 +142,15 @@ impl RepoManager {
     where
         F: FnOnce(&mut Repository, &mut Option<OperationState>) -> anyhow::Result<T>,
     {
-        let key = self.active_lock()?.clone().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        let key = self
+            .active_lock()?
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("no repository open"))?;
         let mut repos = self.repos_lock()?;
-        let entry = repos.iter_mut().find(|r| r.key == key).ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        let entry = repos
+            .iter_mut()
+            .find(|r| r.key == key)
+            .ok_or_else(|| anyhow::anyhow!("no repository open"))?;
         f(&mut entry.repo, &mut entry.operation)
     }
 
@@ -139,7 +158,11 @@ impl RepoManager {
     /// the session is restored on next launch.
     fn persist_session(&self) -> anyhow::Result<()> {
         let active = self.active_lock()?.clone().map(PathBuf::from);
-        let open_paths: Vec<PathBuf> = self.repos_lock()?.iter().map(|r| PathBuf::from(&r.key)).collect();
+        let open_paths: Vec<PathBuf> = self
+            .repos_lock()?
+            .iter()
+            .map(|r| PathBuf::from(&r.key))
+            .collect();
         let mut config = self.config_lock()?;
         config.set_session(open_paths, active);
         let _ = config.save();
@@ -149,11 +172,16 @@ impl RepoManager {
     pub fn open(&self, path: &str) -> anyhow::Result<RepoInfo> {
         let info = {
             let mut repos = self.repos_lock()?;
-            let repo = Repository::open(path)
-                .with_context(|| format!("not a git repository: {path}"))?;
+            let repo =
+                Repository::open(path).with_context(|| format!("not a git repository: {path}"))?;
             let info = repo_info(&repo);
             if !repos.iter().any(|r| r.key == info.path) {
-                repos.push(OpenRepo { key: info.path.clone(), repo, operation: None, graph_cache: None });
+                repos.push(OpenRepo {
+                    key: info.path.clone(),
+                    repo,
+                    operation: None,
+                    graph_cache: None,
+                });
             }
             info
         };
@@ -197,7 +225,10 @@ impl RepoManager {
                 *active = repos.first().map(|r| r.key.clone());
             }
             match active.clone() {
-                Some(ak) => repos.iter().find(|r| r.key == ak).map(|r| repo_info(&r.repo)),
+                Some(ak) => repos
+                    .iter()
+                    .find(|r| r.key == ak)
+                    .map(|r| repo_info(&r.repo)),
                 None => None,
             }
         };
@@ -206,13 +237,22 @@ impl RepoManager {
     }
 
     pub fn list_open(&self) -> anyhow::Result<Vec<RepoInfo>> {
-        Ok(self.repos_lock()?.iter().map(|r| repo_info(&r.repo)).collect())
+        Ok(self
+            .repos_lock()?
+            .iter()
+            .map(|r| repo_info(&r.repo))
+            .collect())
     }
 
     pub fn get_current(&self) -> anyhow::Result<Option<RepoInfo>> {
-        let Some(key) = self.active_lock()?.clone() else { return Ok(None) };
+        let Some(key) = self.active_lock()?.clone() else {
+            return Ok(None);
+        };
         let repos = self.repos_lock()?;
-        Ok(repos.iter().find(|r| r.key == key).map(|r| repo_info(&r.repo)))
+        Ok(repos
+            .iter()
+            .find(|r| r.key == key)
+            .map(|r| repo_info(&r.repo)))
     }
 
     pub fn get_recent(&self) -> anyhow::Result<Vec<RepoEntry>> {
@@ -223,9 +263,15 @@ impl RepoManager {
     where
         F: FnOnce(&Repository) -> T,
     {
-        let key = self.active_lock()?.clone().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        let key = self
+            .active_lock()?
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("no repository open"))?;
         let repos = self.repos_lock()?;
-        let entry = repos.iter().find(|r| r.key == key).ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        let entry = repos
+            .iter()
+            .find(|r| r.key == key)
+            .ok_or_else(|| anyhow::anyhow!("no repository open"))?;
         Ok(f(&entry.repo))
     }
 
@@ -233,9 +279,15 @@ impl RepoManager {
     where
         F: FnOnce(&mut Repository) -> T,
     {
-        let key = self.active_lock()?.clone().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        let key = self
+            .active_lock()?
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("no repository open"))?;
         let mut repos = self.repos_lock()?;
-        let entry = repos.iter_mut().find(|r| r.key == key).ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        let entry = repos
+            .iter_mut()
+            .find(|r| r.key == key)
+            .ok_or_else(|| anyhow::anyhow!("no repository open"))?;
         Ok(f(&mut entry.repo))
     }
 
@@ -245,9 +297,15 @@ impl RepoManager {
     where
         F: FnOnce(&Repository, &mut Option<crate::graph::GraphCache>) -> T,
     {
-        let key = self.active_lock()?.clone().ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        let key = self
+            .active_lock()?
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("no repository open"))?;
         let mut repos = self.repos_lock()?;
-        let entry = repos.iter_mut().find(|r| r.key == key).ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        let entry = repos
+            .iter_mut()
+            .find(|r| r.key == key)
+            .ok_or_else(|| anyhow::anyhow!("no repository open"))?;
         Ok(f(&entry.repo, &mut entry.graph_cache))
     }
 
@@ -265,7 +323,8 @@ impl RepoManager {
         log::info!(target: "git", "checkout: branch={branch_name}");
         self.with_repo(|repo| checkout_local_branch(repo, branch_name))??;
         log::info!(target: "git", "checkout: branch={branch_name} ok");
-        self.get_current()?.ok_or_else(|| anyhow::anyhow!("no repo after checkout"))
+        self.get_current()?
+            .ok_or_else(|| anyhow::anyhow!("no repo after checkout"))
     }
 
     /// Check out a remote-tracking branch (e.g. `origin/feature`) by creating a
@@ -296,7 +355,8 @@ impl RepoManager {
             checkout_local_branch(repo, local_name)
         })??;
         log::info!(target: "git", "checkout remote: {remote_ref} ok");
-        self.get_current()?.ok_or_else(|| anyhow::anyhow!("no repo after checkout"))
+        self.get_current()?
+            .ok_or_else(|| anyhow::anyhow!("no repo after checkout"))
     }
 
     /// Check out an arbitrary commit, detaching HEAD. Updates the working tree to
@@ -317,12 +377,18 @@ impl RepoManager {
             Ok(())
         })??;
         log::info!(target: "git", "checkout commit (detached): {oid_str} ok");
-        self.get_current()?.ok_or_else(|| anyhow::anyhow!("no repo after checkout"))
+        self.get_current()?
+            .ok_or_else(|| anyhow::anyhow!("no repo after checkout"))
     }
 
     /// Create a tag at `oid`. With a non-empty `message` it's an annotated tag
     /// (using the repo's signature); otherwise a lightweight tag.
-    pub fn create_tag(&self, name: &str, oid_str: &str, message: Option<&str>) -> anyhow::Result<()> {
+    pub fn create_tag(
+        &self,
+        name: &str,
+        oid_str: &str,
+        message: Option<&str>,
+    ) -> anyhow::Result<()> {
         log::info!(target: "git", "tag: create {name} at {oid_str} (annotated={})", message.is_some());
         self.with_repo(|repo| -> anyhow::Result<()> {
             let oid = git2::Oid::from_str(oid_str).context("invalid commit oid")?;
@@ -369,9 +435,11 @@ impl RepoManager {
     pub fn rename_branch(&self, old_name: &str, new_name: &str) -> anyhow::Result<()> {
         log::info!(target: "git", "branch: rename {old_name} -> {new_name}");
         self.with_repo(|repo| -> anyhow::Result<()> {
-            let mut branch = repo.find_branch(old_name, BranchType::Local)
+            let mut branch = repo
+                .find_branch(old_name, BranchType::Local)
                 .with_context(|| format!("branch not found: {old_name}"))?;
-            branch.rename(new_name, false)
+            branch
+                .rename(new_name, false)
                 .with_context(|| format!("failed to rename branch to: {new_name}"))?;
             Ok(())
         })?
@@ -380,18 +448,23 @@ impl RepoManager {
     pub fn delete_branch(&self, name: &str) -> anyhow::Result<()> {
         log::info!(target: "git", "branch: delete {name}");
         self.with_repo(|repo| -> anyhow::Result<()> {
-            let mut branch = repo.find_branch(name, BranchType::Local)
+            let mut branch = repo
+                .find_branch(name, BranchType::Local)
                 .with_context(|| format!("branch not found: {name}"))?;
             if branch.is_head() {
                 anyhow::bail!("Cannot delete the currently checked out branch: {name}");
             }
-            branch.delete().with_context(|| format!("failed to delete branch: {name}"))?;
+            branch
+                .delete()
+                .with_context(|| format!("failed to delete branch: {name}"))?;
             Ok(())
         })?
     }
 
     pub fn operation_status(&self) -> anyhow::Result<OperationStatus> {
-        self.with_repo_and_operation_mut(|repo, op| crate::operation_runner::derive_status(repo, op))
+        self.with_repo_and_operation_mut(|repo, op| {
+            crate::operation_runner::derive_status(repo, op)
+        })
     }
 
     /// Re-derives and returns the current status. A distinct command from
@@ -420,14 +493,22 @@ impl RepoManager {
         })
     }
 
-    pub fn merge_resolve_file(&self, path: &str, content: &str) -> anyhow::Result<Vec<ConflictedFile>> {
+    pub fn merge_resolve_file(
+        &self,
+        path: &str,
+        content: &str,
+    ) -> anyhow::Result<Vec<ConflictedFile>> {
         self.with_repo(|repo| -> anyhow::Result<Vec<ConflictedFile>> {
             crate::merge_ops::write_resolution(repo, path, content)?;
             crate::merge_ops::collect_conflicts(repo)
         })?
     }
 
-    pub fn merge_resolve_with_side(&self, path: &str, side: ConflictSide) -> anyhow::Result<Vec<ConflictedFile>> {
+    pub fn merge_resolve_with_side(
+        &self,
+        path: &str,
+        side: ConflictSide,
+    ) -> anyhow::Result<Vec<ConflictedFile>> {
         self.with_repo(|repo| -> anyhow::Result<Vec<ConflictedFile>> {
             crate::merge_ops::resolve_with_side(repo, path, side)?;
             crate::merge_ops::collect_conflicts(repo)
@@ -483,7 +564,11 @@ impl AppState {
 
     pub fn known_github_hosts(&self) -> anyhow::Result<Vec<String>> {
         let config = self.manager.config_lock()?;
-        Ok(config.github_hosts.iter().map(|h| h.base_url.clone()).collect())
+        Ok(config
+            .github_hosts
+            .iter()
+            .map(|h| h.base_url.clone())
+            .collect())
     }
 
     /// Point the single file watcher at `workdir` (the active tab's working
@@ -495,7 +580,11 @@ impl AppState {
         }
     }
 
-    pub fn open_repo(&self, path: &str, app_handle: Option<tauri::AppHandle>) -> anyhow::Result<RepoInfo> {
+    pub fn open_repo(
+        &self,
+        path: &str,
+        app_handle: Option<tauri::AppHandle>,
+    ) -> anyhow::Result<RepoInfo> {
         let info = self.manager.open(path)?;
         if let Some(handle) = app_handle {
             self.restart_watcher(handle, Some(Path::new(&info.path)));
@@ -503,7 +592,11 @@ impl AppState {
         Ok(info)
     }
 
-    pub fn activate_repo(&self, path: &str, app_handle: Option<tauri::AppHandle>) -> anyhow::Result<RepoInfo> {
+    pub fn activate_repo(
+        &self,
+        path: &str,
+        app_handle: Option<tauri::AppHandle>,
+    ) -> anyhow::Result<RepoInfo> {
         let info = self.manager.activate(path)?;
         if let Some(handle) = app_handle {
             self.restart_watcher(handle, Some(Path::new(&info.path)));
@@ -511,7 +604,11 @@ impl AppState {
         Ok(info)
     }
 
-    pub fn close_repo(&self, path: &str, app_handle: Option<tauri::AppHandle>) -> anyhow::Result<Option<RepoInfo>> {
+    pub fn close_repo(
+        &self,
+        path: &str,
+        app_handle: Option<tauri::AppHandle>,
+    ) -> anyhow::Result<Option<RepoInfo>> {
         let info = self.manager.close(path)?;
         if let Some(handle) = app_handle {
             self.restart_watcher(handle, info.as_ref().map(|i| Path::new(i.path.as_str())));
@@ -600,11 +697,19 @@ impl AppState {
         self.manager.merge_start(branch_name)
     }
 
-    pub fn merge_resolve_file(&self, path: &str, content: &str) -> anyhow::Result<Vec<ConflictedFile>> {
+    pub fn merge_resolve_file(
+        &self,
+        path: &str,
+        content: &str,
+    ) -> anyhow::Result<Vec<ConflictedFile>> {
         self.manager.merge_resolve_file(path, content)
     }
 
-    pub fn merge_resolve_with_side(&self, path: &str, side: ConflictSide) -> anyhow::Result<Vec<ConflictedFile>> {
+    pub fn merge_resolve_with_side(
+        &self,
+        path: &str,
+        side: ConflictSide,
+    ) -> anyhow::Result<Vec<ConflictedFile>> {
         self.manager.merge_resolve_with_side(path, side)
     }
 
@@ -681,14 +786,23 @@ pub fn list_branches(repo: &Repository) -> anyhow::Result<Vec<BranchInfo>> {
             .peel(ObjectType::Commit)
             .map(|o| o.id().to_string())
             .unwrap_or_default();
-        let upstream = branch.upstream().ok().and_then(|u| {
-            u.name().ok().flatten().map(|s| s.to_string())
-        });
+        let upstream = branch
+            .upstream()
+            .ok()
+            .and_then(|u| u.name().ok().flatten().map(|s| s.to_string()));
         let (ahead, behind) = ahead_behind_map
             .get(&name)
             .map(|&(a, b)| (Some(a), Some(b)))
             .unwrap_or((None, None));
-        branches.push(BranchInfo { name, is_remote, is_head, upstream, oid, ahead, behind });
+        branches.push(BranchInfo {
+            name,
+            is_remote,
+            is_head,
+            upstream,
+            oid,
+            ahead,
+            behind,
+        });
     }
     Ok(branches)
 }
@@ -709,7 +823,8 @@ mod tests {
                 index.write_tree().unwrap()
             };
             let tree = repo.find_tree(tree_id).unwrap();
-            repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[]).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[])
+                .unwrap();
             drop(tree);
         }
         (dir, repo)
@@ -729,10 +844,16 @@ mod tests {
     fn checkout_remote_branch_creates_tracking_local_and_checks_it_out() {
         let (dir, repo) = make_git_repo_with_commit();
         // Simulate a clone: an "origin" remote plus a remote-tracking branch.
-        repo.remote("origin", "https://example.com/repo.git").unwrap();
-        let head_id = repo.head().unwrap().peel_to_commit().unwrap().id();
-        repo.reference("refs/remotes/origin/feature", head_id, true, "remote branch")
+        repo.remote("origin", "https://example.com/repo.git")
             .unwrap();
+        let head_id = repo.head().unwrap().peel_to_commit().unwrap().id();
+        repo.reference(
+            "refs/remotes/origin/feature",
+            head_id,
+            true,
+            "remote branch",
+        )
+        .unwrap();
         drop(repo);
 
         let manager = RepoManager::new();
@@ -741,7 +862,9 @@ mod tests {
 
         manager
             .with_repo(|r| {
-                let b = r.find_branch("feature", BranchType::Local).expect("local branch created");
+                let b = r
+                    .find_branch("feature", BranchType::Local)
+                    .expect("local branch created");
                 assert!(b.is_head(), "feature should be checked out");
                 let upstream = b.upstream().unwrap();
                 assert_eq!(upstream.name().unwrap().unwrap(), "origin/feature");
@@ -766,7 +889,8 @@ mod tests {
             let sig = Signature::now("Test", "test@test.com").unwrap();
             let parent = repo.find_commit(first).unwrap();
             let tree = parent.tree().unwrap();
-            repo.commit(Some("HEAD"), &sig, &sig, "second", &tree, &[&parent]).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "second", &tree, &[&parent])
+                .unwrap();
         }
         drop(repo);
 
@@ -799,7 +923,9 @@ mod tests {
             let tree = repo.find_tree(idx.write_tree().unwrap()).unwrap();
             let sig = Signature::now("Test", "test@test.com").unwrap();
             let parent = repo.head().unwrap().peel_to_commit().unwrap();
-            c1 = repo.commit(Some("HEAD"), &sig, &sig, "c1", &tree, &[&parent]).unwrap();
+            c1 = repo
+                .commit(Some("HEAD"), &sig, &sig, "c1", &tree, &[&parent])
+                .unwrap();
         }
         // c2 (now HEAD): f.txt = "b"
         std::fs::write(&path, "b\n").unwrap();
@@ -810,7 +936,8 @@ mod tests {
             let tree = repo.find_tree(idx.write_tree().unwrap()).unwrap();
             let sig = Signature::now("Test", "test@test.com").unwrap();
             let parent = repo.head().unwrap().peel_to_commit().unwrap();
-            repo.commit(Some("HEAD"), &sig, &sig, "c2", &tree, &[&parent]).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "c2", &tree, &[&parent])
+                .unwrap();
         }
         // Uncommitted local edit that conflicts with c1's version of f.txt.
         std::fs::write(&path, "local edit\n").unwrap();
@@ -820,7 +947,10 @@ mod tests {
         manager.open(dir.path().to_str().unwrap()).unwrap();
         let result = manager.checkout_commit(&c1.to_string());
 
-        assert!(result.is_err(), "checkout should refuse to overwrite local changes");
+        assert!(
+            result.is_err(),
+            "checkout should refuse to overwrite local changes"
+        );
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
             "local edit\n",
@@ -842,11 +972,16 @@ mod tests {
         let manager = RepoManager::new();
         manager.open(dir.path().to_str().unwrap()).unwrap();
         manager.create_tag("v1", &head.to_string(), None).unwrap();
-        manager.create_tag("v2", &head.to_string(), Some("release notes")).unwrap();
+        manager
+            .create_tag("v2", &head.to_string(), Some("release notes"))
+            .unwrap();
 
         manager
             .with_repo(|r| {
-                assert!(r.find_reference("refs/tags/v1").is_ok(), "lightweight tag missing");
+                assert!(
+                    r.find_reference("refs/tags/v1").is_ok(),
+                    "lightweight tag missing"
+                );
                 // The annotated tag resolves to a tag object.
                 let v2 = r.revparse_single("v2").unwrap();
                 assert!(v2.as_tag().is_some(), "v2 should be an annotated tag");
@@ -899,7 +1034,10 @@ mod tests {
         let config = manager.config_lock().unwrap();
         // The recorded path is the git2-normalised workdir (== the tab key),
         // which may differ from the raw tempdir path by symlink resolution.
-        assert_eq!(config.last_repo_path.as_ref().unwrap(), &PathBuf::from(&info.path));
+        assert_eq!(
+            config.last_repo_path.as_ref().unwrap(),
+            &PathBuf::from(&info.path)
+        );
     }
 
     #[test]
@@ -1045,5 +1183,4 @@ mod tests {
         let result = manager.delete_branch(&head_branch);
         assert!(result.is_err());
     }
-
 }

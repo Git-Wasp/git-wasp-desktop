@@ -62,10 +62,7 @@ pub fn is_ssh_remote(url: &str) -> bool {
 ///   git@github.com:owner/repo.git
 ///   ssh://git@github.com/owner/repo.git
 ///   https://ghe.corp.com/owner/repo
-pub fn detect_remote_info(
-    repo: &Repository,
-    known_hosts: &[String],
-) -> anyhow::Result<RemoteInfo> {
+pub fn detect_remote_info(repo: &Repository, known_hosts: &[String]) -> anyhow::Result<RemoteInfo> {
     let remote = repo
         .find_remote("origin")
         .context("no 'origin' remote configured")?;
@@ -113,7 +110,12 @@ pub fn parse_remote_url(url: &str, known_hosts: &[String]) -> anyhow::Result<Rem
         anyhow::bail!("remote host '{host}' is not a configured GitHub host");
     }
 
-    Ok(RemoteInfo { host, owner, repo: repo_name, protocol: protocol.to_string() })
+    Ok(RemoteInfo {
+        host,
+        owner,
+        repo: repo_name,
+        protocol: protocol.to_string(),
+    })
 }
 
 pub fn compute_ahead_behind(repo: &Repository) -> anyhow::Result<Vec<AheadBehind>> {
@@ -148,12 +150,21 @@ pub fn compute_ahead_behind(repo: &Repository) -> anyhow::Result<Vec<AheadBehind
         let (ahead, behind) = repo
             .graph_ahead_behind(local_oid, upstream_oid)
             .context("failed to compute ahead/behind")?;
-        results.push(AheadBehind { branch: name, upstream: upstream_name, ahead, behind });
+        results.push(AheadBehind {
+            branch: name,
+            upstream: upstream_name,
+            ahead,
+            behind,
+        });
     }
     Ok(results)
 }
 
-pub fn fetch(repo: &Repository, remote_name: &str, token: Option<&str>) -> anyhow::Result<FetchResult> {
+pub fn fetch(
+    repo: &Repository,
+    remote_name: &str,
+    token: Option<&str>,
+) -> anyhow::Result<FetchResult> {
     // Never log the token; "auth=token/none" records only whether one was used.
     log::info!(
         target: "git",
@@ -175,9 +186,8 @@ pub fn fetch(repo: &Repository, remote_name: &str, token: Option<&str>) -> anyho
     let mut callbacks = git2::RemoteCallbacks::new();
     if let Some(tok) = token {
         let tok = tok.to_string();
-        callbacks.credentials(move |_, _, _| {
-            git2::Cred::userpass_plaintext("x-access-token", &tok)
-        });
+        callbacks
+            .credentials(move |_, _, _| git2::Cred::userpass_plaintext("x-access-token", &tok));
     }
     callbacks.update_tips(move |refname, _old, _new| {
         refs_cb.lock().unwrap().push(refname.to_string());
@@ -207,7 +217,9 @@ fn fetch_cli(repo: &Repository, remote_name: &str) -> anyhow::Result<FetchResult
         let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!("git fetch failed: {stderr}");
     }
-    Ok(FetchResult { updated_refs: Vec::new() })
+    Ok(FetchResult {
+        updated_refs: Vec::new(),
+    })
 }
 
 /// Fetches and fast-forwards `branch` to its upstream when possible. Returns
@@ -318,9 +330,8 @@ pub fn push(
     let mut callbacks = git2::RemoteCallbacks::new();
     if let Some(tok) = token {
         let tok = tok.to_string();
-        callbacks.credentials(move |_, _, _| {
-            git2::Cred::userpass_plaintext("x-access-token", &tok)
-        });
+        callbacks
+            .credentials(move |_, _, _| git2::Cred::userpass_plaintext("x-access-token", &tok));
     }
     let mut opts = git2::PushOptions::new();
     opts.remote_callbacks(callbacks);
@@ -348,9 +359,8 @@ pub fn clone_repo(url: &str, dest: &std::path::Path, token: Option<&str>) -> any
     let mut callbacks = git2::RemoteCallbacks::new();
     if let Some(tok) = token {
         let tok = tok.to_string();
-        callbacks.credentials(move |_, _, _| {
-            git2::Cred::userpass_plaintext("x-access-token", &tok)
-        });
+        callbacks
+            .credentials(move |_, _, _| git2::Cred::userpass_plaintext("x-access-token", &tok));
     }
     let mut fetch_opts = git2::FetchOptions::new();
     fetch_opts.remote_callbacks(callbacks);
@@ -403,7 +413,8 @@ mod tests {
 
     #[test]
     fn parse_ghe_https_url() {
-        let info = parse_remote_url("https://ghe.corp.com/owner/repo.git", &known_with_ghe()).unwrap();
+        let info =
+            parse_remote_url("https://ghe.corp.com/owner/repo.git", &known_with_ghe()).unwrap();
         assert_eq!(info.host, "ghe.corp.com");
         assert_eq!(info.owner, "owner");
         assert_eq!(info.repo, "repo");
@@ -443,8 +454,11 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let repo = Repository::init_bare(dir.path()).unwrap();
         let sig = Signature::now("Test", "test@test.com").unwrap();
-        let tree = repo.find_tree(repo.treebuilder(None).unwrap().write().unwrap()).unwrap();
-        repo.commit(Some("refs/heads/main"), &sig, &sig, "initial", &tree, &[]).unwrap();
+        let tree = repo
+            .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
+            .unwrap();
+        repo.commit(Some("refs/heads/main"), &sig, &sig, "initial", &tree, &[])
+            .unwrap();
         repo.set_head("refs/heads/main").unwrap();
         dir
     }
@@ -463,10 +477,15 @@ mod tests {
     fn advance(repo_path: &Path, branch: &str) -> git2::Oid {
         let repo = Repository::open(repo_path).unwrap();
         let branch_ref = format!("refs/heads/{branch}");
-        let parent = repo.find_reference(&branch_ref).unwrap().peel_to_commit().unwrap();
+        let parent = repo
+            .find_reference(&branch_ref)
+            .unwrap()
+            .peel_to_commit()
+            .unwrap();
         let tree = parent.tree().unwrap();
         let sig = Signature::now("Test", "test@test.com").unwrap();
-        repo.commit(Some(&branch_ref), &sig, &sig, "advance", &tree, &[&parent]).unwrap()
+        repo.commit(Some(&branch_ref), &sig, &sig, "advance", &tree, &[&parent])
+            .unwrap()
     }
 
     /// Adds a commit to the remote `branch` that creates a file, so a
@@ -474,13 +493,18 @@ mod tests {
     fn advance_with_file(repo_path: &Path, branch: &str, name: &str, content: &str) -> git2::Oid {
         let repo = Repository::open(repo_path).unwrap();
         let branch_ref = format!("refs/heads/{branch}");
-        let parent = repo.find_reference(&branch_ref).unwrap().peel_to_commit().unwrap();
+        let parent = repo
+            .find_reference(&branch_ref)
+            .unwrap()
+            .peel_to_commit()
+            .unwrap();
         let blob = repo.blob(content.as_bytes()).unwrap();
         let mut builder = repo.treebuilder(Some(&parent.tree().unwrap())).unwrap();
         builder.insert(name, blob, 0o100644).unwrap();
         let tree = repo.find_tree(builder.write().unwrap()).unwrap();
         let sig = Signature::now("Test", "test@test.com").unwrap();
-        repo.commit(Some(&branch_ref), &sig, &sig, "add file", &tree, &[&parent]).unwrap()
+        repo.commit(Some(&branch_ref), &sig, &sig, "add file", &tree, &[&parent])
+            .unwrap()
     }
 
     /// Commits a working-tree file onto the local clone's current HEAD.
@@ -492,7 +516,8 @@ mod tests {
         let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
         let sig = Signature::now("Test", "test@test.com").unwrap();
         let parent = repo.head().unwrap().peel_to_commit().unwrap();
-        repo.commit(Some("HEAD"), &sig, &sig, "local change", &tree, &[&parent]).unwrap()
+        repo.commit(Some("HEAD"), &sig, &sig, "local change", &tree, &[&parent])
+            .unwrap()
     }
 
     #[test]
@@ -541,9 +566,21 @@ mod tests {
 
         // ...and there are no spurious staged/unstaged changes.
         let status = crate::working_tree::get_working_tree_status(&repo).unwrap();
-        assert!(status.staged.is_empty(), "unexpected staged: {:?}", status.staged);
-        assert!(status.unstaged.is_empty(), "unexpected unstaged: {:?}", status.unstaged);
-        assert!(status.untracked.is_empty(), "unexpected untracked: {:?}", status.untracked);
+        assert!(
+            status.staged.is_empty(),
+            "unexpected staged: {:?}",
+            status.staged
+        );
+        assert!(
+            status.unstaged.is_empty(),
+            "unexpected unstaged: {:?}",
+            status.unstaged
+        );
+        assert!(
+            status.untracked.is_empty(),
+            "unexpected untracked: {:?}",
+            status.untracked
+        );
     }
 
     #[test]
