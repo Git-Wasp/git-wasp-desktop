@@ -5,12 +5,13 @@ import { useRepoStore } from "../../stores/repoStore";
 import { useGithubStore } from "../../stores/githubStore";
 import { useMergeStore } from "../../stores/mergeStore";
 import { useToastStore } from "../../stores/toastStore";
+import { useWorkingTreeStore } from "../../stores/workingTreeStore";
 import { ContextMenu, type MenuItem } from "../common/ContextMenu";
 import { PromptDialog } from "../common/PromptDialog";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { Tooltip } from "../ui/Tooltip";
-import { BranchIcon, PullIcon, PushIcon, TargetIcon } from "../ui/icons";
+import { BranchIcon, PullIcon, PushIcon, RefreshIcon, TargetIcon } from "../ui/icons";
 
 const barStyle: React.CSSProperties = {
   display: "flex",
@@ -47,9 +48,23 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
   const toastError = useToastStore((s) => s.error);
   const toastWarning = useToastStore((s) => s.warning);
 
+  const refreshAll = useWorkingTreeStore((s) => s.refreshAll);
+
   const pullButtonRef = useRef<HTMLButtonElement>(null);
   const [pullMenu, setPullMenu] = useState<{ x: number; y: number } | null>(null);
   const [showNewBranch, setShowNewBranch] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshAll();
+    } catch (e) {
+      toastError(`Refresh failed: ${e}`);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const hasRemote = !!remoteInfo;
   const busy = isFetching || isPulling || isPushing;
@@ -140,8 +155,17 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
         New branch
       </Button>
 
-      {/* Right-aligned: jump to the checked-out (HEAD) commit. */}
-      <div style={{ marginLeft: "auto" }}>
+      {/* Right-aligned: check for changes, then jump to the checked-out (HEAD) commit. */}
+      <div style={{ marginLeft: "auto", display: "flex", gap: "var(--space-2)" }}>
+        <Tooltip label="Check for changes">
+          <IconButton
+            aria-label="Check for changes"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+          >
+            <RefreshIcon />
+          </IconButton>
+        </Tooltip>
         <Tooltip label="Scroll to current HEAD">
           <IconButton aria-label="Scroll to current HEAD" onClick={handleJumpToHead}>
             <TargetIcon />

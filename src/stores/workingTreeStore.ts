@@ -18,6 +18,7 @@ interface WorkingTreeStore {
   headCommit: HeadCommitInfo | null;
 
   loadStatus: () => Promise<void>;
+  refreshAll: () => Promise<void>;
   selectFile: (path: string) => Promise<void>;
   clearSelectedFile: () => void;
   stageFile: (path: string) => Promise<void>;
@@ -58,6 +59,17 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
   loadStatus: async () => {
     const status = await invoke<WorkingTreeStatus>("get_working_tree_status");
     set({ status });
+  },
+
+  // Re-sync everything that reflects the working tree: the staging list, the
+  // graph's cached dirty-file count, and the graph viewport. Used by the file
+  // watcher, the manual "Refresh" button, and the background poll. The order
+  // matters — the backend's cached working-tree count must be refreshed before
+  // the viewport is re-fetched (the viewport no longer rescans on every call).
+  refreshAll: async () => {
+    await get().loadStatus();
+    await invoke("refresh_graph_working_tree_status");
+    await useGraphStore.getState().refresh();
   },
 
   // Selecting a file opens it in the line-level staging editor: load its HEAD vs
@@ -135,15 +147,13 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const unlisten = await listen("working-tree-changed", () => {
       if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(async () => {
-        get().loadStatus();
+      debounceTimer = setTimeout(() => {
         // Refresh the cached dirty-file count the graph uses for its
-        // working-tree node *before* re-fetching — the graph viewport
-        // command no longer rescans the working tree on every call (it was
-        // costing a full statuses() walk per scroll tick on large repos), so
-        // this explicit, debounced refresh is what keeps it in sync now.
-        await invoke("refresh_graph_working_tree_status");
-        useGraphStore.getState().refresh();
+        // working-tree node *before* re-fetching — the graph viewport command
+        // no longer rescans the working tree on every call (it was costing a
+        // full statuses() walk per scroll tick on large repos), so this
+        // explicit, debounced refresh is what keeps it in sync now.
+        void get().refreshAll();
       }, 300);
     });
     return unlisten;

@@ -165,6 +165,29 @@ export default function App() {
     void loadRemoteTags();
   }, [repoPath, loadBranches, detectRemote, loadAheadBehind, loadRemoteTags]);
 
+  // Background poll: while a repo is open, periodically re-sync the working tree
+  // and graph so changes made outside the app — or while not on the uncommitted
+  // view (where the file watcher runs) — appear without needing a restart. The
+  // manual "Check for changes" toolbar button runs the same refresh on demand.
+  useEffect(() => {
+    if (!repoPath) return;
+    let running = false;
+    const tick = async () => {
+      // Skip when a tick is still in flight or the window is hidden.
+      if (running || document.hidden) return;
+      running = true;
+      try {
+        await useWorkingTreeStore.getState().refreshAll();
+      } catch {
+        // Best-effort: a transient failure must not break the poll.
+      } finally {
+        running = false;
+      }
+    };
+    const id = setInterval(tick, 8000);
+    return () => clearInterval(id);
+  }, [repoPath]);
+
   if (!booted) {
     return <SplashScreen task={bootTask} />;
   }

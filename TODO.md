@@ -626,9 +626,19 @@ between sections, and add new ideas under the right heading. Items marked
       singular and plural (incl. 0) cases.
 - [ ] When a "stash" is selected in the git graph, show that it is selected and show the same
       view as if we'd selected a pre-existing commit i.e. show the diff between the stash its direct ancestor
-- [ ] Sometimes there are changes in the repository that are not reflected in the git graph and
+- [x] Sometimes there are changes in the repository that are not reflected in the git graph and
       I have to close and re-open the app to see the changes. Can we have a regular "background poll"
       whilst a repository is open/selected and add a "refresh" button to the top panel to "check for changes"
+      — root cause: the file watcher (`working-tree-changed`) is only started by
+      `StagingPanel`, which is mounted only in the uncommitted-changes view, so
+      changes made elsewhere (or outside the app) went unreflected. Extracted the
+      canonical 3-step refresh into `workingTreeStore.refreshAll()` (loadStatus →
+      `refresh_graph_working_tree_status` → graph `refresh()`); the watcher now
+      routes through it (DRY). Added a **"Check for changes"** refresh `IconButton`
+      to the history toolbar (new `RefreshIcon`) and an **8s background poll** at the
+      App root (runs while a repo is open; skips when the window is hidden or a tick
+      is still in flight; best-effort). Tests: `refreshAll` call-order + the existing
+      watcher test re-pointed through it (9/9 store tests, toolbar 8/8, tsc clean).
 
 ## Other issues
 

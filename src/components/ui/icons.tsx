@@ -338,6 +338,29 @@ export function TargetIcon({ size = 14, title }: IconProps) {
   );
 }
 
+export function RefreshIcon({ size = 14, title }: IconProps) {
+  return (
+    <svg
+      data-icon="refresh"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      style={{ flexShrink: 0 }}
+    >
+      {title && <title>{title}</title>}
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <path d="M21 3v6h-6" />
+    </svg>
+  );
+}
+
 export function LaptopIcon({ size = 12, title }: IconProps) {
   return (
     <svg
