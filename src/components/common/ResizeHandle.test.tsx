@@ -8,6 +8,9 @@ import { ResizeHandle } from "./ResizeHandle";
 function fire(target: EventTarget, type: string, clientX: number) {
   target.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX }));
 }
+function fireY(target: EventTarget, type: string, clientY: number) {
+  target.dispatchEvent(new MouseEvent(type, { bubbles: true, clientY }));
+}
 
 describe("ResizeHandle", () => {
   it("reports the horizontal delta while dragging", () => {
@@ -23,6 +26,19 @@ describe("ResizeHandle", () => {
     expect(onResize).toHaveBeenCalledWith(-10);
 
     fire(window, "pointerup", 120);
+  });
+
+  it("reports the vertical delta for a horizontal handle", () => {
+    const onResize = vi.fn();
+    render(<ResizeHandle orientation="horizontal" onResize={onResize} ariaLabel="Resize section" />);
+    const handle = screen.getByRole("separator", { name: "Resize section" });
+    expect(handle).toHaveAttribute("aria-orientation", "horizontal");
+
+    fireY(handle, "pointerdown", 100);
+    fireY(window, "pointermove", 140);
+    expect(onResize).toHaveBeenCalledWith(40);
+
+    fireY(window, "pointerup", 140);
   });
 
   it("does not report movement before a drag starts", () => {

@@ -65,6 +65,8 @@ export function StashPanel() {
     <CollapsibleSection
       id="stashes"
       title="Stashes"
+      resizable
+      defaultHeight={140}
       action={
         <Button size="sm" onClick={handleStash} disabled={loading}>
           Stash

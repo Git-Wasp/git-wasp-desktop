@@ -1,37 +1,46 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 
 /**
- * A thin draggable vertical divider. Reports the horizontal pointer delta while
- * dragging via `onResize`; the parent applies it to a panel/column width. Uses
- * window listeners so the drag continues even when the pointer leaves the
- * handle. An optional `style` allows absolute positioning (e.g. overlaying a
- * column boundary).
+ * A thin draggable divider. Reports the pointer delta along its resize axis via
+ * `onResize`; the parent applies it to a panel width (vertical handle) or a
+ * section height (horizontal handle). Uses window listeners so the drag
+ * continues even when the pointer leaves the handle. The visible line brightens
+ * on hover and while dragging so the divider reads clearly as draggable. An
+ * optional `style` allows absolute positioning (e.g. overlaying a boundary).
  */
 export function ResizeHandle({
   onResize,
   ariaLabel,
+  orientation = "vertical",
   style,
 }: {
-  onResize: (deltaX: number) => void;
+  onResize: (delta: number) => void;
   ariaLabel?: string;
+  orientation?: "vertical" | "horizontal";
   style?: CSSProperties;
 }) {
   const dragging = useRef(false);
-  const lastX = useRef(0);
+  const last = useRef(0);
   const onResizeRef = useRef(onResize);
   onResizeRef.current = onResize;
+  const [active, setActive] = useState(false); // hovered or dragging (line highlight)
+
+  const horizontal = orientation === "horizontal";
+  const cursor = horizontal ? "row-resize" : "col-resize";
 
   useEffect(() => {
     const move = (e: PointerEvent) => {
       if (!dragging.current) return;
-      const dx = e.clientX - lastX.current;
-      lastX.current = e.clientX;
-      if (dx !== 0) onResizeRef.current(dx);
+      const pos = horizontal ? e.clientY : e.clientX;
+      const delta = pos - last.current;
+      last.current = pos;
+      if (delta !== 0) onResizeRef.current(delta);
     };
     const stop = () => {
       if (!dragging.current) return;
       dragging.current = false;
+      setActive(false);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
     };
@@ -41,32 +50,45 @@ export function ResizeHandle({
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", stop);
     };
-  }, []);
+  }, [horizontal]);
 
   return (
     <div
       role="separator"
-      aria-orientation="vertical"
+      aria-orientation={horizontal ? "horizontal" : "vertical"}
       aria-label={ariaLabel}
       onPointerDown={(e) => {
         dragging.current = true;
-        lastX.current = e.clientX;
-        document.body.style.cursor = "col-resize";
+        last.current = horizontal ? e.clientY : e.clientX;
+        setActive(true);
+        document.body.style.cursor = cursor;
         document.body.style.userSelect = "none";
         e.preventDefault();
       }}
+      onPointerEnter={() => setActive(true)}
+      onPointerLeave={() => {
+        if (!dragging.current) setActive(false);
+      }}
       style={{
         flexShrink: 0,
-        width: 7,
         display: "flex",
-        justifyContent: "center",
-        cursor: "col-resize",
+        cursor,
         background: "transparent",
+        ...(horizontal
+          ? { height: 7, width: "100%", flexDirection: "column", justifyContent: "center" }
+          : { width: 7, justifyContent: "center" }),
         ...style,
       }}
     >
-      {/* Thin visible divider centred in a wider (transparent) grab zone. */}
-      <div style={{ width: 1, alignSelf: "stretch", background: "var(--color-border-subtle)" }} />
+      {/* Thin visible divider centred in a wider (transparent) grab zone; it
+          brightens to the accent while hovered/dragging to signal it's draggable. */}
+      <div
+        style={{
+          background: active ? "var(--color-accent-primary)" : "var(--color-border-default)",
+          transition: "background var(--duration-fast) var(--ease-default)",
+          ...(horizontal ? { height: 1, width: "100%" } : { width: 1, alignSelf: "stretch" }),
+        }}
+      />
     </div>
   );
 }

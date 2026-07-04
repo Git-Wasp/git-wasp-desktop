@@ -887,10 +887,36 @@ between sections, and add new ideas under the right heading. Items marked
       hover), so a row highlight would falsely imply clickability. The sidebar
       branch/recent rows, `Dropdown` items (repo/branch pickers), graph rows, and
       the shared Button/menus already had hover from earlier work.
-- [ ] Allow sidebar sections to be resized vertically. Dividers should be more clearly visible and I should be able to move dividers up and down to increase height. The selected state of the height of each panel should persist between app reloads on a single machine.
+- [x] Allow sidebar sections to be resized vertically. Dividers should be more clearly visible and I should be able to move dividers up and down to increase height. The selected state of the height of each panel should persist between app reloads on a single machine.
+      — the leaf list sections (Local branches, Remote branches, Recent, Stashes)
+      are now vertically resizable. `CollapsibleSection` gained a `resizable` prop:
+      the expanded body is capped at a drag-resizable **max-height** (not a fixed
+      height — a short list stays compact, a long list scrolls within the cap) and
+      a draggable divider replaces the bottom border; drag it up/down to size the
+      section. The cap persists per section id (`section-height:<id>` in
+      localStorage) via a new generic `usePersistedSize` hook (extracted from
+      `usePersistedWidth`, which now delegates to it — widths and heights share one
+      primitive). `ResizeHandle` was generalised with an `orientation` prop
+      ("vertical"|"horizontal"); the horizontal handle reports the pointer's Y
+      delta. Dividers are clearer: section borders bumped `subtle`→`default`, and
+      every resize handle's line now brightens to the accent on hover/drag (also
+      improves the existing sidebar/detail width dividers). Tests: `ResizeHandle`
+      horizontal delta; `CollapsibleSection` cap/divider render, drag-resize +
+      persist + restore-on-remount. Full suite green (520).
+      **Follow-up (doubled divider):** because Local/Remote are nested inside the
+      non-resizable "Branches" group section, that wrapper drew its own bottom
+      border *after* Remote's resize-handle divider — a doubled line before Recent.
+      Added a `containsSections` prop to `CollapsibleSection` (set on the Branches
+      wrapper) that suppresses the wrapper's border while expanded (the nested
+      subsections already provide the trailing divider) but keeps it while
+      collapsed (so the lone header still separates from the next section). Test
+      added; suite green (521).
 - [ ] Extend the "stale branches" feature to also provide the option to prune branches that only exist locally and don't exist on the remote - not just those that did exist on the remote and don't now.
-- [ ] Add "Search" feature to the git graph. A search button should be included which allows the user to search through the commits for commit hashes or text that matches commit messages. Matching results should be highlighted in the graph, and a count of matches should be shown. "Up" and "Down" arrows should allow the user to navigate between matching commits in the graph - the "action bar" at the top should always remain visible.
+- [ ] Add "Search" feature to the git graph. A search button should be included which allows the user to search through the commits for commit hashes or text that matches commit messages. Matching results should be highlighted in the graph, and a count of matches should be shown. "Up" and "Down" arrows should allow the user to navigate between matching commits in the graph - the "action bar" at the top should always remain visible. A small "hovering" search component would be acceptable, but open to other ideas.
 - [ ] Add preview for certain binary files when selecting files in staging or viewing previous commits. Primary use case is to view image files so we should support common files including png, gif, jp(e)g
+- [ ] Add a "hunk" view to the diff viewer in addition to the current "side by side" and "inline" views. The "hunk" view should show a "hunk" for each change. Also add tooltips to the three buttons that allow the user to change view.
+- [ ] Always show current checked out branch at the *top* of the sidebar panel showing local branches
+- [ ] Add option to "recent" repositories menu to "Remove from recent" - this should remove the entry from the recent entries *not* change anything about the repo being removed - just our reference to it.
 
 ## Other issues
 

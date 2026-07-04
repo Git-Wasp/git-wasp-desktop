@@ -193,6 +193,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
         <CollapsibleSection
           id="branches"
           title="Branches"
+          containsSections
           action={
             <div style={{ display: "flex", gap: "var(--space-1)" }}>
               <Button
@@ -232,7 +233,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
             </div>
           )}
 
-          <CollapsibleSection id="branches-local" title="Local" bodyStyle={{ overflowY: "auto", maxHeight: 200 }}>
+          <CollapsibleSection id="branches-local" title="Local" resizable defaultHeight={180}>
             {localBranches.length === 0 ? (
               <div style={branchEmptyHintStyle}>No local branches</div>
             ) : (
@@ -301,7 +302,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
             )}
           </CollapsibleSection>
 
-          <CollapsibleSection id="branches-remote" title="Remote" bodyStyle={{ overflowY: "auto", maxHeight: 200 }}>
+          <CollapsibleSection id="branches-remote" title="Remote" resizable defaultHeight={140}>
             {remoteBranches.length === 0 ? (
               <div style={branchEmptyHintStyle}>No remote branches</div>
             ) : (
@@ -336,7 +337,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
 
       {/* Recent repos */}
       {recentRepos.length > 0 && (
-        <CollapsibleSection id="recent" title="Recent" bodyStyle={{ overflowY: "auto" }}>
+        <CollapsibleSection id="recent" title="Recent" resizable defaultHeight={160}>
           {recentRepos.map((r) => (
             <div
               key={r.path}
