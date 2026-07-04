@@ -554,11 +554,11 @@ fn read_stashes(repo: &Repository) -> Vec<StashRef> {
 }
 
 /// Splice stash nodes into the laid-out history, each hanging off the commit it
-/// was created on (its first parent) via dotted edges, on a side lane. Multiple
-/// stashes on the same commit stack downward as a dotted chain. Real commits'
-/// lanes are untouched — only their `row`s shift (renumbered here) and the base
-/// commit gains one dotted edge down to its first stash. Stashes whose base
-/// commit isn't in the layout are skipped.
+/// was created on (its first parent) via dotted edges, on a side lane. Stashes
+/// sit **above** their base (on the rows just before it, newest adjacent to the
+/// base); multiple stashes on the same commit stack upward as a dotted chain.
+/// Real commits' lanes are untouched — only their `row`s shift (renumbered
+/// here). Stashes whose base commit isn't in the layout are skipped.
 fn inject_stashes(repo: &Repository, nodes: Vec<GraphNode>) -> Vec<GraphNode> {
     let stashes = read_stashes(repo);
     if stashes.is_empty() {
@@ -575,40 +575,33 @@ fn inject_stashes(repo: &Repository, nodes: Vec<GraphNode>) -> Vec<GraphNode> {
     }
 
     let mut out: Vec<GraphNode> = Vec::with_capacity(nodes.len() + stashes.len());
+    // Lanes (with colours) flowing out of the last real commit into the next
+    // row — i.e. the lanes present just above the row we're about to emit. Stash
+    // rows are spliced above their base, so they must carry these straight
+    // through, or the real history lines would break where they're inserted.
+    let mut prev_out: Vec<(usize, usize)> = Vec::new();
     for node in nodes {
         let Some(chain) = by_base.get(&node.oid).cloned() else {
+            prev_out = node.edges.iter().map(|e| (e.dst_lane, e.color_index)).collect();
             out.push(node);
             continue;
         };
 
-        // Lanes alive going from this commit into the next row, with their
-        // colours — the stash rows must carry these straight through so the real
-        // history lines don't break where a stash is spliced in.
-        let active: Vec<(usize, usize)> = node
-            .edges
-            .iter()
-            .map(|e| (e.dst_lane, e.color_index))
-            .collect();
-        let mut stash_lane = 0;
-        while active.iter().any(|(l, _)| *l == stash_lane) {
-            stash_lane += 1;
-        }
         let base_lane = node.lane;
         let base_color = node.color_index;
+        // A side lane for the stash chain, free of the lanes passing through here.
+        let mut stash_lane = 0;
+        while stash_lane == base_lane || prev_out.iter().any(|(l, _)| *l == stash_lane) {
+            stash_lane += 1;
+        }
 
-        // The base commit gains a dotted edge down to the first stash.
-        let mut base = node;
-        base.edges.push(GraphEdge {
-            src_lane: base_lane,
-            dst_lane: stash_lane,
-            color_index: base_color,
-            kind: EdgeKind::Stash,
-        });
-        out.push(base);
-
+        // Emit the stashes above the base, oldest first so the most recent ends
+        // up immediately above (adjacent to) the base. Each row carries the
+        // incoming lanes straight through, plus a dotted edge down to the next
+        // stash — or, for the row just above the base, down to the base's dot.
         let n = chain.len();
-        for (i, s) in chain.iter().enumerate() {
-            let mut edges: Vec<GraphEdge> = active
+        for (i, s) in chain.iter().rev().enumerate() {
+            let mut edges: Vec<GraphEdge> = prev_out
                 .iter()
                 .map(|(lane, color)| GraphEdge {
                     src_lane: *lane,
@@ -617,15 +610,13 @@ fn inject_stashes(repo: &Repository, nodes: Vec<GraphNode>) -> Vec<GraphNode> {
                     kind: EdgeKind::Straight,
                 })
                 .collect();
-            // Continue the dotted stash chain down to the next stash, if any.
-            if i + 1 < n {
-                edges.push(GraphEdge {
-                    src_lane: stash_lane,
-                    dst_lane: stash_lane,
-                    color_index: base_color,
-                    kind: EdgeKind::Stash,
-                });
-            }
+            let dotted_dst = if i + 1 < n { stash_lane } else { base_lane };
+            edges.push(GraphEdge {
+                src_lane: stash_lane,
+                dst_lane: dotted_dst,
+                color_index: base_color,
+                kind: EdgeKind::Stash,
+            });
             let oid_str = s.oid.to_string();
             out.push(GraphNode {
                 short_oid: oid_str[..8].to_string(),
@@ -649,6 +640,11 @@ fn inject_stashes(repo: &Repository, nodes: Vec<GraphNode>) -> Vec<GraphNode> {
                 stash_index: Some(s.index),
             });
         }
+
+        // The base commit follows the stash rows, unchanged — its dotted stash
+        // connector is emitted by the stash row above it, not by the base itself.
+        prev_out = node.edges.iter().map(|e| (e.dst_lane, e.color_index)).collect();
+        out.push(node);
     }
 
     for (i, node) in out.iter_mut().enumerate() {
@@ -815,34 +811,51 @@ mod tests {
     }
 
     #[test]
-    fn stash_node_is_injected_below_its_base_commit() {
-        let (dir, mut repo, head) = repo_with_two_commits();
+    fn stash_node_is_injected_above_its_base_commit() {
+        let (dir, mut repo, _head) = repo_with_two_commits();
+        // Check out the root commit so the stash's base ("first") has a newer
+        // commit ("second") sitting above it — this exercises the pass-through.
+        let first = build_full_layout(&repo)
+            .unwrap()
+            .into_iter()
+            .find(|n| n.summary == "first")
+            .unwrap()
+            .oid;
+        let first_oid = git2::Oid::from_str(&first).unwrap();
+        repo.set_head_detached(first_oid).unwrap();
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .unwrap();
         std::fs::write(dir.path().join("f.txt"), "dirty\n").unwrap();
         crate::stash::stash_save(&mut repo, Some("WIP work")).unwrap();
 
         let nodes = build_full_layout(&repo).unwrap();
 
-        let base_row = nodes.iter().position(|n| n.oid == head).unwrap();
+        let base_row = nodes.iter().position(|n| n.oid == first).unwrap();
         let stash = nodes.iter().find(|n| n.is_stash).expect("a stash node");
 
-        // The stash sits one row below the commit it was created on.
-        assert_eq!(stash.row, base_row + 1);
+        // The stash sits one row *above* the commit it was created on.
+        assert_eq!(stash.row, base_row - 1);
         assert_eq!(stash.stash_index, Some(0));
         assert!(stash.summary.contains("WIP work"));
 
-        // The base commit gained a dotted edge pointing at the stash's lane.
         let base = &nodes[base_row];
-        assert!(base
-            .edges
-            .iter()
-            .any(|e| matches!(e.kind, EdgeKind::Stash) && e.dst_lane == stash.lane));
-        // The stash is on a side lane, and carries the real history line straight
-        // through (a pass-through edge on the base's lane).
+        // On a side lane, with a dotted connector down to the base's dot.
         assert_ne!(stash.lane, base.lane);
         assert!(stash
             .edges
             .iter()
-            .any(|e| matches!(e.kind, EdgeKind::Straight) && e.src_lane == base.lane));
+            .any(|e| matches!(e.kind, EdgeKind::Stash) && e.dst_lane == base.lane));
+        // It carries the real history line (the newer commit above) straight
+        // through on the base's lane, so the graph isn't broken where it splices in.
+        assert!(stash
+            .edges
+            .iter()
+            .any(|e| matches!(e.kind, EdgeKind::Straight)
+                && e.src_lane == base.lane
+                && e.dst_lane == base.lane));
+        // The base itself no longer carries a stash edge (the connector moved to
+        // the stash row above it).
+        assert!(!base.edges.iter().any(|e| matches!(e.kind, EdgeKind::Stash)));
     }
 
     #[test]
@@ -859,7 +872,8 @@ mod tests {
 
         std::fs::write(dir.path().join("f.txt"), "dirty\n").unwrap();
         crate::stash::stash_save(&mut repo, Some("WIP")).unwrap();
-        // Stash sits above the root (below HEAD), so the root shifts down by one.
+        // The stash sits above its base (HEAD), which is above the root, so the
+        // root shifts down by one.
         let after = find_commit_row(&repo, &root).unwrap();
         assert_eq!(after, before.map(|r| r + 1));
     }

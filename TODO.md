@@ -767,7 +767,23 @@ between sections, and add new ideas under the right heading. Items marked
       (`hoveredOid` param, same priority, under the edges/dots so lines stay on top).
       Rows gained a `data-oid` attr. Test: hovering a commit row sets the cell
       background and mouse-leave clears it.
-- [ ] Move "stashes" to the line *above* their ancestor rather than the line below as they are now
+- [x] Move "stashes" to the line *above* their ancestor rather than the line below as they are now
+      — `inject_stashes` now splices each stash chain onto the rows *above* its base
+      commit instead of below (most recent stash immediately above the base, older
+      ones stacking further up as a dotted chain). The base no longer carries the
+      dotted edge; instead the stash row just above it emits the dotted connector
+      *down* to the base's dot (`stash_lane → base_lane`), and the chain continues
+      upward via `stash_lane → stash_lane` dotted edges. Because the rows are
+      inserted above the base, the pass-through lanes are now the *incoming* lanes
+      (the newer commit above), tracked as `prev_out` (the previous real commit's
+      out-edges) and replicated as straight edges so the real history line isn't
+      broken where the stash splices in. Row-shifting is unchanged in effect
+      (`find_commit_row` still finds the position in the same `build_full_layout`),
+      so no frontend change was needed — the canvas already draws `EdgeKind::Stash`
+      dotted regardless of direction. Tests: `stash_node_is_injected_above_its_base_commit`
+      (stash one row above its base, on a side lane, dotted connector down to the
+      base, straight pass-through of the commit above, base has no stash edge) +
+      the existing `find_commit_row_accounts_for_an_injected_stash` still holds.
 
 ## Other issues
 
