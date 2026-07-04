@@ -10,6 +10,12 @@ describe("SplashScreen", () => {
     expect(container.querySelector("[data-spinner]")).not.toBeNull();
   });
 
+  it("shows the Git Wasp brand mark and wordmark", () => {
+    render(<SplashScreen task="Starting…" />);
+    expect(screen.getByText("Git Wasp")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Git Wasp" })).toBeInTheDocument();
+  });
+
   it("is an accessible live status region", () => {
     render(<SplashScreen task="Starting…" />);
     expect(screen.getByRole("status")).toBeInTheDocument();

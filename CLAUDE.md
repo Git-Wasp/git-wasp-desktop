@@ -1,4 +1,4 @@
-# CLAUDE.md — Tauri Git Client
+# CLAUDE.md — Git Wasp Git Client
 
 Project context for Claude Code. Read this file at the start of every session before making any suggestions or writing any code.
 
@@ -311,7 +311,13 @@ Interactive rebase is deferred to v2. The following commitments ensure it can be
 ### Pre-public checklist (before repo goes public)
 
 - [ ] Apple code signing and notarisation pipeline (certificates as Actions secrets)
-- [ ] OAuth client IDs externalised to build-time env vars; contributor documentation added
+- [ ] GitHub OAuth App re-registered as **"Git Wasp"** under the `gitwasp` GitHub
+      org (Homepage `https://gitwasp.com`, Device Flow enabled), replacing the
+      personal-account app; old app deleted. Client ID is a **public client** (device
+      flow, no secret) — compiled in via `GITHUB_OAUTH_CLIENT_ID` (local:
+      `src-tauri/.cargo/config.toml`; CI: `GITHUB_OAUTH_CLIENT_ID` Actions secret,
+      wired into the release build). Contributor docs point devs at registering their
+      own dev OAuth App.
 - [ ] Dependency licence audit clean
 - [ ] `CONTRIBUTING.md`, issue templates, PR templates in place
 - [ ] `git-cliff` or equivalent changelog generation configured

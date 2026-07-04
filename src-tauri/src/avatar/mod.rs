@@ -129,7 +129,7 @@ pub async fn resolve_avatar(
 fn cache_dir() -> anyhow::Result<PathBuf> {
     Ok(dirs::cache_dir()
         .context("no OS cache directory")?
-        .join("gitclient")
+        .join("git-wasp")
         .join("avatars"))
 }
 

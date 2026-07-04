@@ -148,7 +148,7 @@ pub fn run() {
             logging::set_diagnostics(logging::diagnostics_default());
             log::info!(
                 target: "app",
-                "gitclient starting (diagnostics default {})",
+                "Git Wasp starting (diagnostics default {})",
                 if logging::diagnostics_default() { "on" } else { "off" }
             );
             repo_manager::restore_session(app)?;

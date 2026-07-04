@@ -1,5 +1,8 @@
 use log::{debug, warn};
 
+/// OS keychain service name under which host tokens are stored.
+const SERVICE: &str = "git-wasp";
+
 pub trait CredentialStore: Send + Sync {
     fn store(&self, host: &str, token: &str) -> anyhow::Result<()>;
     fn load(&self, host: &str) -> anyhow::Result<Option<String>>;
@@ -11,10 +14,10 @@ pub struct KeyringStore;
 impl CredentialStore for KeyringStore {
     fn store(&self, host: &str, token: &str) -> anyhow::Result<()> {
         debug!(
-            "credential store: storing token for host={host:?} (service=\"gitclient\", len={})",
+            "credential store: storing token for host={host:?} (service={SERVICE:?}, len={})",
             token.len()
         );
-        let result = keyring::Entry::new("gitclient", host)
+        let result = keyring::Entry::new(SERVICE, host)
             .map_err(|e| anyhow::anyhow!("keyring error: {e}"))?
             .set_password(token)
             .map_err(|e| anyhow::anyhow!("failed to store credential for {host}: {e}"));
@@ -26,8 +29,8 @@ impl CredentialStore for KeyringStore {
     }
 
     fn load(&self, host: &str) -> anyhow::Result<Option<String>> {
-        debug!("credential store: loading token for host={host:?} (service=\"gitclient\")");
-        let entry = keyring::Entry::new("gitclient", host)
+        debug!("credential store: loading token for host={host:?} (service={SERVICE:?})");
+        let entry = keyring::Entry::new(SERVICE, host)
             .map_err(|e| anyhow::anyhow!("keyring error: {e}"))?;
         match entry.get_password() {
             Ok(pw) => {
@@ -49,7 +52,7 @@ impl CredentialStore for KeyringStore {
     }
 
     fn delete(&self, host: &str) -> anyhow::Result<()> {
-        let entry = keyring::Entry::new("gitclient", host)
+        let entry = keyring::Entry::new(SERVICE, host)
             .map_err(|e| anyhow::anyhow!("keyring error: {e}"))?;
         match entry.delete_credential() {
             Ok(()) => Ok(()),

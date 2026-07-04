@@ -7,7 +7,16 @@
 # with, which is what `option_env!("GITHUB_OAUTH_CLIENT_ID")` reads in
 # `src/github_client/mod.rs`.
 #
-# To get a client ID: GitHub → Settings → Developer settings → OAuth Apps →
-# New OAuth App, then enable "Device Flow" in the app's settings.
+# The client ID is NOT a secret — this is a GitHub OAuth App using the Device
+# Authorization Flow, so the desktop app is a "public client" with no client
+# secret. It's safe to compile the client ID into the binary and to expose it.
+#
+# Production app: "Git Wasp", registered under the `gitwasp` GitHub org
+# (Homepage https://gitwasp.com), with "Device Flow" enabled. In CI, the release
+# build reads the same value from the `GITHUB_OAUTH_CLIENT_ID` Actions secret.
+#
+# To register your own for local dev: GitHub → Settings → Developer settings →
+# OAuth Apps → New OAuth App → enable "Device Flow" (leave "Expire user
+# authorization tokens" OFF — the app does not yet refresh tokens; see TODO.md).
 [env]
 GITHUB_OAUTH_CLIENT_ID = "Iv1.your-client-id-here"

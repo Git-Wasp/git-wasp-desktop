@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @font-face {
+      font-family: 'Noto Sans';
+      src: url('fonts/NotoSans-VariableFont_wdth_wght.ttf') format('truetype');
+      font-weight: 100 900; font-style: normal; font-display: swap;
+    }
+    @font-face {
+      font-family: 'Stack Sans Headline';
+      src: url('fonts/StackSansHeadline-VariableFont_wght.ttf') format('truetype');
+      font-weight: 100 900; font-style: normal; font-display: swap;
+    }
+    body { margin: 0; }
+  </style>
+</helmet>
+
+<div style="--font-display:'Stack Sans Headline',system-ui,sans-serif; --font-body:'Noto Sans',system-ui,sans-serif; min-height:100vh; background:#F3F5F7; font-family:var(--font-body); color:#181B20; padding:56px 56px 96px;">
+
+  <!-- ===== HEADER ===== -->
+  <div style="max-width:1200px; margin:0 auto 44px">
+    <div style="font-family:var(--font-body); font-size:12px; font-weight:600; letter-spacing:0.15em; text-transform:uppercase; color:#2162D4; margin-bottom:14px">Brand identity</div>
+    <div style="display:flex; align-items:baseline; gap:18px; flex-wrap:wrap">
+      <h1 style="font-family:var(--font-display); font-weight:800; letter-spacing:-0.03em; font-size:52px; margin:0; line-height:1">Git Wasp logo</h1>
+      <span style="color:#6E7887; font-size:17px">A cross-platform Git client, with a sting.</span>
+    </div>
+  </div>
+
+  <div style="max-width:1200px; margin:0 auto; display:flex; flex-direction:column; gap:40px">
+
+    <!-- ===== PRIMARY LOCKUP ===== -->
+    <section>
+      <div style="font-size:12px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:#909AAA; margin-bottom:12px">Primary lockup</div>
+      <div style="background:#FFFFFF; border:1px solid #D3D8E0; border-radius:16px; box-shadow:0 1px 4px rgba(15,23,42,0.06),0 6px 20px rgba(15,23,42,0.05); padding:56px 64px; display:flex; align-items:center; gap:40px; flex-wrap:wrap">
+        <div style="width:230px; flex:none"><dc-import name="Wasp" body="#F5A623" dark="#181B20" stripe="#181B20" eye="#FFFFFF" wing="rgba(33,98,212,0.15)" wing-stroke="rgba(33,98,212,0.34)" hint-size="230px,162px"></dc-import></div>
+        <div>
+          <div style="font-family:var(--font-display); font-weight:800; letter-spacing:-0.035em; color:#181B20; font-size:76px; line-height:0.95">Git Wasp</div>
+          <div style="color:#6E7887; font-size:18px; margin-top:12px; letter-spacing:0.01em">Branch fast. Merge clean. Don't get stung.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== VARIATIONS ===== -->
+    <section>
+      <div style="font-size:12px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:#909AAA; margin-bottom:12px">Lockup variations</div>
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:24px">
+
+        <!-- stacked -->
+        <div style="background:#FFFFFF; border:1px solid #D3D8E0; border-radius:16px; box-shadow:0 1px 4px rgba(15,23,42,0.06); padding:44px 24px; display:flex; flex-direction:column; align-items:center; gap:18px">
+          <div style="width:170px"><dc-import name="Wasp" body="#F5A623" dark="#181B20" stripe="#181B20" eye="#FFFFFF" wing="rgba(33,98,212,0.15)" wing-stroke="rgba(33,98,212,0.34)" hint-size="170px,120px"></dc-import></div>
+          <div style="font-family:var(--font-display); font-weight:800; letter-spacing:-0.035em; color:#181B20; font-size:38px; line-height:1">Git Wasp</div>
+        </div>
+
+        <!-- icon only -->
+        <div style="background:#FFFFFF; border:1px solid #D3D8E0; border-radius:16px; box-shadow:0 1px 4px rgba(15,23,42,0.06); padding:44px 24px; display:flex; flex-direction:column; align-items:center; justify-content:center">
+          <div style="width:210px"><dc-import name="Wasp" body="#F5A623" dark="#181B20" stripe="#181B20" eye="#FFFFFF" wing="rgba(33,98,212,0.15)" wing-stroke="rgba(33,98,212,0.34)" hint-size="210px,148px"></dc-import></div>
+        </div>
+
+        <!-- reversed on dark -->
+        <div style="background:#0F1825; border:1px solid #0F1825; border-radius:16px; box-shadow:0 1px 4px rgba(15,23,42,0.06); padding:44px 24px; display:flex; flex-direction:column; align-items:center; gap:18px">
+          <div style="width:170px"><dc-import name="Wasp" body="#F5A623" dark="#F0F2F5" stripe="#0F1825" eye="#0F1825" wing="rgba(122,165,237,0.22)" wing-stroke="rgba(122,165,237,0.45)" hint-size="170px,120px"></dc-import></div>
+          <div style="font-family:var(--font-display); font-weight:800; letter-spacing:-0.035em; color:#FFFFFF; font-size:38px; line-height:1">Git Wasp</div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ===== APP ICONS ===== -->
+    <section>
+      <div style="font-size:12px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:#909AAA; margin-bottom:12px">App icon</div>
+      <div style="display:flex; gap:28px; flex-wrap:wrap; align-items:flex-end">
+
+        <div style="display:flex; flex-direction:column; align-items:center; gap:12px">
+          <div style="width:140px; height:140px; border-radius:30px; background:#0F1825; box-shadow:0 6px 20px rgba(15,23,42,0.18); display:flex; align-items:center; justify-content:center; overflow:hidden">
+            <div style="width:150px; transform:rotate(-16deg)"><dc-import name="Wasp" body="#F5A623" dark="#F0F2F5" stripe="#0F1825" eye="#0F1825" wing="rgba(122,165,237,0.22)" wing-stroke="rgba(122,165,237,0.45)" hint-size="150px,106px"></dc-import></div>
+          </div>
+          <span style="font-size:13px; color:#6E7887">Dark tile</span>
+        </div>
+
+        <div style="display:flex; flex-direction:column; align-items:center; gap:12px">
+          <div style="width:140px; height:140px; border-radius:30px; background:#F5A623; box-shadow:0 6px 20px rgba(245,166,35,0.30); display:flex; align-items:center; justify-content:center; overflow:hidden">
+            <div style="width:150px; transform:rotate(-16deg)"><dc-import name="Wasp" body="#181B20" dark="#181B20" stripe="#FFFFFF" eye="#F5A623" wing="rgba(255,255,255,0.32)" wing-stroke="rgba(255,255,255,0.5)" hint-size="150px,106px"></dc-import></div>
+          </div>
+          <span style="font-size:13px; color:#6E7887">Gold tile</span>
+        </div>
+
+        <div style="display:flex; flex-direction:column; align-items:center; gap:12px">
+          <div style="width:140px; height:140px; border-radius:30px; background:#FFFFFF; border:1px solid #D3D8E0; box-shadow:0 6px 20px rgba(15,23,42,0.1); display:flex; align-items:center; justify-content:center; overflow:hidden">
+            <div style="width:150px; transform:rotate(-16deg)"><dc-import name="Wasp" body="#F5A623" dark="#181B20" stripe="#181B20" eye="#FFFFFF" wing="rgba(33,98,212,0.15)" wing-stroke="rgba(33,98,212,0.34)" hint-size="150px,106px"></dc-import></div>
+          </div>
+          <span style="font-size:13px; color:#6E7887">Light tile</span>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ===== MONOCHROME ===== -->
+    <section>
+      <div style="font-size:12px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:#909AAA; margin-bottom:12px">Monochrome</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px">
+
+        <div style="background:#FFFFFF; border:1px solid #D3D8E0; border-radius:16px; padding:40px; display:flex; align-items:center; gap:32px">
+          <div style="width:150px; flex:none"><dc-import name="Wasp" body="#181B20" dark="#181B20" stripe="#FFFFFF" eye="#FFFFFF" wing="rgba(24,27,32,0.07)" wing-stroke="rgba(24,27,32,0.28)" hint-size="150px,106px"></dc-import></div>
+          <div style="font-family:var(--font-display); font-weight:800; letter-spacing:-0.035em; color:#181B20; font-size:40px">Git Wasp</div>
+        </div>
+
+        <div style="background:#0F1825; border-radius:16px; padding:40px; display:flex; align-items:center; gap:32px">
+          <div style="width:150px; flex:none"><dc-import name="Wasp" body="#FFFFFF" dark="#FFFFFF" stripe="#0F1825" eye="#0F1825" wing="rgba(255,255,255,0.12)" wing-stroke="rgba(255,255,255,0.32)" hint-size="150px,106px"></dc-import></div>
+          <div style="font-family:var(--font-display); font-weight:800; letter-spacing:-0.035em; color:#FFFFFF; font-size:40px">Git Wasp</div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ===== CONCEPT NOTE ===== -->
+    <section>
+      <div style="font-size:12px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:#909AAA; margin-bottom:12px">The idea</div>
+      <div style="background:#FFFFFF; border:1px solid #D3D8E0; border-radius:16px; padding:44px 48px; display:flex; align-items:center; gap:48px; flex-wrap:wrap">
+        <div style="width:300px; flex:none"><dc-import name="Wasp" body="#F5A623" dark="#181B20" stripe="#181B20" eye="#FFFFFF" wing="rgba(33,98,212,0.15)" wing-stroke="rgba(33,98,212,0.34)" hint-size="300px,212px"></dc-import></div>
+        <div style="flex:1; min-width:260px">
+          <div style="font-family:var(--font-display); font-weight:700; font-size:24px; letter-spacing:-0.02em; margin-bottom:10px">Three stripes, three Git moves.</div>
+          <p style="color:#4D5260; font-size:16px; line-height:1.7; margin:0">The wasp's bands carry the actions you live in — <strong style="color:#16A34A">stage&nbsp;(+)</strong>, <strong style="color:#DC2626">discard&nbsp;(−)</strong>, and <strong style="color:#2162D4">sync&nbsp;(⟳)</strong>. A warm-gold body, deep-ink stripes, and translucent cobalt wings keep it sharp at any size.</p>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

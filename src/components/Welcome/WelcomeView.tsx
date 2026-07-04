@@ -4,6 +4,7 @@ import { useRepoStore } from "../../stores/repoStore";
 import { useGithubStore } from "../../stores/githubStore";
 import { Button } from "../ui/Button";
 import { GitHubIcon } from "../ui/icons";
+import { WaspLogo } from "../ui/WaspLogo";
 import { CloneDialog } from "../GitHub/CloneDialog";
 
 const cardStyle: React.CSSProperties = {
@@ -61,6 +62,23 @@ export function WelcomeView() {
         padding: "var(--space-5)",
       }}
     >
+      <div style={{ ...cardStyle, alignItems: "center", marginBottom: "var(--space-5)", gap: "var(--space-2)" }}>
+        <WaspLogo size={72} />
+        <div
+          style={{
+            fontSize: "var(--font-size-2xl)",
+            fontWeight: "var(--font-weight-bold)",
+            letterSpacing: "-0.02em",
+            color: "var(--color-text-primary)",
+          }}
+        >
+          Git Wasp
+        </div>
+        <div style={{ fontSize: "var(--font-size-sm)", color: "var(--color-text-muted)" }}>
+          Branch fast. Merge clean. Don't get stung.
+        </div>
+      </div>
+
       <div style={cardStyle}>
         <div>
           <h1
