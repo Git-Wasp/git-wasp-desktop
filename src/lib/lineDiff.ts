@@ -207,3 +207,84 @@ export function alignedWorktreeLineNumbers(rows: DiffRow[]): (number | null)[] {
 export function inlineText(rows: DiffRow[]): string {
   return rows.map((r) => r.text).join("\n");
 }
+
+/** One line of the hunk (unified-with-context) view. A `header` line carries the
+ *  `@@ … @@` range text and no source row; the other kinds mirror {@link DiffRow}. */
+export interface HunkLine {
+  kind: "header" | DiffRowKind;
+  text: string;
+  /** Source row index for a context/added/removed line; `null` for a header. */
+  rowIndex: number | null;
+  /** Real 1-based old (HEAD) file line number, or `null` (added / header). */
+  oldNo: number | null;
+  /** Real 1-based new (working-tree) file line number, or `null` (removed / header). */
+  newNo: number | null;
+}
+
+/**
+ * The "hunk" view: only the changed regions of the diff, each preceded by an
+ * `@@ -old,len +new,len @@` header and padded with up to `context` unchanged
+ * lines on each side. Large unchanged gaps are dropped, so the reviewer sees just
+ * the changes with a little surrounding code — the standard unified-diff shape.
+ * Returns one entry per rendered line (headers included), so line `i + 1` of the
+ * joined text is `hunkLines(...)[i]`. Empty when there are no changes.
+ */
+export function hunkLines(rows: DiffRow[], context = 3): HunkLine[] {
+  // Real old/new file line number for each row (null on the side it's absent).
+  const oldNos: (number | null)[] = [];
+  const newNos: (number | null)[] = [];
+  let o = 0;
+  let n = 0;
+  for (const r of rows) {
+    if (r.kind === "context") {
+      oldNos.push(++o);
+      newNos.push(++n);
+    } else if (r.kind === "removed") {
+      oldNos.push(++o);
+      newNos.push(null);
+    } else {
+      oldNos.push(null);
+      newNos.push(++n);
+    }
+  }
+
+  // Merge each changed row's ±context window into contiguous hunks.
+  const hunks: { start: number; end: number }[] = [];
+  rows.forEach((r, i) => {
+    if (r.kind === "context") return;
+    const start = Math.max(0, i - context);
+    const end = Math.min(rows.length - 1, i + context);
+    const last = hunks[hunks.length - 1];
+    if (last && start <= last.end + 1) last.end = Math.max(last.end, end);
+    else hunks.push({ start, end });
+  });
+
+  const out: HunkLine[] = [];
+  for (const h of hunks) {
+    let oldStart: number | null = null;
+    let newStart: number | null = null;
+    let oldLen = 0;
+    let newLen = 0;
+    for (let i = h.start; i <= h.end; i++) {
+      if (rows[i].kind !== "added") {
+        oldLen++;
+        if (oldStart == null) oldStart = oldNos[i];
+      }
+      if (rows[i].kind !== "removed") {
+        newLen++;
+        if (newStart == null) newStart = newNos[i];
+      }
+    }
+    out.push({
+      kind: "header",
+      text: `@@ -${oldStart ?? 0},${oldLen} +${newStart ?? 0},${newLen} @@`,
+      rowIndex: null,
+      oldNo: null,
+      newNo: null,
+    });
+    for (let i = h.start; i <= h.end; i++) {
+      out.push({ kind: rows[i].kind, text: rows[i].text, rowIndex: i, oldNo: oldNos[i], newNo: newNos[i] });
+    }
+  }
+  return out;
+}

@@ -927,9 +927,29 @@ between sections, and add new ideas under the right heading. Items marked
       Tests: backend classifies gone / merged-local-only / unmerged-local-only and
       excludes published-no-upstream + the base; frontend pre-selects merged but not
       unmerged local-only. Suites green (frontend 522, backend 213).
-- [ ] Add "Search" feature to the git graph. A search button should be included which allows the user to search through the commits for commit hashes or text that matches commit messages. Matching results should be highlighted in the graph, and a count of matches should be shown. "Up" and "Down" arrows should allow the user to navigate between matching commits in the graph - the "action bar" at the top should always remain visible. A small "hovering" search component would be acceptable, but open to other ideas.
+- [ ] Add "Search" feature to the git graph. A search button should be included which allows the user to search through the commits for commit hashes or text that matches commit messages. Matching results should be highlighted in the graph, and a count of matches should be shown. "Highlighting" can be via "dimming" non-matching commits, or by highlight matching commits, or both. "Up" and "Down" arrows should allow the user to navigate between matching commits in the graph - the "action bar" at the top should always remain visible. A small "hovering" search component would be acceptable, but open to other ideas.
 - [ ] Add preview for certain binary files when selecting files in staging or viewing previous commits. Primary use case is to view image files so we should support common files including png, gif, jp(e)g
-- [ ] Add a "hunk" view to the diff viewer in addition to the current "side by side" and "inline" views. The "hunk" view should show a "hunk" for each change. Also add tooltips to the three buttons that allow the user to change view. Persist the last selected view as the "default" e.g. when closing and re-opening the app.
+- [x] Add a "hunk" view to the diff viewer in addition to the current "side by side" and "inline" views. The "hunk" view should show a "hunk" for each change. Also add tooltips to the three buttons that allow the user to change view. Persist the last selected view as the "default" e.g. when closing and re-opening the app.
+      — added a third **Hunk** view to `StageFileEditor` (used by both the staging
+      diff and the read-only commit-file diff). New pure, tested `hunkLines(rows,
+      context=3)` helper in `lib/lineDiff.ts` collapses distant unchanged lines and
+      groups changes into hunks, each prefixed with a real `@@ -old,len +new,len @@`
+      header (carrying per-line source-row index + real old/new line numbers). The
+      editor renders it like the inline view — single pane, dual old/new number
+      gutter, red/green decorations, and a muted `cm-diff-hunk-header` band — with
+      per-line stage toggles wired through a hunk-doc-line→source-row map (so a
+      header line has no toggle). New `HunkViewIcon`; the `ViewMode` union +
+      `loadViewMode` gained "hunk". **Tooltips:** the three `SegmentedControl`
+      buttons already carry `title`/`aria-label` from their `ariaLabel`s
+      ("Side-by-side view" / "Inline view" / "Hunk view"), so each shows a tooltip.
+      **Persist:** the choice already persists to `localStorage` (`VIEW_MODE_KEY`),
+      now including hunk. Tests: `hunkLines` (single hunk drops distant context, one
+      hunk per distant change, `@@` ranges, old/new numbers) + editor (button
+      present, switches to hunk pane with `@@` header + add/del decorations, stages
+      line-by-line from hunk, persists across remount). Full suite green (532).
+- [ ] In the diff view add an option to "wrap" text or "don't wrap text". Currently we wrap text rather than let it overflow horizontally.
+- [ ] In the diff view add an option to hide "leading/trailing whitespace only" changes.
+- [ ] Add a "stash changes" button before "Stage all" when viewing uncommitted files. Remove the "Stash changes" button from the sidebar.
 - [x] Always show current checked out branch at the *top* of the sidebar panel showing local branches
       — the sidebar's Local list now partitions the checked-out (`isHead`) branch to
       the top, keeping the remaining branches in their existing order (`Sidebar.tsx`).
@@ -948,6 +968,7 @@ between sections, and add new ideas under the right heading. Items marked
       (frontend 525, backend 214). Not extended to the NavBar RepoPicker / WelcomeView
       recent lists (they don't have per-row menus yet) — flag if you want it there too.
 - [ ] When there are uncommitted changes and the user performs an action that would cause those changes to be lost (such as checking out a different branch, pulling the remote again) auto-stash the changes before performing the action.
+- [ ] Add "pin" functionality to sidebar panels that allow "pinning" a branch to the top, pinning a remote branch to the top, or pinning a recent repo to the top. The pinned items should persist between restarts. Pinning should be via a "pin" icon shown on hover - if not already pinned, the icon only shows on hover. If already pinned a solid pin icon is shown when not hovering, and changes to an "unfilled" pin icon on hover. A pinned item can be unpinned by clicking the pin icon again. Pinned items appear at the top.
 
 ## Other issues
 

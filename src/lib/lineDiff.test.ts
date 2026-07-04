@@ -10,6 +10,7 @@ import {
   diffLines,
   headChangedLines,
   headPaneText,
+  hunkLines,
   inlineText,
   worktreeChangedLines,
   worktreePaneText,
@@ -159,5 +160,48 @@ describe("aligned panes", () => {
     // Working tree has no line opposite the removed "b" → null at that row.
     expect(alignedHeadLineNumbers(removed)).toEqual([1, 2, 3, 4]);
     expect(alignedWorktreeLineNumbers(removed)).toEqual([1, null, 2, 3]);
+  });
+});
+
+describe("hunkLines", () => {
+  it("returns nothing when the sides are identical", () => {
+    expect(hunkLines(diffLines("a\nb\nc", "a\nb\nc"))).toEqual([]);
+  });
+
+  it("shows one hunk around a change, dropping distant unchanged lines", () => {
+    const head = "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10";
+    const worktree = "l1\nl2\nl3\nl4\nL5\nl6\nl7\nl8\nl9\nl10";
+    const out = hunkLines(diffLines(head, worktree), 1);
+
+    // A single hunk: header + [l4, l5(removed), L5(added), l6].
+    const headers = out.filter((l) => l.kind === "header");
+    expect(headers).toHaveLength(1);
+    expect(headers[0].text).toBe("@@ -4,3 +4,3 @@");
+
+    expect(out.map((l) => `${l.kind}:${l.text}`)).toEqual([
+      "header:@@ -4,3 +4,3 @@",
+      "context:l4",
+      "removed:l5",
+      "added:L5",
+      "context:l6",
+    ]);
+    // l1–l3 and l7–l10 are far from the change and dropped.
+    expect(out.some((l) => l.text === "l1")).toBe(false);
+    expect(out.some((l) => l.text === "l10")).toBe(false);
+  });
+
+  it("emits a separate hunk per distant change", () => {
+    const out = hunkLines(diffLines("a\nb\nc\nd\ne\nf\ng", "a\nB\nc\nd\ne\nF\ng"), 1);
+    expect(out.filter((l) => l.kind === "header")).toHaveLength(2);
+  });
+
+  it("carries real old/new line numbers and null on the absent side", () => {
+    const out = hunkLines(diffLines("l1\nl2\nl3\nl4\nl5", "l1\nl2\nl3\nl4\nL5"), 1);
+    const removed = out.find((l) => l.kind === "removed")!;
+    const added = out.find((l) => l.kind === "added")!;
+    expect(removed).toMatchObject({ text: "l5", oldNo: 5, newNo: null });
+    expect(added).toMatchObject({ text: "L5", oldNo: null, newNo: 5 });
+    // Headers carry no source row or line numbers.
+    expect(out[0]).toMatchObject({ kind: "header", rowIndex: null, oldNo: null, newNo: null });
   });
 });

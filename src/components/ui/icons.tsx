@@ -313,6 +313,30 @@ export function InlineViewIcon({ size = 14, title }: IconProps) {
   );
 }
 
+/** Two line groups separated by a gap — the "hunk" (changed-regions-only) view. */
+export function HunkViewIcon({ size = 14, title }: IconProps) {
+  return (
+    <svg
+      data-icon="hunk-view"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      style={{ flexShrink: 0 }}
+    >
+      {title && <title>{title}</title>}
+      <path d="M4 5h16M4 9h16" />
+      <path d="M4 15h16M4 19h16" />
+    </svg>
+  );
+}
+
 /** A crosshair / target — jump to and select the checked-out (HEAD) commit. */
 export function TargetIcon({ size = 14, title }: IconProps) {
   return (

@@ -144,6 +144,7 @@ describe("StageFileEditor", () => {
     expect(container.querySelector('[data-testid="inline-pane"]')).toBeNull();
     expect(screen.getByRole("button", { name: "Side-by-side view" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Inline view" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hunk view" })).toBeInTheDocument();
   });
 
   it("switches to a single unified pane in inline view", () => {
@@ -198,6 +199,52 @@ describe("StageFileEditor", () => {
 
     const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
     expect(pane(container, "inline-pane")).toBeInTheDocument();
+  });
+
+  it("switches to a hunk view with an @@ header and change decorations", async () => {
+    const { container } = render(<StageFileEditor path="f.txt" contents={modified} onStage={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Hunk view" }));
+
+    const hunk = pane(container, "hunk-pane");
+    expect(container.querySelector('[data-testid="head-pane"]')).toBeNull();
+    await waitFor(() => {
+      expect(hunk.querySelector(".cm-diff-hunk-header")).not.toBeNull();
+      expect(hunk.querySelector(".cm-diff-add-line")).not.toBeNull();
+      expect(hunk.querySelector(".cm-diff-del-line")).not.toBeNull();
+    });
+    expect(hunk.textContent).toContain("@@");
+  });
+
+  it("stages line-by-line from the hunk view", async () => {
+    const onStage = vi.fn();
+    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={onStage} />);
+    fireEvent.click(screen.getByRole("button", { name: "Hunk view" }));
+
+    const toggle = await waitFor(() => {
+      const button = container.querySelector<HTMLButtonElement>('[data-testid="hunk-pane"] .cm-stage-toggle');
+      expect(button).not.toBeNull();
+      return button!;
+    });
+    expect(toggle.textContent).toBe("−");
+    fireEvent.click(toggle); // unstage the only change
+    await waitFor(() =>
+      expect(
+        container.querySelector<HTMLButtonElement>('[data-testid="hunk-pane"] .cm-stage-toggle')?.textContent,
+      ).toBe("+"),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Stage" }));
+    expect(onStage.mock.calls[0]).toEqual(["f.txt", "a\nc\n"]);
+  });
+
+  it("remembers the hunk view across remounts", () => {
+    const first = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Hunk view" }));
+    first.unmount();
+
+    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+    expect(pane(container, "hunk-pane")).toBeInTheDocument();
   });
 
   it("renders the change overview ruler", () => {

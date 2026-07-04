@@ -21,6 +21,7 @@ import {
   changedRowIndices,
   composeStagedText,
   diffLines,
+  hunkLines,
   inlineText as buildInlineText,
 } from "../../lib/lineDiff";
 import { stageGutter, setStagedLines } from "./stageGutter";
@@ -28,14 +29,16 @@ import { ChangeOverview } from "./ChangeOverview";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { SegmentedControl } from "../ui/SegmentedControl";
-import { InlineViewIcon, SplitViewIcon } from "../ui/icons";
+import { HunkViewIcon, InlineViewIcon, SplitViewIcon } from "../ui/icons";
 
-type ViewMode = "split" | "inline";
+type ViewMode = "split" | "inline" | "hunk";
+const VIEW_MODES: ViewMode[] = ["split", "inline", "hunk"];
 const VIEW_MODE_KEY = "stageFileEditor.viewMode";
 
 function loadViewMode(): ViewMode {
   try {
-    return localStorage.getItem(VIEW_MODE_KEY) === "inline" ? "inline" : "split";
+    const stored = localStorage.getItem(VIEW_MODE_KEY);
+    return VIEW_MODES.includes(stored as ViewMode) ? (stored as ViewMode) : "split";
   } catch {
     return "split";
   }
@@ -72,6 +75,11 @@ const paneTheme = EditorView.theme({
   ".cm-activeLineGutter": { backgroundColor: "var(--color-bg-elevated)" },
   ".cm-diff-add-line": { backgroundColor: "var(--color-diff-add-bg)" },
   ".cm-diff-del-line": { backgroundColor: "var(--color-diff-del-bg)" },
+  // Hunk-view range header (`@@ … @@`): a muted band separating each hunk.
+  ".cm-diff-hunk-header": {
+    backgroundColor: "var(--color-bg-elevated)",
+    color: "var(--color-text-muted)",
+  },
   // The absent side of an aligned change: a neutral diagonal hatch (à la
   // GitKraken), so only the side that holds the changed text reads green/red.
   ".cm-diff-placeholder-line": {
@@ -411,6 +419,44 @@ export function StageFileEditor({
     [rows],
   );
 
+  // Hunk view: only the changed regions, each under an `@@ … @@` header, distant
+  // context dropped. A header line is not a source row, so toggles map through
+  // hunkLineToRow (hunk-doc line → source row index) rather than line ⇔ row.
+  const hunkModel = useMemo(() => hunkLines(rows, 3), [rows]);
+  const hunkTextValue = useMemo(() => hunkModel.map((l) => l.text).join("\n"), [hunkModel]);
+  const hunkOldNumbers = useMemo(() => hunkModel.map((l) => l.oldNo), [hunkModel]);
+  const hunkNewNumbers = useMemo(() => hunkModel.map((l) => l.newNo), [hunkModel]);
+  const hunkChangedLineNos = useMemo(
+    () =>
+      new Set(hunkModel.flatMap((l, i) => (l.kind === "added" || l.kind === "removed" ? [i + 1] : []))),
+    [hunkModel],
+  );
+  const hunkLineToRow = useMemo(
+    () =>
+      new Map(
+        hunkModel.flatMap((l, i) =>
+          l.rowIndex != null && (l.kind === "added" || l.kind === "removed")
+            ? [[i + 1, l.rowIndex] as const]
+            : [],
+        ),
+      ),
+    [hunkModel],
+  );
+  const hunkDecorationEntries = useMemo(
+    () =>
+      hunkModel.flatMap((l, i) => {
+        if (l.kind === "added") return [{ lineNo: i + 1, className: "cm-diff-add-line" }];
+        if (l.kind === "removed") return [{ lineNo: i + 1, className: "cm-diff-del-line" }];
+        if (l.kind === "header") return [{ lineNo: i + 1, className: "cm-diff-hunk-header" }];
+        return [];
+      }),
+    [hunkModel],
+  );
+  const hunkDecorations = useMemo(
+    () => buildLineDecorations(hunkTextValue, hunkDecorationEntries),
+    [hunkTextValue, hunkDecorationEntries],
+  );
+
   // Row indices whose change is staged. Seeded to "everything staged", so the
   // panes open with every change marked "−" (Stage commits the whole file).
   const [stagedRows, setStagedRows] = useState<Set<number>>(() => new Set(changedRowIndices(rows)));
@@ -418,6 +464,7 @@ export function StageFileEditor({
   const headViewRef = useRef<EditorView | null>(null);
   const worktreeViewRef = useRef<EditorView | null>(null);
   const inlineViewRef = useRef<EditorView | null>(null);
+  const hunkViewRef = useRef<EditorView | null>(null);
 
   const applyStaged = useCallback((next: Set<number>) => {
     stagedRowsRef.current = next;
@@ -471,13 +518,21 @@ export function StageFileEditor({
   const registerInlineView = useCallback((v: EditorView | null) => {
     inlineViewRef.current = v;
   }, []);
+  const registerHunkView = useCallback((v: EditorView | null) => {
+    hunkViewRef.current = v;
+  }, []);
   const onScrollHead = useCallback(() => syncScroll("head"), [syncScroll]);
   const onScrollWorktree = useCallback(() => syncScroll("worktree"), [syncScroll]);
 
   // Scroll the live pane(s) to a fraction of their scrollable height (overview
   // click). Only the current view mode's editors are mounted.
   const seek = useCallback((fraction: number) => {
-    for (const view of [headViewRef.current, worktreeViewRef.current, inlineViewRef.current]) {
+    for (const view of [
+      headViewRef.current,
+      worktreeViewRef.current,
+      inlineViewRef.current,
+      hunkViewRef.current,
+    ]) {
       if (!view) continue;
       const max = view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight;
       view.scrollDOM.scrollTop = fraction * max;
@@ -502,6 +557,15 @@ export function StageFileEditor({
   // Inline view: line i+1 maps straight back to row i.
   const onToggleInline = useCallback((lineNo: number) => toggleRow(lineNo - 1), [toggleRow]);
 
+  // Hunk view: a doc line maps to a source row only for changed (non-header) lines.
+  const onToggleHunk = useCallback(
+    (lineNo: number) => {
+      const row = hunkLineToRow.get(lineNo);
+      if (row !== undefined) toggleRow(row);
+    },
+    [hunkLineToRow, toggleRow],
+  );
+
   const headStagedLineNos = useMemo(
     () => new Set(headChanged.filter((l) => stagedRows.has(l.rowIndex)).map((l) => l.lineNo)),
     [headChanged, stagedRows],
@@ -513,6 +577,16 @@ export function StageFileEditor({
   const inlineStagedLineNos = useMemo(
     () => new Set([...stagedRows].map((rowIndex) => rowIndex + 1)),
     [stagedRows],
+  );
+  const hunkStagedLineNos = useMemo(
+    () =>
+      new Set(
+        [...hunkChangedLineNos].filter((lineNo) => {
+          const row = hunkLineToRow.get(lineNo);
+          return row !== undefined && stagedRows.has(row);
+        }),
+      ),
+    [hunkChangedLineNos, hunkLineToRow, stagedRows],
   );
 
   // The staged result is composed directly from the line selection (no separate
@@ -556,6 +630,7 @@ export function StageFileEditor({
                 options={[
                   { value: "split", label: <SplitViewIcon />, ariaLabel: "Side-by-side view" },
                   { value: "inline", label: <InlineViewIcon />, ariaLabel: "Inline view" },
+                  { value: "hunk", label: <HunkViewIcon />, ariaLabel: "Hunk view" },
                 ]}
               />
               {!readOnly && (
@@ -654,7 +729,7 @@ export function StageFileEditor({
                 showStageGutter={!readOnly}
               />
             </div>
-          ) : (
+          ) : viewMode === "inline" ? (
             /* Unified inline diff: one editor with old/new number columns */
             <div style={{ flex: 1, minHeight: 0 }}>
               <ReadOnlyStagePane
@@ -668,6 +743,23 @@ export function StageFileEditor({
                 oldLineNumberMap={headLineNumbers}
                 language={language}
                 onView={registerInlineView}
+                showStageGutter={!readOnly}
+              />
+            </div>
+          ) : (
+            /* Hunk diff: changed regions only, each under an `@@ … @@` header */
+            <div style={{ flex: 1, minHeight: 0 }}>
+              <ReadOnlyStagePane
+                testId="hunk-pane"
+                content={hunkTextValue}
+                changedLines={hunkChangedLineNos}
+                stagedLines={hunkStagedLineNos}
+                onToggle={onToggleHunk}
+                decorations={hunkDecorations}
+                lineNumberMap={hunkNewNumbers}
+                oldLineNumberMap={hunkOldNumbers}
+                language={language}
+                onView={registerHunkView}
                 showStageGutter={!readOnly}
               />
             </div>
