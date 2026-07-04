@@ -73,7 +73,7 @@ between sections, and add new ideas under the right heading. Items marked
       left-pointing triangle, so the current commit reads at a glance even when
       other branches are several commits ahead.
 - [x] Improve colour scheme. Colours too bright and "basic"? Allow default branch colours to be specified in colour schemes?
-- [ ] Open PR as a result of dropping one branch onto another. Include ability to enter title, description, "assign to (default to @me)", tags and then "Open PR" and "Continue on GitHub" options.
+- [x] Open PR as a result of dropping one branch onto another. Include ability to enter title, description, "assign to (default to @me)", tags and then "Open PR" and "Continue on GitHub" options.
 - [x] When clicking on the details of a commit (i.e. already committed) clicking on a file shows the changes in a side by side diff view that opens in the main panel of the app. It is possible to change the view from side by side to "inline"
       — clicking a file in the commit detail panel opens its diff in the main panel
       (replacing the graph, like staging does), reusing `StageFileEditor` in a new
@@ -224,7 +224,7 @@ between sections, and add new ideas under the right heading. Items marked
       (`unstagedPaths` + `nextSelectionAfterStaging`, both tested), wired into the
       store's `applyStagedContent`/`stageFile` (gated on the file being the open
       one, so staging a different file's row doesn't move the selection).
-- [ ] Execute git hooks (pre-commit, pre-push) and show output in a built-in pane
+- [ ] Execute git hooks (pre-commit, pre-push) and show output in a built-in pane that can be hidden and reshown. The contents of the pane should be a "terminal view" with automatic scrolling to keep up with the progress of git hooks. When a repository has git hooks, they should be executed automatically. Add a new option to settings to allow users to choose _per-repository_ which git hooks should run/not run - all should be enabled by default for all respositories making hooks opt-out rather than opt-in. When hooks are running, make it very clear in the git graph view that hooks are running and disable buttons such as commit buttons for the current branch.
 - [x] When a branch is checked out and fully committed, checking out another branch
       feels like it's not a "clean" checkout and I end up with multiple changes
       in an unstaged state.
@@ -456,7 +456,8 @@ between sections, and add new ideas under the right heading. Items marked
       package `gitclient` → `git-wasp`, lib `gitclient_lib` → `git_wasp_lib`
       (`main.rs` updated, Cargo.lock regenerated, binary is now `git_wasp`), npm
       package `gitclient` → `git-wasp`. Bundle identifier `com.gitclient.dev` →
-      `com.gitwasp.app` (reverse-DNS of the product's own domain, gitwasp.com).
+      `com.gitwasp.desktop` (reverse-DNS of the product's own domain, gitwasp.com;
+      avoids the `.app` suffix that clashes with the macOS bundle extension).
       Keychain service string, GitHub user-agent, the `.git/` operation-recovery
       sidecar filename, and the app's on-disk dirs (config `~/.config/git-wasp`,
       themes `~/.config/git-wasp/themes`, avatar cache `<cache>/git-wasp`) all moved
@@ -736,7 +737,9 @@ between sections, and add new ideas under the right heading. Items marked
       viewport is null, hidden once loaded). Note: during boot the SplashScreen
       already warms the first slice, so the skeleton is mainly for repo switches
       and refetches, not first launch.
-- [ ] Add icons to the "history" and "PRs" tabs to make them more obvious
+- [ ] Add icons to the "history" and "PRs" tabs to make them more obvious. Add colour higlight underline to tabs when selected, on hover (different colour), and when inactive and not selected (muted colour)
+- [ ] Add clear highlighting on hover to sidebar items - currently only the mouse changes to a pointer - some background highlighting would make the hover more obvious
+- [ ] Add clear hover states to all buttons. Primary buttons in particular do not seem to have a clear hover state.
 
 ## Other issues
 
