@@ -299,8 +299,6 @@ export function CommitGraph({
     (node: GraphNode, shiftKey: boolean) => {
       // Swallow the click that ends a drag so it doesn't also select.
       if (drag.consumeClick()) return;
-      // Stash nodes aren't real history; right-click drives their actions.
-      if (node.isStash) return;
       if (node.isWorkingTree) {
         // Highlight the uncommitted-changes row (and clear any commit selection)
         // so it reads as the current selection, then open the changes view.
@@ -308,7 +306,11 @@ export function CommitGraph({
         onViewChanges?.();
         return;
       }
-      selectCommit(node.oid, shiftKey);
+      // A stash node is a real commit (its `oid` is the stash commit); select it
+      // like a commit so the detail panel shows its changes vs its base — i.e.
+      // the stash commit diffed against its first parent (right-click still drives
+      // the pop/rename/delete actions). Range-select doesn't apply to a stash.
+      selectCommit(node.oid, node.isStash ? false : shiftKey);
       onCommitSelect?.();
     },
     [drag, selectCommit, selectWorkingTree, onViewChanges, onCommitSelect],

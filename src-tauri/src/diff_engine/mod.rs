@@ -234,6 +234,26 @@ mod tests {
     }
 
     #[test]
+    fn stash_commit_diffs_against_its_base_ancestor() {
+        // A stash's `oid` is a real commit whose first parent is the commit it was
+        // created on. Selecting the stash in the graph reuses the commit-detail
+        // path, so it must show the stashed changes (stash vs base), exactly like
+        // any other commit diffed against its first parent.
+        let (dir, mut repo, _base) = init_repo_with_file("a.txt", "one\n");
+        // Dirty the working tree, then stash it.
+        fs::write(dir.path().join("a.txt"), "one\ntwo\n").unwrap();
+        let stash_oid = repo
+            .stash_save2(&sig(), Some("WIP experiment"), None)
+            .unwrap();
+
+        let detail = get_commit_detail(&repo, &stash_oid.to_string()).unwrap();
+
+        assert_eq!(detail.changed_files.len(), 1);
+        assert_eq!(detail.changed_files[0].path, "a.txt");
+        assert!(matches!(detail.changed_files[0].status, FileStatus::Modified));
+    }
+
+    #[test]
     fn root_commit_diff_against_empty_tree() {
         let (_dir, repo, oid) = init_repo_with_file("file.txt", "content\n");
         let detail = get_commit_detail(&repo, &oid.to_string()).unwrap();

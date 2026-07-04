@@ -643,8 +643,23 @@ between sections, and add new ideas under the right heading. Items marked
       `working_tree_node`); the frontend renders `node.summary` verbatim
       (`columns.tsx`), so no frontend change was needed. Backend tests for the
       singular and plural (incl. 0) cases.
-- [ ] When a "stash" is selected in the git graph, show that it is selected and show the same
+- [x] When a "stash" is selected in the git graph, show that it is selected and show the same
       view as if we'd selected a pre-existing commit i.e. show the diff between the stash its direct ancestor
+      — left-clicking a stash node now selects it like a commit instead of being a
+      no-op. A stash's `oid` is a real commit whose first parent is its base, and
+      the commit-detail path (`get_commit_diff` / `get_commit_file_contents`)
+      already diffs a commit against `parent(0)` — so selecting a stash shows its
+      changes vs its base (matching `git stash show`) through the exact same
+      `CommitDetail` panel + main-panel file-diff surface as any commit, with no
+      backend change. `handleRowClick` drops the stash early-return and calls
+      `selectCommit(node.oid, false)` (single-select; range-select doesn't apply to
+      a stash) + `onCommitSelect`; the existing selection highlight (DOM cells +
+      canvas band, keyed on `selection.range.has(oid)`) then marks the stash row as
+      selected. Right-click still drives Pop / Rename / Delete (context menu doesn't
+      select a stash). Tests: backend `stash_commit_diffs_against_its_base_ancestor`
+      (a real `stash_save2` commit → detail shows the stashed file as Modified);
+      frontend "selects a stash on left-click" (selects by the stash commit oid,
+      fires onCommitSelect).
 - [x] Sometimes there are changes in the repository that are not reflected in the git graph and
       I have to close and re-open the app to see the changes. Can we have a regular "background poll"
       whilst a repository is open/selected and add a "refresh" button to the top panel to "check for changes"

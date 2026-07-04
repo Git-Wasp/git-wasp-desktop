@@ -423,6 +423,15 @@ describe("CommitGraph stash", () => {
     expect(selectCommit).not.toHaveBeenCalled();
   });
 
+  it("selects a stash on left-click so its diff (vs its base) shows like a commit", () => {
+    const onCommitSelect = vi.fn();
+    render(<CommitGraph onCommitSelect={onCommitSelect} />);
+    fireEvent.click(screen.getByText("WIP on main: experiment"));
+    // Selected by its (real) stash commit oid, single-select (no range for a stash).
+    expect(selectCommit).toHaveBeenCalledWith("c".repeat(40), false);
+    expect(onCommitSelect).toHaveBeenCalled();
+  });
+
   it("pops a stash from the menu", async () => {
     render(<CommitGraph />);
     fireEvent.contextMenu(screen.getByText("WIP on main: experiment"));
