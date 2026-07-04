@@ -363,6 +363,21 @@ between sections, and add new ideas under the right heading. Items marked
 - [x] If we do keep the GitHub integration, make sure we're using refresh tokens.
       Tokens are only valid for 8 hours, so we need to use the refresh for a persistent
       connection.
+- [ ] **Refresh-token support isn't actually implemented** — despite the item above,
+      the device-flow code only captures the `access_token` (`AccessTokenResponse`
+      has `access_token` + `error`; the `expires_in` fields are the *device-code*
+      lifetime, not token expiry) and stores that single string in the keychain. This
+      is fine *only* while the OAuth App has "Expire user authorization tokens" turned
+      **OFF** (non-expiring token). If token expiry is ever enabled (8h access token +
+      refresh token) the app would break at 8h and force re-auth. To support it:
+      capture `refresh_token` + `expires_in`/`refresh_token_expires_in` from the
+      access-token response, persist both (keychain), and refresh via
+      `grant_type=refresh_token` on 401 / before expiry. Decide first whether to stay
+      an OAuth App (coarse `repo` scope, current) or move to a **GitHub App**
+      (fine-grained per-repo permissions, always rotating tokens — also the proper fix
+      for the earlier "GitHub App lacks PR permissions" item). Registration/ownership
+      is now tracked in the CLAUDE.md pre-public checklist (re-register as "Git Wasp"
+      under the `gitwasp` org, Homepage gitwasp.com).
 
 ## Config & settings
 
@@ -721,6 +736,7 @@ between sections, and add new ideas under the right heading. Items marked
       viewport is null, hidden once loaded). Note: during boot the SplashScreen
       already warms the first slice, so the skeleton is mainly for repo switches
       and refetches, not first launch.
+- [ ] Add icons to the "history" and "PRs" tabs to make them more obvious
 
 ## Other issues
 
