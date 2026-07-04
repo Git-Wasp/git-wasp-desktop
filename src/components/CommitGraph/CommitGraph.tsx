@@ -646,7 +646,7 @@ export function CommitGraph({
             fontSize: "var(--font-size-xs)",
             fontFamily: "var(--font-family-mono)",
             background: "var(--color-accent-primary)",
-            color: "#fff",
+            color: "var(--color-text-on-accent)",
             borderRadius: "var(--radius-sm)",
             pointerEvents: "none",
             zIndex: 150,

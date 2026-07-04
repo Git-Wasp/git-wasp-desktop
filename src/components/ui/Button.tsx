@@ -23,7 +23,9 @@ function variantStyles(variant: ButtonVariant): CSSProperties {
     case "primary":
       return {
         background: "var(--color-accent-primary)",
-        color: "#fff",
+        // Not hardcoded white: themes with a light accent (e.g. Cobalt2's yellow)
+        // set --color-text-on-accent to a dark colour so the label stays legible.
+        color: "var(--color-text-on-accent)",
         border: "1px solid var(--color-accent-secondary)",
         boxShadow: "var(--shadow-sm)",
       };

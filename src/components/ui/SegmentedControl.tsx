@@ -77,7 +77,7 @@ export function SegmentedControl<T extends string>({
               border: "none",
               borderLeft: i > 0 ? "1px solid var(--color-border-subtle)" : "none",
               background: base,
-              color: active ? "#fff" : "var(--color-text-secondary)",
+              color: active ? "var(--color-text-on-accent)" : "var(--color-text-secondary)",
               cursor: active ? "default" : "pointer",
               transition: "background var(--duration-fast) var(--ease-default)",
             }}
