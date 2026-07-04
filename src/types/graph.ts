@@ -39,4 +39,8 @@ export interface GraphViewport {
   nodes: GraphNode[];
   totalCount: number;
   offset: number;
+  // Absolute row of the HEAD commit (working-tree offset included), or null when
+  // HEAD is unborn. Used to draw the dotted working-tree→HEAD connector down to
+  // HEAD's dot even when HEAD isn't in the loaded slice.
+  headRow?: number | null;
 }

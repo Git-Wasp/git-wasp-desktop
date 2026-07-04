@@ -31,6 +31,12 @@ pub struct GraphCache {
     /// All commits, newest-first; `row` equals the index. No working-tree node.
     nodes: Vec<GraphNode>,
     change_count: u32,
+    /// Absolute graph row of the HEAD commit (tip of the checked-out branch),
+    /// including the working-tree node's offset when the tree is dirty. Sent to
+    /// the frontend so it can draw the dotted working-tree→HEAD connector down to
+    /// HEAD's dot wherever it sits (other branches may be ahead of HEAD, so HEAD
+    /// is often not the topmost row).
+    head_row: Option<usize>,
 }
 
 #[derive(PartialEq)]
@@ -147,22 +153,31 @@ fn log_full_build(
 }
 
 /// Carve a viewport out of already-laid-out nodes, layering in the synthetic
-/// working-tree node when the tree is dirty and row 0 is in view. Pure
-/// indexing — no git work — since `change_count` is supplied by the caller
-/// from the cache rather than rescanned here.
+/// working-tree node at row 0 (the top of the graph) when the tree is dirty.
+/// Pure indexing — no git work — since `change_count` and `head_pos` are
+/// supplied by the caller from the cache rather than rescanned here.
+///
+/// The working-tree node always sits at the top, but its *connector* is drawn
+/// (dotted) down to HEAD's dot — the tip of the checked-out branch — which may
+/// be several rows below, since other branches can be ahead of HEAD. The
+/// connector is a frontend concern; here we only expose HEAD's absolute row
+/// (`head_row`) so the renderer can reach it even when HEAD isn't in the slice.
 fn slice_viewport(
     full: &[GraphNode],
     change_count: u32,
+    head_pos: Option<usize>,
     offset: usize,
     limit: usize,
 ) -> GraphViewport {
-    // A dirty working tree adds a synthetic node at row 0 (above HEAD). It is
-    // always counted in total_count so the scroll height is offset-independent,
+    // A dirty working tree adds a synthetic node at row 0 (above everything). It
+    // is always counted in total_count so the scroll height is offset-independent,
     // but only emitted when row 0 is in view (offset == 0). It needs a commit to
     // anchor to, hence the non-empty check.
     let change_count = if full.is_empty() { 0 } else { change_count };
     let wip_offset = if change_count > 0 { 1 } else { 0 };
     let total_count = full.len() + wip_offset;
+    // HEAD's absolute graph row, shifted down by the working-tree node when present.
+    let head_row = head_pos.map(|p| p + wip_offset);
 
     // Commit rows are shifted down by the working-tree node when present.
     let commit_start = offset.saturating_sub(wip_offset);
@@ -175,7 +190,7 @@ fn slice_viewport(
 
     let mut nodes: Vec<GraphNode> = Vec::new();
     if wip_offset == 1 && offset == 0 {
-        if let Some(head_node) = commit_nodes.first() {
+        if let Some(head_node) = full.get(head_pos.unwrap_or(0)) {
             nodes.push(working_tree_node(head_node, change_count));
         }
     }
@@ -185,6 +200,7 @@ fn slice_viewport(
         nodes,
         total_count,
         offset,
+        head_row,
     }
 }
 
@@ -199,7 +215,8 @@ pub fn compute_layout(
 ) -> anyhow::Result<GraphViewport> {
     let full = build_full_layout(repo)?;
     let change_count = changed_file_count(repo);
-    Ok(slice_viewport(&full, change_count, offset, limit))
+    let head_pos = full.iter().position(|n| n.is_head);
+    Ok(slice_viewport(&full, change_count, head_pos, offset, limit))
 }
 
 /// Layout that reuses a cached full-history layout while HEAD and refs are
@@ -219,10 +236,12 @@ pub fn compute_layout_cached(
     if stale {
         let nodes = build_full_layout(repo)?;
         let change_count = changed_file_count(repo);
+        let head_row = nodes.iter().position(|n| n.is_head);
         *cache = Some(GraphCache {
             key,
             nodes,
             change_count,
+            head_row,
         });
     }
     // `stale` guarantees the cache is populated here.
@@ -230,6 +249,7 @@ pub fn compute_layout_cached(
     Ok(slice_viewport(
         &cached.nodes,
         cached.change_count,
+        cached.head_row,
         offset,
         limit,
     ))
@@ -681,6 +701,11 @@ fn working_tree_summary(change_count: u32) -> String {
     }
 }
 
+/// The synthetic node representing uncommitted changes, sitting at row 0 (the
+/// top of the graph) on HEAD's lane. It carries **no edges**: its connector to
+/// HEAD is drawn by the frontend as a dotted line straight down HEAD's lane to
+/// the HEAD dot (which may be several rows below when other branches are ahead),
+/// rather than a per-row edge — see the graph renderer's working-tree connector.
 fn working_tree_node(head: &GraphNode, change_count: u32) -> GraphNode {
     GraphNode {
         oid: "WORKING_TREE".to_string(),
@@ -695,12 +720,7 @@ fn working_tree_node(head: &GraphNode, change_count: u32) -> GraphNode {
         color_index: head.color_index,
         parents: vec![head.oid.clone()],
         children: Vec::new(),
-        edges: vec![GraphEdge {
-            src_lane: head.lane,
-            dst_lane: head.lane,
-            color_index: head.color_index,
-            kind: EdgeKind::Straight,
-        }],
+        edges: Vec::new(),
         branch_labels: Vec::new(),
         is_head: false,
         is_working_tree: true,
@@ -885,6 +905,53 @@ mod tests {
             Some(0),
             "newest commit (ahead of HEAD) should be row 0"
         );
+    }
+
+    #[test]
+    fn working_tree_node_sits_at_top_but_anchors_to_head() {
+        // With commits ahead of the checked-out branch, the uncommitted-changes
+        // node stays at the top of the graph (row 0), but it belongs to HEAD's
+        // tip — so it sits on HEAD's lane, names HEAD as its parent, and the
+        // viewport reports HEAD's row so the frontend can draw the dotted
+        // connector down to it. (The old bug had it hanging off the topmost
+        // commit across all branches.)
+        let (dir, repo) = init_repo();
+        let c1 = repo.find_commit(make_commit(&repo, "first", &[])).unwrap();
+        let c2 = repo
+            .find_commit(make_commit(&repo, "second", &[&c1]))
+            .unwrap();
+        make_commit(&repo, "third", &[&c2]);
+        // Check out `old` at `first` (two commits behind the tip).
+        repo.branch("old", &c1, false).unwrap();
+        repo.set_head("refs/heads/old").unwrap();
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .unwrap();
+        std::fs::write(dir.path().join("new.txt"), "hi").unwrap(); // uncommitted
+
+        let viewport = compute_layout(&repo, 0, 10).unwrap();
+
+        // The working-tree node is the topmost row.
+        let wt = &viewport.nodes[0];
+        assert!(wt.is_working_tree);
+        assert_eq!(wt.row, 0);
+        assert_eq!(wt.summary, "1 uncommitted change");
+        // It carries no edges — the connector to HEAD is a frontend concern.
+        assert!(wt.edges.is_empty());
+
+        // It anchors to HEAD ("first"), not to the topmost commit ("third"):
+        // HEAD's lane and oid, and the viewport reports HEAD's absolute row.
+        let head = viewport.nodes.iter().find(|n| n.is_head).unwrap();
+        assert_eq!(head.summary, "first");
+        assert_eq!(wt.lane, head.lane);
+        assert_eq!(wt.parents, vec![head.oid.clone()]);
+        assert_eq!(viewport.head_row, Some(head.row));
+        assert_eq!(
+            find_commit_row(&repo, &c1.id().to_string()).unwrap(),
+            Some(head.row)
+        );
+        // Commits ahead of HEAD still sit above it, unchanged.
+        assert!(viewport.nodes[1].summary == "third" || viewport.nodes[1].summary == "second");
+        let _ = c2;
     }
 
     #[test]

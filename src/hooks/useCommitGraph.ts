@@ -184,6 +184,37 @@ export function useCommitGraph(
       ctx.setLineDash([]);
     });
 
+    // Working-tree connector — a dotted line from the uncommitted-changes node
+    // (always at the top, row 0) straight down its lane to the HEAD dot, which
+    // may be several rows below when other branches are ahead of HEAD. Dotted
+    // (not solid) since it's provisional, uncommitted work; drawn in the WIP
+    // marker's warning colour so the association reads clearly. Falls back to
+    // HEAD's absolute row (clamped to the loaded slice) when HEAD isn't in view.
+    const wtIdx = viewport.nodes.findIndex((n) => n.isWorkingTree);
+    if (wtIdx >= 0) {
+      const wt = viewport.nodes[wtIdx];
+      const headIdx = viewport.nodes.findIndex((n) => n.isHead && !n.isWorkingTree);
+      const localHeadRow =
+        headIdx >= 0
+          ? headIdx
+          : viewport.headRow != null
+            ? Math.min(viewport.headRow - viewport.offset, viewport.nodes.length)
+            : null;
+      if (localHeadRow != null && localHeadRow > wtIdx) {
+        const x = laneX(wt.lane);
+        const yTop = wtIdx * rowHeight + rowHeight / 2;
+        const yBottom = localHeadRow * rowHeight + rowHeight / 2;
+        ctx.strokeStyle = resolveCssVar("--color-warning") || "#ff9f0a";
+        ctx.lineWidth = lineWidth;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(x, yTop);
+        ctx.lineTo(x, yBottom);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
     // Pass 3 — dots and the working-tree marker, on top of the edges.
     viewport.nodes.forEach((node, localRow) => {
       const y = localRow * rowHeight + rowHeight / 2;

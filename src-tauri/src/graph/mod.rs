@@ -76,4 +76,8 @@ pub struct GraphViewport {
     pub nodes: Vec<GraphNode>,
     pub total_count: usize,
     pub offset: usize,
+    /// Absolute graph row of the HEAD commit (working-tree offset included), or
+    /// `None` when HEAD is unborn. Lets the frontend draw the dotted working-tree
+    /// connector down to HEAD's dot even when HEAD isn't in the loaded slice.
+    pub head_row: Option<usize>,
 }

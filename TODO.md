@@ -239,6 +239,25 @@ between sections, and add new ideas under the right heading. Items marked
       moving the ref. Regression test
       `pull_ff_materialises_new_files_and_leaves_a_clean_tree` (verified failing
       before the reorder).
+- [x] Bug: When a branch is checked out, there are other branches "ahead" of that branch, our
+      "uncomitted changes" are shown as if they relate to the very latest commit (when considering all branches) rather than shown linked to the immediate ancestor (i.e. the tip of the branch we have checked out).
+      — the synthetic working-tree node was hanging off the topmost commit across
+      *all* branches instead of HEAD's tip. It now stays pinned at the top of the
+      graph (row 0) but belongs to HEAD: it sits on HEAD's lane, names HEAD as its
+      parent, and its connector is drawn as a **dotted** line straight down HEAD's
+      lane to the HEAD dot — which can be several rows below when other branches
+      are ahead. Backend: `working_tree_node` now anchors to the HEAD node (not the
+      first row) and carries **no edges** (the connector is a render concern);
+      `slice_viewport` exposes HEAD's absolute row on the new `GraphViewport.head_row`
+      field (cached alongside the layout) so the connector can reach HEAD even when
+      it isn't in the loaded slice. Frontend: the canvas renderer draws the dotted
+      warning-coloured connector from the WIP dot down to HEAD's dot (found via
+      `isHead`, or `headRow - offset` clamped to the slice as a fallback);
+      `graphStore.sliceFromCache` preserves `headRow` so cached scroll slices keep
+      it. `find_commit_row` is unchanged (WIP at row 0 still shifts every commit
+      down by one). Regression test `working_tree_node_sits_at_top_but_anchors_to_head`
+      (commits ahead of a checked-out older branch; WIP is row 0 on HEAD's lane,
+      parent = HEAD, `head_row` points at HEAD).
 
 ## PR refinements
 
@@ -639,6 +658,8 @@ between sections, and add new ideas under the right heading. Items marked
       App root (runs while a repo is open; skips when the window is hidden or a tick
       is still in flight; best-effort). Tests: `refreshAll` call-order + the existing
       watcher test re-pointed through it (9/9 store tests, toolbar 8/8, tsc clean).
+- [ ] Skeleton when loading e.g. in the git graph view for large repos, show a "skeleton" of the graph. It should
+      be "animated" to indicate a loading state.
 
 ## Other issues
 
@@ -651,8 +672,8 @@ between sections, and add new ideas under the right heading. Items marked
         of the post-mount App effect). The backend remains source of truth and
         re-applies on init. The "blank/stalled" window is covered by the splash
         screen below.
-  - [x] When checking out a branch and there are other branches ahead of that branch (either in the remote or locally), 
-        any commits ahead of the current HEAD are not visible in the graph. They should still be shown and be selectable.
+  - [x] When checking out a branch and there are other branches ahead of that branch (either in the remote or
+        locally), any commits ahead of the current HEAD are not visible in the graph. They should still be shown and be selectable.
         — the graph revwalk seeded only from HEAD, hiding anything not an ancestor
         of HEAD. New `seed_revwalk` pushes every local/remote branch tip + tag (and
         HEAD), shared by the layout walk and `find_commit_row` so reveal/scroll

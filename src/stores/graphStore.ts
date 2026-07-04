@@ -66,6 +66,9 @@ const sliceFromCache = (
   offset: number,
   limit: number,
   totalCount: number,
+  // Layout-wide (constant across slices while HEAD is unchanged); preserved so
+  // the working-tree→HEAD connector can reach HEAD even from a cached slice.
+  headRow: number | null | undefined,
 ): GraphViewport => {
   const end = Math.min(offset + limit, totalCount);
   const nodes: GraphNode[] = [];
@@ -73,7 +76,7 @@ const sliceFromCache = (
     const node = cache.get(row);
     if (node) nodes.push(node);
   }
-  return { nodes, totalCount, offset };
+  return { nodes, totalCount, offset, headRow };
 };
 
 const mergeIntoCache = (cache: Map<number, GraphNode>, viewport: GraphViewport): void => {
@@ -115,7 +118,7 @@ export const useGraphStore = create<GraphStore>((set, get) => {
     if (viewport && isRangeCached(nodesByRow, offset, limit, viewport.totalCount)) {
       ++fetchId; // supersede any fetch still in flight so it can't clobber this
       set({
-        viewport: sliceFromCache(nodesByRow, offset, limit, viewport.totalCount),
+        viewport: sliceFromCache(nodesByRow, offset, limit, viewport.totalCount, viewport.headRow),
         lastOffset: offset,
         lastLimit: limit,
       });
