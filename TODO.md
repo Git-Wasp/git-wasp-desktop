@@ -862,10 +862,35 @@ between sections, and add new ideas under the right heading. Items marked
       box-shadow would override the `:focus-visible` focus ring. **Subjective/tunable:**
       the effect intensity lives entirely in `--shadow-edge` + the three classes, so
       it's a one-line dial if it reads too strong/soft after seeing it live.
-- [ ] Add highlight on hover to the menu that opens for sidebar items. Make it consistent with the menu used in the git graph on right-click - ideally using a single menu component.
-- [ ] Review all other components' hover state. E.g. the files listed in the right hand panel when viewing an existing commit - hovering over a file should highlight what's being hovered over.
+- [x] Add highlight on hover to the menu that opens for sidebar items. Make it consistent with the menu used in the git graph on right-click - ideally using a single menu component.
+      — the sidebar `RowMenu` (⋮ overflow) and the graph's right-click `ContextMenu`
+      were two near-duplicate menus with divergent surfaces/hover. `RowMenu` now
+      **renders the shared `ContextMenu`** as its popover, so there's a single menu
+      component with identical surface, hover, and danger styling. `ContextMenu`
+      gained an `align="right"` option (anchors its right edge at x via
+      `translateX(-100%)`) so the sidebar menu still tucks under its ⋮ trigger
+      instead of spilling across the sidebar; it also now gives danger items a
+      red-tinted (`--color-diff-del-bg`) hover, not just red text. `RowMenu` keeps
+      its public API (`{label, onSelect, destructive}`), mapping `destructive`→
+      `danger`; its trigger stops `mousedown` propagation so clicking ⋮ while open
+      is a clean toggle (rather than fighting ContextMenu's outside-click close).
+      Removed RowMenu's own dropdown markup + outside-click effect. Tests: RowMenu
+      destructive→danger mapping; ContextMenu right-align.
+- [x] Review all other components' hover state. E.g. the files listed in the right hand panel when viewing an existing commit - hovering over a file should highlight what's being hovered over.
+      — audited the clickable lists that lacked a hover cue and added a consistent
+      one (`--color-bg-hover`, guarded so a selected row keeps its stronger fill,
+      with a fast background transition): the commit-detail changed-files list
+      (`FileList` — the named example), the staging Changes/Staged file rows
+      (`StagingPanel` `FileRow`), and the repo `TabBar` tabs (inactive tabs now
+      highlight on hover). Left `PRRow` without a row hover on purpose — the row
+      itself isn't clickable (its action is the `Open` button, which already has a
+      hover), so a row highlight would falsely imply clickability. The sidebar
+      branch/recent rows, `Dropdown` items (repo/branch pickers), graph rows, and
+      the shared Button/menus already had hover from earlier work.
+- [ ] Allow sidebar sections to be resized vertically. Dividers should be more clearly visible and I should be able to move dividers up and down to increase height. The selected state of the height of each panel should persist between app reloads on a single machine.
 - [ ] Extend the "stale branches" feature to also provide the option to prune branches that only exist locally and don't exist on the remote - not just those that did exist on the remote and don't now.
 - [ ] Add "Search" feature to the git graph. A search button should be included which allows the user to search through the commits for commit hashes or text that matches commit messages. Matching results should be highlighted in the graph, and a count of matches should be shown. "Up" and "Down" arrows should allow the user to navigate between matching commits in the graph - the "action bar" at the top should always remain visible.
+- [ ] Add preview for certain binary files when selecting files in staging or viewing previous commits. Primary use case is to view image files so we should support common files including png, gif, jp(e)g
 
 ## Other issues
 
@@ -906,3 +931,10 @@ between sections, and add new ideas under the right heading. Items marked
 ## Website
 
 - [ ] Domain gitwasp.com now owned. Create a "showcase" website on-brand. Should include details of features, how to download, and usage documentation. Links to the github repo (to be renamed) to allow people to log issues etc.
+
+## Pre-release
+
+- [ ] Architectural review of entire backend
+- [ ] Architectural review of entire frontend
+- [ ] Removal of unnecessary implementation detail tests (did we take TDD too far?)
+  

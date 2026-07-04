@@ -16,6 +16,12 @@ export function FileList({ files, selectedPath, onSelect }: FileListProps) {
           <li
             key={f.path}
             onClick={() => onSelect(f.path)}
+            onMouseEnter={(e) => {
+              if (!isSelected) e.currentTarget.style.background = "var(--color-bg-hover)";
+            }}
+            onMouseLeave={(e) => {
+              if (!isSelected) e.currentTarget.style.background = "transparent";
+            }}
             style={{
               display: "flex",
               alignItems: "center",
@@ -30,6 +36,7 @@ export function FileList({ files, selectedPath, onSelect }: FileListProps) {
               color: isSelected
                 ? "var(--color-text-primary)"
                 : "var(--color-text-secondary)",
+              transition: "background var(--duration-fast) var(--ease-default)",
             }}
           >
             <FileStatusIcon status={f.status} />

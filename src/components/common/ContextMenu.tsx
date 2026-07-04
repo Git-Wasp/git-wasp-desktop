@@ -9,9 +9,13 @@ interface ContextMenuProps {
   y: number;
   items: MenuItem[];
   onClose: () => void;
+  /** "left" (default) opens rightward from x; "right" anchors the menu's right
+   *  edge at x (opens leftward) — used when the trigger is near a right edge,
+   *  e.g. the sidebar row menus. */
+  align?: "left" | "right";
 }
 
-export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, items, onClose, align = "left" }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -39,6 +43,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
         position: "fixed",
         left: x,
         top: y,
+        transform: align === "right" ? "translateX(-100%)" : undefined,
         minWidth: 180,
         padding: "var(--space-1)",
         background: "var(--color-bg-panel)",
@@ -75,9 +80,12 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
               color: item.danger
                 ? "var(--color-danger)"
                 : "var(--color-text-primary)",
+              transition: "background var(--duration-fast) var(--ease-default)",
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = "var(--color-bg-elevated)";
+              e.currentTarget.style.background = item.danger
+                ? "var(--color-diff-del-bg)"
+                : "var(--color-bg-elevated)";
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = "transparent";

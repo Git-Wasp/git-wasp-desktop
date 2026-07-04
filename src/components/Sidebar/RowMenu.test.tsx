@@ -50,4 +50,17 @@ describe("RowMenu", () => {
 
     expect(container.firstChild).toBeNull();
   });
+
+  it("maps a destructive item to the shared menu's danger styling", () => {
+    render(
+      <RowMenu
+        label="Branch actions"
+        items={[{ label: "Delete branch", onSelect: vi.fn(), destructive: true }]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Branch actions" }));
+    const item = screen.getByRole("menuitem", { name: "Delete branch" });
+    expect(item.style.color).toBe("var(--color-danger)");
+  });
 });

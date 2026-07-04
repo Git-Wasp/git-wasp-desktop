@@ -23,6 +23,12 @@ function FileRow({
     <div
       data-file-row
       onClick={onSelect}
+      onMouseEnter={(e) => {
+        if (!isSelected) e.currentTarget.style.background = "var(--color-bg-hover)";
+      }}
+      onMouseLeave={(e) => {
+        if (!isSelected) e.currentTarget.style.background = "transparent";
+      }}
       title={entry.path}
       style={{
         display: "flex",
@@ -32,6 +38,7 @@ function FileRow({
         cursor: "pointer",
         background: isSelected ? "var(--color-bg-selected)" : "transparent",
         borderRadius: "var(--radius-sm)",
+        transition: "background var(--duration-fast) var(--ease-default)",
       }}
     >
       <span style={{ width: 14, display: "inline-flex", justifyContent: "center", flexShrink: 0 }}>

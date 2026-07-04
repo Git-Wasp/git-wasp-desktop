@@ -41,11 +41,18 @@ export function TabBar() {
             aria-selected={active}
             title={repo.path}
             onClick={() => activateRepo(repo.path)}
+            onMouseEnter={(e) => {
+              if (!active) e.currentTarget.style.background = "var(--color-bg-hover)";
+            }}
+            onMouseLeave={(e) => {
+              if (!active) e.currentTarget.style.background = "transparent";
+            }}
             style={{
               ...tabBaseStyle,
               background: active ? "var(--color-bg-elevated)" : "transparent",
               color: active ? "var(--color-text-primary)" : "var(--color-text-muted)",
               fontWeight: active ? "var(--font-weight-semibold)" : "var(--font-weight-normal)",
+              transition: "background var(--duration-fast) var(--ease-default)",
             }}
           >
             <span

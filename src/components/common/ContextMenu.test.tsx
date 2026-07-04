@@ -100,4 +100,20 @@ describe("ContextMenu", () => {
     expect(menu.style.left).toBe("42px");
     expect(menu.style.top).toBe("84px");
   });
+
+  it("right-aligns its right edge at x when align='right'", () => {
+    render(
+      <ContextMenu
+        x={200}
+        y={50}
+        align="right"
+        items={[{ label: "Copy hash", onSelect: vi.fn() }]}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const menu = screen.getByRole("menu");
+    expect(menu.style.left).toBe("200px");
+    expect(menu.style.transform).toBe("translateX(-100%)");
+  });
 });
