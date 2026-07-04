@@ -17,6 +17,7 @@ import { usePersistedWidth } from "../../lib/usePersistedWidth";
 import { runMerge } from "./dragDrop";
 import { useGraphDragDrop } from "./useGraphDragDrop";
 import { MergeConfirmDialog } from "./MergeConfirmDialog";
+import { GraphSkeleton } from "./GraphSkeleton";
 import { BranchCell, MessageCell } from "./columns";
 import {
   COLUMNS,
@@ -568,6 +569,13 @@ export function CommitGraph({
 
       {/* Scrollable rows */}
       <div ref={containerRef} style={{ flex: 1, minHeight: 0, overflowY: "auto" }} onScroll={handleScroll}>
+        {viewport === null ? (
+          <GraphSkeleton
+            branchWidth={branchWidth}
+            graphWidth={graphWidth}
+            rowCount={Math.ceil(window.innerHeight / ROW_HEIGHT)}
+          />
+        ) : (
         <div style={{ height: totalHeight, position: "relative" }}>
           {/* Canvas draws the graph column only */}
           <canvas
@@ -606,6 +614,7 @@ export function CommitGraph({
             />
           )}
         </div>
+        )}
       </div>
 
       {/* Drag ghost following the cursor */}

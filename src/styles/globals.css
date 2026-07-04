@@ -85,6 +85,48 @@
   }
 }
 
+/* Loading skeleton for the commit graph (shown while a repo's history loads).
+   A shimmer sweeps across placeholder shapes; each element opts in with
+   .graph-skeleton-shimmer. Colours come from theme tokens so it fits every
+   theme, and the sweep is disabled under reduced-motion. */
+.graph-skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-elevated) 25%,
+    var(--color-border-subtle) 50%,
+    var(--color-bg-elevated) 75%
+  );
+  background-size: 400% 100%;
+  animation: graph-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes graph-skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+/* Vertical lane line behind the placeholder dots. */
+.graph-skeleton-lane {
+  position: absolute;
+  width: var(--graph-line-width, 2px);
+  transform: translateX(-50%);
+  background: var(--color-border-subtle);
+  opacity: 0.6;
+}
+.graph-skeleton-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+}
+@media (prefers-reduced-motion: reduce) {
+  .graph-skeleton-shimmer {
+    animation: none;
+  }
+}
+
 /* Tactile press on shared buttons — a subtle nudge down on active. */
 .ui-button:active:not(:disabled) {
   transform: translateY(1px);

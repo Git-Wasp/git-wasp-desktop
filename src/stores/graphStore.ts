@@ -36,6 +36,11 @@ interface GraphStore {
   revealCommit: (oid: string) => Promise<void>;
   revealHead: () => Promise<void>;
   clearSelection: () => void;
+  // Clear all graph state (viewport, row cache, selection). Called when the
+  // active repo changes so the next fetch starts from scratch — otherwise the
+  // previous repo's cached rows would be served for the new one, and the graph
+  // renders its loading skeleton (viewport === null) until the fetch lands.
+  reset: () => void;
 }
 
 const emptySelection = (): Selection => ({
@@ -219,6 +224,21 @@ export const useGraphStore = create<GraphStore>((set, get) => {
 
   clearSelection: () => {
     set({ selection: emptySelection(), selectedOid: null });
+  },
+
+  reset: () => {
+    // Supersede any fetch still in flight (e.g. the previous repo's) so a late
+    // response can't populate the freshly-cleared graph.
+    ++fetchId;
+    set({
+      viewport: null,
+      selection: emptySelection(),
+      selectedOid: null,
+      lastOffset: null,
+      lastLimit: null,
+      scrollToRow: null,
+      nodesByRow: new Map(),
+    });
   },
   };
 });

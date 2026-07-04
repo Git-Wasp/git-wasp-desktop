@@ -227,4 +227,40 @@ describe("graphStore", () => {
     expect(selectedOid).toBeNull();
     expect(selection.range.size).toBe(0);
   });
+
+  it("reset clears the viewport, row cache and selection (so the skeleton shows)", () => {
+    useGraphStore.setState({
+      viewport: makeViewport(),
+      lastOffset: 0,
+      lastLimit: 10,
+      scrollToRow: 5,
+      nodesByRow: new Map([[0, makeNode(0, "aaa")]]),
+    });
+    useGraphStore.getState().selectCommit("aaa", false);
+
+    useGraphStore.getState().reset();
+
+    const s = useGraphStore.getState();
+    expect(s.viewport).toBeNull();
+    expect(s.nodesByRow.size).toBe(0);
+    expect(s.lastOffset).toBeNull();
+    expect(s.lastLimit).toBeNull();
+    expect(s.scrollToRow).toBeNull();
+    expect(s.selection.range.size).toBe(0);
+    expect(s.selectedOid).toBeNull();
+  });
+
+  it("reset drops a fetch that was already in flight (e.g. the previous repo's)", async () => {
+    let resolve!: (vp: GraphViewport) => void;
+    mockInvoke.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+
+    const inFlight = useGraphStore.getState().fetchViewport(0, 10);
+    // The active repo changes mid-fetch.
+    useGraphStore.getState().reset();
+    // The stale response lands afterwards and must be ignored.
+    resolve(makeViewport());
+    await inFlight;
+
+    expect(useGraphStore.getState().viewport).toBeNull();
+  });
 });

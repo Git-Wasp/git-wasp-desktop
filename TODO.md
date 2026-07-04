@@ -658,8 +658,25 @@ between sections, and add new ideas under the right heading. Items marked
       App root (runs while a repo is open; skips when the window is hidden or a tick
       is still in flight; best-effort). Tests: `refreshAll` call-order + the existing
       watcher test re-pointed through it (9/9 store tests, toolbar 8/8, tsc clean).
-- [ ] Skeleton when loading e.g. in the git graph view for large repos, show a "skeleton" of the graph. It should
+- [x] Skeleton when loading e.g. in the git graph view for large repos, show a "skeleton" of the graph. It should
       be "animated" to indicate a loading state.
+      — new `GraphSkeleton` component: shimmering placeholder rows (branch pill /
+      lane line + dot / message bar) that mirror the real graph geometry
+      (`ROW_HEIGHT`, the three columns), shown in the graph area whenever
+      `viewport === null`. The shimmer is a token-based moving gradient
+      (`.graph-skeleton-shimmer`, `@keyframes graph-skeleton-shimmer`) that fits
+      every theme and is disabled under `prefers-reduced-motion`; row widths are
+      deterministic (seeded per index) so nothing reflows. To make the skeleton
+      actually appear on repo switch, added a `graphStore.reset()` (clears
+      viewport, `nodesByRow`, selection, offsets, and supersedes any in-flight
+      fetch) and called it from `repoStore` on activate/open/close/new-tab —
+      previously the graph store was never reset between repos, so the *previous*
+      repo's cached rows were served for the new one (a latent bug) and the graph
+      never showed a loading state. Tests: `graphStore.reset` (clears state +
+      drops a stale in-flight fetch) and `CommitGraph` (skeleton shows when
+      viewport is null, hidden once loaded). Note: during boot the SplashScreen
+      already warms the first slice, so the skeleton is mainly for repo switches
+      and refetches, not first launch.
 
 ## Other issues
 

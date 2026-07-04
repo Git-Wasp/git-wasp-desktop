@@ -40,7 +40,9 @@ export const useRepoStore = create<RepoStore>((set, get) => {
   // the working-tree / merge status. Called whenever the active tab changes.
   const reloadActiveRepo = async (repo: RepoInfo) => {
     set({ currentRepo: repo, activeRepoPath: repo.path });
-    useGraphStore.getState().clearSelection();
+    // Clear the previous repo's graph (rows, cache, selection) so it doesn't
+    // linger — the graph shows its loading skeleton until the new fetch lands.
+    useGraphStore.getState().reset();
     await Promise.all([
       useGraphStore.getState().fetchViewport(0, INITIAL_LIMIT),
       get().loadBranches(),
@@ -84,7 +86,7 @@ export const useRepoStore = create<RepoStore>((set, get) => {
         await reloadActiveRepo(next);
       } else {
         set({ currentRepo: null, activeRepoPath: null, branches: [] });
-        useGraphStore.getState().clearSelection();
+        useGraphStore.getState().reset();
       }
     },
 
@@ -94,7 +96,7 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     // the next activate/open.
     newTab: () => {
       set({ currentRepo: null, activeRepoPath: null, branches: [] });
-      useGraphStore.getState().clearSelection();
+      useGraphStore.getState().reset();
     },
 
     loadRecentRepos: async () => {

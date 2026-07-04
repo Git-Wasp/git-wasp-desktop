@@ -113,6 +113,23 @@ describe("CommitGraph columns", () => {
   });
 });
 
+describe("CommitGraph loading skeleton", () => {
+  it("shows the animated skeleton while the viewport is loading (null)", () => {
+    useGraphStore.setState({ viewport: null });
+    render(<CommitGraph />);
+    expect(screen.getByTestId("graph-skeleton")).toBeInTheDocument();
+    // The header stays visible; real rows do not render yet.
+    expect(screen.getByText("Branch / Tag")).toBeInTheDocument();
+    expect(screen.queryByText("first commit")).not.toBeInTheDocument();
+  });
+
+  it("hides the skeleton once the viewport has loaded", () => {
+    render(<CommitGraph />);
+    expect(screen.queryByTestId("graph-skeleton")).not.toBeInTheDocument();
+    expect(screen.getByText("first commit")).toBeInTheDocument();
+  });
+});
+
 describe("CommitGraph checked-out indicators", () => {
   it("marks the checked-out branch pill and pulses the HEAD dot", () => {
     const { container } = render(<CommitGraph />);
