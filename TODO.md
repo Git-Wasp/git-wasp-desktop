@@ -441,7 +441,7 @@ between sections, and add new ideas under the right heading. Items marked
       package `gitclient` → `git-wasp`, lib `gitclient_lib` → `git_wasp_lib`
       (`main.rs` updated, Cargo.lock regenerated, binary is now `git_wasp`), npm
       package `gitclient` → `git-wasp`. Bundle identifier `com.gitclient.dev` →
-      `dev.michaelrose.gitwasp` (matches the michaelrose.dev design-system origin).
+      `com.gitwasp.app` (reverse-DNS of the product's own domain, gitwasp.com).
       Keychain service string, GitHub user-agent, the `.git/` operation-recovery
       sidecar filename, and the app's on-disk dirs (config `~/.config/git-wasp`,
       themes `~/.config/git-wasp/themes`, avatar cache `<cache>/git-wasp`) all moved
