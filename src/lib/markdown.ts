@@ -53,6 +53,10 @@ const HEADING = /^(#{1,6})\s+(.*)$/;
 const UL_ITEM = /^[-*]\s+/;
 const OL_ITEM = /^\d+\.\s+/;
 
+/** The two tabs of a markdown editor (compose vs. rendered preview). Shared by
+ *  the commit form and the PR form, which both use `renderMarkdown` for preview. */
+export type MarkdownTab = "write" | "preview";
+
 export function renderMarkdown(src: string): string {
   if (!src || !src.trim()) return "";
 

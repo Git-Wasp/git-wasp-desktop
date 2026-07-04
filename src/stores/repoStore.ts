@@ -1,11 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import type { BranchInfo, PrunableBranch, RepoEntry, RepoInfo } from "../types/repo";
-import { useGraphStore } from "./graphStore";
+import { useGraphStore, GRAPH_INITIAL_LIMIT } from "./graphStore";
 import { useMergeStore } from "./mergeStore";
 import { useWorkingTreeStore } from "./workingTreeStore";
-
-const INITIAL_LIMIT = 150;
 
 interface RepoStore {
   currentRepo: RepoInfo | null;
@@ -44,7 +42,7 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     // linger — the graph shows its loading skeleton until the new fetch lands.
     useGraphStore.getState().reset();
     await Promise.all([
-      useGraphStore.getState().fetchViewport(0, INITIAL_LIMIT),
+      useGraphStore.getState().fetchViewport(0, GRAPH_INITIAL_LIMIT),
       get().loadBranches(),
       useMergeStore.getState().loadStatus(),
       useWorkingTreeStore.getState().loadStatus(),

@@ -485,7 +485,7 @@ between sections, and add new ideas under the right heading. Items marked
 
 ## Engineering & tooling
 
-- [ ] Replace repeated "magic string" literals with shared TypeScript consts/unions.
+- [x] Replace repeated "magic string" literals with shared TypeScript consts/unions.
       Audit frontend `if`/`switch` discriminants and sentinels used as bare strings
       across files — e.g. PromptDialog/`PromptState` kinds ("new-branch",
       "rename-branch", "create-tag"), the `View` ids, `historyRightMode`
@@ -495,6 +495,30 @@ between sections, and add new ideas under the right heading. Items marked
       repeated across modules or paired with a backend value (define a `const` or
       `as const` map / enum and reference it). Decide a consistent convention and
       apply it.
+      — **Convention decided:** one source of truth per shared string-union/sentinel,
+      imported where used — placed in `src/types/` when it's a cross-cutting data
+      type, or colocated in the domain module that owns it (matching the existing
+      `THEME_CHANGE_EVENT` in `applyTheme.ts`, `WORKING_TREE_OID` in `graphStore`).
+      Single-file discriminated unions (`PromptState`, `StageFileEditor`'s
+      `ViewMode`, `logger`'s `Level`) are **left local on purpose** — TypeScript
+      already type-checks their literals at every use site, so extracting them would
+      be churn against the convention above. Applied to the genuine duplications the
+      audit found: (1) `View` ("history"|"prs"|"settings") was defined **twice**
+      (App + NavBar) → new `types/view.ts` (single `View` + named `HistoryRightMode`
+      for App's inline `"commit"|"uncommitted"`), both files import it; (2)
+      `BodyTab = "write"|"preview"` was defined **twice** (CommitForm + NewPRForm) →
+      `MarkdownTab` exported from `lib/markdown` (where `renderMarkdown` already
+      lives), both import it; (3) `INITIAL_LIMIT` (the first graph-fetch page size)
+      was defined **three times** (repoStore 150, Sidebar 150, CommitForm **100** —
+      a drift) → single `GRAPH_INITIAL_LIMIT = 150` exported from `graphStore`
+      (CommitForm now warms 150 like the rest). tsc clean; full suite green (509).
+      **Drift guard:** added a `no-restricted-syntax` ESLint rule (`eslint.config.js`,
+      `noDriftRules`) that errors on re-declaring the write/preview or
+      history/prs/settings unions, or using the bare `"WORKING_TREE"` sentinel —
+      each message points at the canonical import. The files that *define* these
+      (`types/view.ts`, `lib/markdown.ts`, `graphStore.ts`) and test files (fixtures
+      use raw sentinels) are exempted via a scoped override. Verified it fires on all
+      three patterns; `npm run lint` clean.
 - [ ] Add Storybook for viewing and refining UI components
 - [ ] GitHub Actions release workflow — tag-triggered matrix, artifacts to Release (Phase 6)
 - [ ] `cargo-deny` / licence audit in CI (Phase 6)
@@ -784,6 +808,7 @@ between sections, and add new ideas under the right heading. Items marked
       (stash one row above its base, on a side lane, dotted connector down to the
       base, straight pass-through of the commit above, base has no stash edge) +
       the existing `find_commit_row_accounts_for_an_injected_stash` still holds.
+- [ ] Add hover state to *all* buttons that don't currently have one to make it clear when we're hovering over a button. E.g. "Push", "Pull", "New branch" from menu above the git graph, "Stash", "Apply", "Pop", and "Drop" from sidebar. Let's make sure we have a defined custom `<Button>` component (or similar) for consistent buttons everywhere.
 
 ## Other issues
 

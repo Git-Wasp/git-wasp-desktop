@@ -27,8 +27,7 @@ import { useMergeStore } from "./stores/mergeStore";
 import { useTagStore } from "./stores/tagStore";
 import { useThemeStore } from "./stores/themeStore";
 import { useWorkingTreeStore } from "./stores/workingTreeStore";
-
-type View = "history" | "prs" | "settings";
+import type { View, HistoryRightMode } from "./types/view";
 
 // How many history rows to warm during boot so the graph isn't blank on reveal.
 const BOOT_GRAPH_LIMIT = 150;
@@ -57,7 +56,7 @@ export default function App() {
   const [view, setView] = useState<View>("history");
   // In the history view, the right panel shows commit details or the
   // uncommitted-changes list (when the working-tree node is active).
-  const [historyRightMode, setHistoryRightMode] = useState<"commit" | "uncommitted">("commit");
+  const [historyRightMode, setHistoryRightMode] = useState<HistoryRightMode>("commit");
   const [sidebarWidth, setSidebarWidth] = usePersistedWidth("sidebarWidth", 220, 160, 400);
   const [detailWidth, setDetailWidth] = usePersistedWidth("detailWidth", 380, 280, 720);
   const [sidebarCollapsed, setSidebarCollapsed] = usePersistedBoolean("sidebarCollapsed", false);

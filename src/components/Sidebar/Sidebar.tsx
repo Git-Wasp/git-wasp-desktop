@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { useRepoStore } from "../../stores/repoStore";
-import { useGraphStore } from "../../stores/graphStore";
+import { useGraphStore, GRAPH_INITIAL_LIMIT } from "../../stores/graphStore";
 import { useGithubStore } from "../../stores/githubStore";
 import { useRemoteStore } from "../../stores/remoteStore";
 import { useMergeStore } from "../../stores/mergeStore";
@@ -16,8 +16,6 @@ import { RemoteActions } from "./RemoteActions";
 import { CloneDialog } from "../GitHub/CloneDialog";
 import { PruneBranchesDialog } from "./PruneBranchesDialog";
 import { PromptDialog } from "../common/PromptDialog";
-
-const INITIAL_LIMIT = 150;
 
 const branchRowStyle: CSSProperties = {
   display: "flex",
@@ -78,17 +76,17 @@ export function Sidebar({ width = 220 }: { width?: number }) {
     await createBranch(newBranchName.trim());
     setNewBranchName("");
     setShowNewBranch(false);
-    await fetchViewport(0, INITIAL_LIMIT);
+    await fetchViewport(0, GRAPH_INITIAL_LIMIT);
   };
 
   const handleDeleteBranch = async (name: string) => {
     await deleteBranch(name);
-    await fetchViewport(0, INITIAL_LIMIT);
+    await fetchViewport(0, GRAPH_INITIAL_LIMIT);
   };
 
   const handleCheckoutBranch = async (name: string) => {
     await checkoutBranch(name);
-    await fetchViewport(0, INITIAL_LIMIT);
+    await fetchViewport(0, GRAPH_INITIAL_LIMIT);
   };
 
   const handleMergeBranch = async (name: string) => {

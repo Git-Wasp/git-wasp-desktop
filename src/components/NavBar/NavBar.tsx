@@ -4,8 +4,7 @@ import { IconButton } from "../ui/IconButton";
 import { SidebarIcon, HistoryIcon, PullRequestIcon, SettingsIcon } from "../ui/icons";
 import { RepoPicker } from "./RepoPicker";
 import { BranchPicker } from "./BranchPicker";
-
-export type View = "history" | "prs" | "settings";
+import type { View } from "../../types/view";
 
 const VIEW_TABS: { id: View; label: string; icon: ReactNode }[] = [
   { id: "history", label: "History", icon: <HistoryIcon /> },

@@ -7,6 +7,11 @@ import type { GraphNode, GraphViewport } from "../types/graph";
 // that row without pointing the commit-detail panel at a real commit.
 export const WORKING_TREE_OID = "WORKING_TREE";
 
+// Rows to load on the first graph fetch (offset 0) — enough to fill the viewport
+// with headroom before scrolling triggers more. Shared by every "reload the
+// graph" call site (repo activation, sidebar refresh, post-commit) so they agree.
+export const GRAPH_INITIAL_LIMIT = 150;
+
 interface Selection {
   anchor: string | null;
   focus: string | null;

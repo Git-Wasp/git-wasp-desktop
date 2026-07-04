@@ -3,12 +3,8 @@ import { useWorkingTreeStore } from "../../stores/workingTreeStore";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { ConfirmDialog } from "../common/ConfirmDialog";
-import { useGraphStore } from "../../stores/graphStore";
-import { renderMarkdown } from "../../lib/markdown";
-
-const INITIAL_LIMIT = 100;
-
-type BodyTab = "write" | "preview";
+import { useGraphStore, GRAPH_INITIAL_LIMIT } from "../../stores/graphStore";
+import { renderMarkdown, type MarkdownTab } from "../../lib/markdown";
 
 /** Split a commit message into its subject line and (blank-line-separated) body. */
 function splitMessage(message: string): { subject: string; body: string } {
@@ -33,7 +29,7 @@ export function CommitForm({
   const { fetchViewport } = useGraphStore();
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
-  const [tab, setTab] = useState<BodyTab>("write");
+  const [tab, setTab] = useState<MarkdownTab>("write");
   const [amending, setAmending] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -87,7 +83,7 @@ export function CommitForm({
       setBody("");
       setTab("write");
       setAmending(false);
-      await fetchViewport(0, INITIAL_LIMIT);
+      await fetchViewport(0, GRAPH_INITIAL_LIMIT);
       onCommitted?.();
     } catch (e) {
       setError(String(e));

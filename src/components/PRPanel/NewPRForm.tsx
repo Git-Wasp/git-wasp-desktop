@@ -5,7 +5,7 @@ import { useRepoStore } from "../../stores/repoStore";
 import { useRemoteStore } from "../../stores/remoteStore";
 import type { PullRequest } from "../../types/github";
 import { compareUrl, headBranchIsOnRemote } from "../../lib/githubPr";
-import { renderMarkdown } from "../../lib/markdown";
+import { renderMarkdown, type MarkdownTab } from "../../lib/markdown";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { MultiSelect, type MultiSelectOption } from "../ui/MultiSelect";
@@ -28,8 +28,6 @@ const labelStyle: React.CSSProperties = {
   color: "var(--color-text-muted)",
   marginBottom: "var(--space-1)",
 };
-
-type BodyTab = "write" | "preview";
 
 /** A small swatch + name row for a GitHub label in the picker. */
 function LabelOption({ name, color }: { name: string; color: string }) {
@@ -79,7 +77,7 @@ export function NewPRForm({
 
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [bodyTab, setBodyTab] = useState<BodyTab>("write");
+  const [bodyTab, setBodyTab] = useState<MarkdownTab>("write");
   const [head, setHead] = useState(initialHead ?? currentRepo?.headBranch ?? "");
   const [base, setBase] = useState(initialBase ?? defaultBase);
   const [assignees, setAssignees] = useState<string[]>(me ? [me] : []);
