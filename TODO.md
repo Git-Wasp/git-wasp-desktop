@@ -911,10 +911,25 @@ between sections, and add new ideas under the right heading. Items marked
       subsections already provide the trailing divider) but keeps it while
       collapsed (so the lone header still separates from the next section). Test
       added; suite green (521).
-- [ ] Extend the "stale branches" feature to also provide the option to prune branches that only exist locally and don't exist on the remote - not just those that did exist on the remote and don't now.
+- [x] Extend the "stale branches" feature to also provide the option to prune branches that only exist locally and don't exist on the remote - not just those that did exist on the remote and don't now.
+      — the prune feature now detects two kinds (backend `PrunableKind`): **gone**
+      (tracked an upstream that's been deleted — existing behaviour) and **localOnly**
+      (no configured upstream *and* no remote-tracking branch of the same name — a
+      branch that only ever existed locally). `find_prunable_branches` also reports,
+      per branch, whether it's **merged** into the base branch (local `main`/`master`,
+      else `origin/HEAD`) via an ancestor check; the base branch itself and HEAD are
+      never offered. Safety-driven UX in `PruneBranchesDialog`: two groups — **"Safe
+      to delete"** (gone + local-only-already-merged), pre-checked, and **"Not merged
+      — review first"** (unmerged local-only), left unchecked with a warning that
+      deleting them permanently discards their unique commits (git2's `delete()` is a
+      forced `-D`). Each row shows why it's listed ("was origin/x" / "local only ·
+      merged|not merged"). Types: `PrunableKind` + `merged` on `PrunableBranch`.
+      Tests: backend classifies gone / merged-local-only / unmerged-local-only and
+      excludes published-no-upstream + the base; frontend pre-selects merged but not
+      unmerged local-only. Suites green (frontend 522, backend 213).
 - [ ] Add "Search" feature to the git graph. A search button should be included which allows the user to search through the commits for commit hashes or text that matches commit messages. Matching results should be highlighted in the graph, and a count of matches should be shown. "Up" and "Down" arrows should allow the user to navigate between matching commits in the graph - the "action bar" at the top should always remain visible. A small "hovering" search component would be acceptable, but open to other ideas.
 - [ ] Add preview for certain binary files when selecting files in staging or viewing previous commits. Primary use case is to view image files so we should support common files including png, gif, jp(e)g
-- [ ] Add a "hunk" view to the diff viewer in addition to the current "side by side" and "inline" views. The "hunk" view should show a "hunk" for each change. Also add tooltips to the three buttons that allow the user to change view.
+- [ ] Add a "hunk" view to the diff viewer in addition to the current "side by side" and "inline" views. The "hunk" view should show a "hunk" for each change. Also add tooltips to the three buttons that allow the user to change view. Persist the last selected view as the "default" e.g. when closing and re-opening the app.
 - [ ] Always show current checked out branch at the *top* of the sidebar panel showing local branches
 - [ ] Add option to "recent" repositories menu to "Remove from recent" - this should remove the entry from the recent entries *not* change anything about the repo being removed - just our reference to it.
 
@@ -963,4 +978,6 @@ between sections, and add new ideas under the right heading. Items marked
 - [ ] Architectural review of entire backend
 - [ ] Architectural review of entire frontend
 - [ ] Removal of unnecessary implementation detail tests (did we take TDD too far?)
+- [ ] Remove comments that litter the codebase. "Public" functions should be documented according to language standards (ts / rust) but inline comments are included too frequently and are a maintenance burden.
+- [ ] Internationalisation. Tokenize strings, and allow users to change language. Initial supported languages to include British English, American English, and Dutch.
   

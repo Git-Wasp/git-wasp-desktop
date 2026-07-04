@@ -819,29 +819,97 @@ pub fn list_branches(repo: &Repository) -> anyhow::Result<Vec<BranchInfo>> {
     Ok(branches)
 }
 
-/// A local branch whose upstream remote-tracking branch is gone — i.e. it was
-/// tracking a remote branch that no longer exists (the `[origin/x: gone]` state
-/// `git branch -vv` shows). Detection is config-based because git2's
-/// `Branch::upstream()` returns `None` for a gone upstream, indistinguishable
-/// from a branch that never had one.
+/// Why a local branch is offered for pruning. `Gone` branches tracked a remote
+/// branch that has since been deleted (safe to remove — the work is on the
+/// remote or was merged); `LocalOnly` branches have no remote counterpart at all
+/// (never pushed), so deleting one may discard unpushed commits — the UI treats
+/// them more cautiously.
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PrunableKind {
+    /// Tracked an upstream that is now gone (the `[origin/x: gone]` state
+    /// `git branch -vv` shows).
+    Gone,
+    /// Exists only locally — no configured upstream and no remote-tracking
+    /// branch of the same name.
+    LocalOnly,
+}
+
+/// A local branch a user might want to clean up. Detection is config-based
+/// because git2's `Branch::upstream()` returns `None` for a gone upstream,
+/// indistinguishable from a branch that never had one.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PrunableBranch {
     pub name: String,
+    pub kind: PrunableKind,
     /// The remote-tracking branch it followed, now gone (e.g. "origin/feature").
-    pub upstream: String,
+    /// `None` for local-only branches, which never had one.
+    pub upstream: Option<String>,
+    /// Whether the branch's commits are already contained in the base branch
+    /// (local `main`/`master`, else `origin/HEAD`). A merged local-only branch is
+    /// safe to delete — nothing unique is lost — so the UI pre-selects it.
+    pub merged: bool,
 }
 
-/// Local branches safe to prune: those configured to track a remote branch
-/// whose remote-tracking ref is no longer present. The currently checked-out
-/// branch is never included. Pure (no network) — callers should fetch with
-/// prune first so the remote-tracking refs are up to date.
+/// The commit a prunable branch is measured "merged into", plus the local branch
+/// name (if any) to exclude from pruning so we never offer to delete the base
+/// itself. Prefers a local `main`/`master`, else the remote default (`origin/HEAD`).
+fn find_prune_base(repo: &Repository) -> (Option<git2::Oid>, Option<String>) {
+    for name in ["main", "master"] {
+        if let Ok(branch) = repo.find_branch(name, BranchType::Local) {
+            if let Ok(commit) = branch.get().peel_to_commit() {
+                return (Some(commit.id()), Some(name.to_string()));
+            }
+        }
+    }
+    if let Ok(reference) = repo.find_reference("refs/remotes/origin/HEAD") {
+        if let Ok(commit) = reference.peel_to_commit() {
+            return (Some(commit.id()), None);
+        }
+    }
+    (None, None)
+}
+
+/// Whether `tip`'s history is fully contained in `base` (i.e. the branch is
+/// merged into the base branch): the tip is the base, or the base descends from it.
+fn is_merged_into(repo: &Repository, tip: git2::Oid, base: git2::Oid) -> bool {
+    tip == base || repo.graph_descendant_of(base, tip).unwrap_or(false)
+}
+
+/// Whether any remote has a remote-tracking branch sharing this local branch's
+/// short name (e.g. local "feature" ↔ "origin/feature"). Used to tell a truly
+/// local-only branch from one that's published but has no upstream configured.
+fn branch_has_remote_counterpart(repo: &Repository, name: &str) -> anyhow::Result<bool> {
+    for remote_branch in repo
+        .branches(Some(BranchType::Remote))
+        .context("failed to list remote branches")?
+    {
+        let (remote_branch, _) = remote_branch.context("invalid remote branch reference")?;
+        if let Some(full) = remote_branch.name()? {
+            // full is "<remote>/<short>"; compare the part after the remote.
+            if let Some((_, short)) = full.split_once('/') {
+                if short == name {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Local branches a user might want to prune, in two flavours (see
+/// [`PrunableKind`]): those whose tracked upstream is gone, and those that only
+/// exist locally. The currently checked-out branch is never included. Pure (no
+/// network) — callers should fetch with prune first so the remote-tracking refs
+/// are up to date.
 pub fn find_prunable_branches(repo: &Repository) -> anyhow::Result<Vec<PrunableBranch>> {
     let config = repo.config().context("failed to read repo config")?;
     let head_name = repo
         .head()
         .ok()
         .and_then(|h| h.shorthand().map(|s| s.to_string()));
+    let (base_oid, base_name) = find_prune_base(repo);
 
     let mut out = Vec::new();
     for branch in repo
@@ -853,30 +921,52 @@ pub fn find_prunable_branches(repo: &Repository) -> anyhow::Result<Vec<PrunableB
             Some(n) => n,
             None => continue,
         };
-        // Never offer to delete the branch you're currently on.
-        if head_name.as_deref() == Some(name.as_str()) {
+        // Never offer to delete the branch you're currently on, nor the base
+        // branch we measure "merged" against.
+        if head_name.as_deref() == Some(name.as_str())
+            || base_name.as_deref() == Some(name.as_str())
+        {
             continue;
         }
-        // Both keys present ⇒ the branch is configured to track an upstream.
-        let remote = match config.get_string(&format!("branch.{name}.remote")) {
-            Ok(r) => r,
-            Err(_) => continue,
+
+        // Is the branch already contained in the base branch? (Safe to delete.)
+        let merged = match (base_oid, branch.get().peel_to_commit()) {
+            (Some(base), Ok(tip)) => is_merged_into(repo, tip.id(), base),
+            _ => false,
         };
-        // "." means it tracks a local branch, not a remote — not a prune target.
-        if remote == "." {
-            continue;
+
+        // A branch configured to track a real remote is classified by whether
+        // that upstream still exists; either way it's fully handled here.
+        let remote = config.get_string(&format!("branch.{name}.remote")).ok();
+        let merge = config.get_string(&format!("branch.{name}.merge")).ok();
+        if let (Some(remote), Some(merge)) = (&remote, &merge) {
+            // "." means it tracks a local branch, not a remote — fall through to
+            // the local-only check below.
+            if remote != "." {
+                let short = merge.strip_prefix("refs/heads/").unwrap_or(merge);
+                let tracking_ref = format!("refs/remotes/{remote}/{short}");
+                // Gone ⇒ the upstream it tracked no longer exists locally.
+                if repo.find_reference(&tracking_ref).is_err() {
+                    out.push(PrunableBranch {
+                        name,
+                        kind: PrunableKind::Gone,
+                        upstream: Some(format!("{remote}/{short}")),
+                        merged,
+                    });
+                }
+                // else: still tracking an existing upstream — not a prune target.
+                continue;
+            }
         }
-        let merge = match config.get_string(&format!("branch.{name}.merge")) {
-            Ok(m) => m,
-            Err(_) => continue,
-        };
-        let short = merge.strip_prefix("refs/heads/").unwrap_or(&merge);
-        let tracking_ref = format!("refs/remotes/{remote}/{short}");
-        // Gone ⇒ the upstream it tracked no longer exists locally.
-        if repo.find_reference(&tracking_ref).is_err() {
+
+        // No remote upstream configured: local-only unless a remote-tracking
+        // branch of the same name exists (published, just no upstream set).
+        if !branch_has_remote_counterpart(repo, &name)? {
             out.push(PrunableBranch {
                 name,
-                upstream: format!("{remote}/{short}"),
+                kind: PrunableKind::LocalOnly,
+                upstream: None,
+                merged,
             });
         }
     }
@@ -1225,7 +1315,7 @@ mod tests {
     }
 
     #[test]
-    fn find_prunable_branches_detects_only_gone_upstreams() {
+    fn find_prunable_branches_classifies_gone_and_local_only() {
         let (_dir, repo) = make_git_repo_with_commit();
         let head = repo.head().unwrap().peel_to_commit().unwrap();
 
@@ -1247,14 +1337,55 @@ mod tests {
             repo.reference("refs/remotes/origin/alive", head.id(), true, "test")
                 .unwrap();
 
-            // "local-only": never had an upstream.
+            // "published-no-upstream": no upstream config, but a remote-tracking
+            // ref of the same name exists — not local-only, not prunable.
+            repo.branch("published-no-upstream", &head, false).unwrap();
+            repo.reference(
+                "refs/remotes/origin/published-no-upstream",
+                head.id(),
+                true,
+                "test",
+            )
+            .unwrap();
+
+            // "local-only": never had an upstream; sits on the base tip, so it's
+            // already contained in the base branch (merged).
             repo.branch("local-only", &head, false).unwrap();
+
+            // "wip": local-only with a commit the base branch doesn't have (unmerged).
+            let sig = Signature::now("Test", "test@test.com").unwrap();
+            let wip_oid = repo
+                .commit(None, &sig, &sig, "wip work", &head.tree().unwrap(), &[&head])
+                .unwrap();
+            repo.branch("wip", &repo.find_commit(wip_oid).unwrap(), false)
+                .unwrap();
         }
 
         let prunable = find_prunable_branches(&repo).unwrap();
-        let names: Vec<&str> = prunable.iter().map(|p| p.name.as_str()).collect();
-        assert_eq!(names, vec!["gone"]);
-        assert_eq!(prunable[0].upstream, "origin/gone");
+        let find = |name: &str| {
+            prunable
+                .iter()
+                .find(|p| p.name == name)
+                .unwrap_or_else(|| panic!("{name} should be prunable"))
+                .clone()
+        };
+
+        let gone = find("gone");
+        assert_eq!(gone.kind, PrunableKind::Gone);
+        assert_eq!(gone.upstream.as_deref(), Some("origin/gone"));
+
+        let local = find("local-only");
+        assert_eq!(local.kind, PrunableKind::LocalOnly);
+        assert_eq!(local.upstream, None);
+        assert!(local.merged, "local-only on the base tip is merged");
+
+        let wip = find("wip");
+        assert_eq!(wip.kind, PrunableKind::LocalOnly);
+        assert!(!wip.merged, "wip has a commit the base lacks — not merged");
+
+        // "alive" and "published-no-upstream" both have a remote counterpart.
+        assert!(prunable.iter().all(|p| p.name != "alive"));
+        assert!(prunable.iter().all(|p| p.name != "published-no-upstream"));
     }
 
     #[test]

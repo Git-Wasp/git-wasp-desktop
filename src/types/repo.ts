@@ -22,10 +22,20 @@ export interface BranchInfo {
 }
 
 /** A local branch whose upstream remote-tracking branch is gone — a prune candidate. */
+/** Why a local branch is offered for pruning (see the backend `PrunableKind`).
+ *  "gone" tracked a now-deleted remote branch (safe); "localOnly" never had a
+ *  remote counterpart, so deleting it may discard unpushed commits. */
+export type PrunableKind = "gone" | "localOnly";
+
 export interface PrunableBranch {
   name: string;
-  /** The remote-tracking branch it followed, now gone (e.g. "origin/feature"). */
-  upstream: string;
+  kind: PrunableKind;
+  /** The remote-tracking branch it followed, now gone (e.g. "origin/feature").
+   *  Null for local-only branches, which never had one. */
+  upstream: string | null;
+  /** Whether the branch's commits are already contained in the base branch
+   *  (main/master). A merged local-only branch is safe to delete. */
+  merged: boolean;
 }
 
 export interface ChangedFile {

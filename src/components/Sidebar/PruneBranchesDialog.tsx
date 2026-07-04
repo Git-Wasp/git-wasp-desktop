@@ -6,11 +6,35 @@ import type { PrunableBranch } from "../../types/repo";
 import { Button } from "../ui/Button";
 import { Spinner } from "../ui/Spinner";
 
+/** Safe to delete without losing work: its remote copy is gone, or (local-only)
+ *  it's already merged into the base branch. Unmerged local-only branches aren't. */
+const isSafeToPrune = (b: PrunableBranch) => b.kind === "gone" || b.merged;
+
+const rowStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  padding: "var(--space-1) var(--space-2)",
+  cursor: "pointer",
+  borderRadius: "var(--radius-sm)",
+};
+
+const groupHeaderStyle: React.CSSProperties = {
+  fontSize: "var(--font-size-xs)",
+  fontWeight: "var(--font-weight-semibold)",
+  color: "var(--color-text-muted)",
+  textTransform: "uppercase",
+  letterSpacing: "0.05em",
+  marginTop: "var(--space-2)",
+  marginBottom: "var(--space-1)",
+};
+
 /**
- * Auto-prune: lists local branches whose upstream remote branch is gone and lets
- * the user delete a chosen subset (all selected by default). Fetches with prune
- * first so the remote-tracking refs are current, then asks the backend for the
- * gone branches. Deletion reuses `repoStore.deleteBranch` per branch.
+ * Prune branches: lists local branches worth cleaning up in two groups — those
+ * whose upstream remote branch is gone (pre-selected, safe to delete) and those
+ * that only exist locally (never pushed; left unchecked, since deleting one can
+ * discard unpushed commits). Fetches with prune first so remote-tracking refs
+ * are current. Deletion reuses `repoStore.deleteBranch` per branch.
  */
 export function PruneBranchesDialog({ onClose }: { onClose: () => void }) {
   const listPrunableBranches = useRepoStore((s) => s.listPrunableBranches);
@@ -39,7 +63,10 @@ export function PruneBranchesDialog({ onClose }: { onClose: () => void }) {
         const list = await listPrunableBranches();
         if (cancelled) return;
         setBranches(list);
-        setSelected(new Set(list.map((b) => b.name)));
+        // Pre-select the safe ones: gone branches, and local-only branches already
+        // merged into the base. An *unmerged* local-only branch is left for the
+        // user to opt into, since deleting it can discard its unique commits.
+        setSelected(new Set(list.filter(isSafeToPrune).map((b) => b.name)));
       } catch (e) {
         if (!cancelled) setError(String(e));
       } finally {
@@ -78,6 +105,45 @@ export function PruneBranchesDialog({ onClose }: { onClose: () => void }) {
     if (failures.length > 0) toastError(`Couldn't delete: ${failures.join(", ")}`);
     onClose();
   };
+
+  const safe = branches.filter(isSafeToPrune);
+  const unmerged = branches.filter((b) => !isSafeToPrune(b));
+
+  const detail = (b: PrunableBranch) =>
+    b.kind === "gone"
+      ? `was ${b.upstream}`
+      : b.merged
+        ? "local only · merged"
+        : "local only · not merged";
+
+  const renderRow = (b: PrunableBranch) => (
+    <label key={b.name} style={rowStyle}>
+      <input
+        type="checkbox"
+        checked={selected.has(b.name)}
+        onChange={() => toggle(b.name)}
+        aria-label={b.name}
+      />
+      <span
+        style={{
+          fontFamily: "var(--font-family-mono)",
+          fontSize: "var(--font-size-sm)",
+          color: "var(--color-text-primary)",
+        }}
+      >
+        {b.name}
+      </span>
+      <span
+        style={{
+          marginLeft: "auto",
+          fontSize: "var(--font-size-xs)",
+          color: "var(--color-text-muted)",
+        }}
+      >
+        {detail(b)}
+      </span>
+    </label>
+  );
 
   return (
     <div
@@ -132,8 +198,7 @@ export function PruneBranchesDialog({ onClose }: { onClose: () => void }) {
             lineHeight: "var(--line-height-normal)",
           }}
         >
-          Local branches whose upstream branch no longer exists on the remote. Choose which to
-          delete.
+          Local branches you may want to clean up. Choose which to delete.
         </p>
 
         {loading ? (
@@ -159,48 +224,33 @@ export function PruneBranchesDialog({ onClose }: { onClose: () => void }) {
               fontSize: "var(--font-size-sm)",
             }}
           >
-            No branches to prune — everything is in sync with the remote.
+            No branches to prune — nothing local-only, and everything is in sync with the remote.
           </div>
         ) : (
           <div style={{ overflowY: "auto", marginBottom: "var(--space-3)" }}>
-            {branches.map((b) => (
-              <label
-                key={b.name}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "var(--space-2)",
-                  padding: "var(--space-1) var(--space-2)",
-                  cursor: "pointer",
-                  borderRadius: "var(--radius-sm)",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={selected.has(b.name)}
-                  onChange={() => toggle(b.name)}
-                  aria-label={b.name}
-                />
-                <span
+            {safe.length > 0 && (
+              <>
+                <div style={groupHeaderStyle}>Safe to delete</div>
+                {safe.map(renderRow)}
+              </>
+            )}
+            {unmerged.length > 0 && (
+              <>
+                <div style={groupHeaderStyle}>Not merged — review first</div>
+                <p
                   style={{
-                    fontFamily: "var(--font-family-mono)",
-                    fontSize: "var(--font-size-sm)",
-                    color: "var(--color-text-primary)",
-                  }}
-                >
-                  {b.name}
-                </span>
-                <span
-                  style={{
-                    marginLeft: "auto",
+                    margin: "0 0 var(--space-1)",
                     fontSize: "var(--font-size-xs)",
-                    color: "var(--color-text-muted)",
+                    color: "var(--color-warning)",
+                    lineHeight: "var(--line-height-normal)",
                   }}
                 >
-                  was {b.upstream}
-                </span>
-              </label>
-            ))}
+                  These local-only branches have no remote copy and aren&apos;t merged into the base
+                  branch — deleting one permanently discards the commits it holds.
+                </p>
+                {unmerged.map(renderRow)}
+              </>
+            )}
           </div>
         )}
 

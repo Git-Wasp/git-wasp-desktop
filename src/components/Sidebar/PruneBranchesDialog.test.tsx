@@ -25,12 +25,22 @@ beforeEach(() => {
   useToastStore.setState({ toasts: [] });
 });
 
+const gone = (name: string, upstream: string): PrunableBranch => ({
+  name,
+  kind: "gone",
+  upstream,
+  merged: false,
+});
+const localOnly = (name: string, merged: boolean): PrunableBranch => ({
+  name,
+  kind: "localOnly",
+  upstream: null,
+  merged,
+});
+
 describe("PruneBranchesDialog", () => {
   it("fetches with prune, then lists the gone branches (all selected)", async () => {
-    routeInvoke([
-      { name: "feat/old", upstream: "origin/feat/old" },
-      { name: "bugfix", upstream: "origin/bugfix" },
-    ]);
+    routeInvoke([gone("feat/old", "origin/feat/old"), gone("bugfix", "origin/bugfix")]);
 
     render(<PruneBranchesDialog onClose={vi.fn()} />);
 
@@ -39,6 +49,17 @@ describe("PruneBranchesDialog", () => {
     // A prune fetch ran before listing.
     expect(mockInvoke).toHaveBeenCalledWith("fetch_remote", { remoteName: null, prune: true });
     expect(screen.getByRole("button", { name: /delete 2 branches/i })).toBeEnabled();
+  });
+
+  it("pre-selects a merged local-only branch but not an unmerged one", async () => {
+    routeInvoke([localOnly("merged-feature", true), localOnly("wip", false)]);
+
+    render(<PruneBranchesDialog onClose={vi.fn()} />);
+
+    expect(await screen.findByLabelText("merged-feature")).toBeChecked();
+    expect(screen.getByLabelText("wip")).not.toBeChecked();
+    // Only the merged one is pre-selected.
+    expect(screen.getByRole("button", { name: /delete 1 branch$/i })).toBeInTheDocument();
   });
 
   it("shows an empty state when nothing is prunable", async () => {
@@ -51,10 +72,7 @@ describe("PruneBranchesDialog", () => {
   });
 
   it("deletes only the selected branches and closes", async () => {
-    routeInvoke([
-      { name: "feat/old", upstream: "origin/feat/old" },
-      { name: "bugfix", upstream: "origin/bugfix" },
-    ]);
+    routeInvoke([gone("feat/old", "origin/feat/old"), gone("bugfix", "origin/bugfix")]);
     const onClose = vi.fn();
     render(<PruneBranchesDialog onClose={onClose} />);
 
@@ -70,12 +88,12 @@ describe("PruneBranchesDialog", () => {
   });
 
   it("still lists branches when the prune fetch fails (offline)", async () => {
-    routeInvoke([{ name: "feat/old", upstream: "origin/feat/old" }], {
+    routeInvoke([gone("feat/old", "origin/feat/old")], {
       fetch_remote: undefined,
     });
     mockInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === "fetch_remote") throw new Error("offline");
-      if (cmd === "list_prunable_branches") return [{ name: "feat/old", upstream: "origin/feat/old" }];
+      if (cmd === "list_prunable_branches") return [gone("feat/old", "origin/feat/old")];
       return undefined;
     });
 
