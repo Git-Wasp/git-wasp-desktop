@@ -117,7 +117,7 @@ export function MergeConfirmDialog({
             Cancel
           </Button>
           {onStartPullRequest && (
-            <Button variant="ghost" onClick={onStartPullRequest}>
+            <Button variant="tertiary" onClick={onStartPullRequest}>
               Start pull request instead
             </Button>
           )}

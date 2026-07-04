@@ -27,6 +27,7 @@ import { stageGutter, setStagedLines } from "./stageGutter";
 import { ChangeOverview } from "./ChangeOverview";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
+import { SegmentedControl } from "../ui/SegmentedControl";
 import { InlineViewIcon, SplitViewIcon } from "../ui/icons";
 
 type ViewMode = "split" | "inline";
@@ -176,45 +177,6 @@ function dualNumberGutter(oldMap: (number | null)[], newMap: (number | null)[]):
   });
 }
 
-const viewModeButtonBase: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: "var(--control-height-sm)",
-  height: "var(--control-height-sm)",
-  border: "none",
-  padding: 0,
-  cursor: "pointer",
-};
-
-function ViewModeButton({
-  active,
-  label,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      title={label}
-      aria-pressed={active}
-      style={{
-        ...viewModeButtonBase,
-        background: active ? "var(--color-bg-selected)" : "transparent",
-        color: active ? "var(--color-text-primary)" : "var(--color-text-secondary)",
-      }}
-    >
-      {children}
-    </button>
-  );
-}
 
 function ReadOnlyStagePane({
   label,
@@ -586,31 +548,16 @@ export function StageFileEditor({
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexShrink: 0 }}>
           {lineEditable && (
             <>
-              <div
-                role="group"
-                aria-label="Diff view mode"
-                style={{
-                  display: "inline-flex",
-                  border: "1px solid var(--color-border-default)",
-                  borderRadius: "var(--radius-sm)",
-                  overflow: "hidden",
-                }}
-              >
-                <ViewModeButton
-                  active={viewMode === "split"}
-                  label="Side-by-side view"
-                  onClick={() => changeViewMode("split")}
-                >
-                  <SplitViewIcon />
-                </ViewModeButton>
-                <ViewModeButton
-                  active={viewMode === "inline"}
-                  label="Inline view"
-                  onClick={() => changeViewMode("inline")}
-                >
-                  <InlineViewIcon />
-                </ViewModeButton>
-              </div>
+              <SegmentedControl
+                ariaLabel="Diff view mode"
+                iconOnly
+                value={viewMode}
+                onChange={changeViewMode}
+                options={[
+                  { value: "split", label: <SplitViewIcon />, ariaLabel: "Side-by-side view" },
+                  { value: "inline", label: <InlineViewIcon />, ariaLabel: "Inline view" },
+                ]}
+              />
               {!readOnly && (
                 <>
                   <Button size="sm" type="button" onClick={handleReset}>

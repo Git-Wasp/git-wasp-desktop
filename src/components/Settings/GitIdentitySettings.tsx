@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "../ui/Button";
+import { SegmentedControl, type SegmentOption } from "../ui/SegmentedControl";
 import { Input } from "../ui/Input";
 import { useToastStore } from "../../stores/toastStore";
 import {
@@ -23,6 +24,11 @@ const descriptionStyle: React.CSSProperties = {
   maxWidth: 560,
 };
 
+const SCOPE_OPTIONS: SegmentOption<IdentityScope>[] = [
+  { value: "local", label: "This repository" },
+  { value: "global", label: "Global" },
+];
+
 function ScopeToggle({
   value,
   onChange,
@@ -30,43 +36,13 @@ function ScopeToggle({
   value: IdentityScope;
   onChange: (s: IdentityScope) => void;
 }) {
-  const options: { id: IdentityScope; label: string }[] = [
-    { id: "local", label: "This repository" },
-    { id: "global", label: "Global" },
-  ];
   return (
-    <div
-      role="group"
-      aria-label="Identity scope"
-      style={{
-        display: "inline-flex",
-        border: "1px solid var(--color-border-subtle)",
-        borderRadius: "var(--radius-sm)",
-        overflow: "hidden",
-      }}
-    >
-      {options.map((opt) => {
-        const active = opt.id === value;
-        return (
-          <button
-            key={opt.id}
-            type="button"
-            aria-pressed={active}
-            onClick={() => onChange(opt.id)}
-            style={{
-              padding: "var(--space-1) var(--space-3)",
-              fontSize: "var(--font-size-sm)",
-              border: "none",
-              cursor: "pointer",
-              background: active ? "var(--color-accent-primary)" : "transparent",
-              color: active ? "#fff" : "var(--color-text-secondary)",
-            }}
-          >
-            {opt.label}
-          </button>
-        );
-      })}
-    </div>
+    <SegmentedControl
+      ariaLabel="Identity scope"
+      options={SCOPE_OPTIONS}
+      value={value}
+      onChange={onChange}
+    />
   );
 }
 

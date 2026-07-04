@@ -2,7 +2,7 @@ import { forwardRef } from "react";
 import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from "react";
 import { Spinner } from "./Spinner";
 
-export type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
+export type ButtonVariant = "primary" | "secondary" | "tertiary" | "danger";
 export type ButtonSize = "sm" | "md";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -33,7 +33,8 @@ function variantStyles(variant: ButtonVariant): CSSProperties {
         color: "var(--color-danger)",
         border: "1px solid var(--color-danger)",
       };
-    case "ghost":
+    case "tertiary":
+      // The lowest-priority action: borderless text, no fill until hovered.
       return { background: "transparent", color: "var(--color-text-secondary)", border: "1px solid transparent" };
     case "secondary":
     default:
@@ -47,11 +48,14 @@ function variantStyles(variant: ButtonVariant): CSSProperties {
   }
 }
 
-// Primary keeps its accent fill and brightens via CSS (`.ui-button[data-variant]`
-// :hover) rather than a JS background swap, which read too weakly. The other
-// variants swap background here.
+// Solid-fill variants (primary, secondary) brighten + lift via CSS
+// (`.ui-button[data-variant]:hover`) instead of a JS background swap: a swap to
+// --color-bg-hover is invisible on secondary because that token equals its
+// resting --color-bg-elevated in most themes. The transparent variants
+// (tertiary, danger) rest with no fill, so swapping in a background here is a
+// clearly visible hover.
 function hoverBackground(variant: ButtonVariant): string | null {
-  if (variant === "primary") return null;
+  if (variant === "primary" || variant === "secondary") return null;
   if (variant === "danger") return "var(--color-diff-del-bg)";
   return "var(--color-bg-hover)";
 }
@@ -112,7 +116,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         cursor: isDisabled ? "default" : "pointer",
         opacity: isDisabled ? 0.6 : 1,
         transition:
-          "background var(--duration-fast) var(--ease-default), border-color var(--duration-fast) var(--ease-default), box-shadow var(--duration-fast) var(--ease-default), transform var(--duration-fast) var(--ease-default)",
+          "background var(--duration-fast) var(--ease-default), border-color var(--duration-fast) var(--ease-default), box-shadow var(--duration-fast) var(--ease-default), filter var(--duration-fast) var(--ease-default), transform var(--duration-fast) var(--ease-default)",
         ...style,
       }}
     >

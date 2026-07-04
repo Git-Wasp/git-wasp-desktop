@@ -59,4 +59,12 @@ describe("Button", () => {
     render(<Button variant="danger">Delete</Button>);
     expect(screen.getByRole("button").style.color).toContain("--color-danger");
   });
+
+  it("renders the tertiary variant as borderless secondary text", () => {
+    render(<Button variant="tertiary">Skip</Button>);
+    const btn = screen.getByRole("button", { name: "Skip" });
+    expect(btn).toHaveAttribute("data-variant", "tertiary");
+    expect(btn.style.color).toContain("--color-text-secondary");
+    expect(btn.style.background).toBe("transparent");
+  });
 });

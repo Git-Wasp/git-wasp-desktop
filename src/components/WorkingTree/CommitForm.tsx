@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useWorkingTreeStore } from "../../stores/workingTreeStore";
 import { Button } from "../ui/Button";
+import { SegmentedControl } from "../ui/SegmentedControl";
 import { Input } from "../ui/Input";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { useGraphStore, GRAPH_INITIAL_LIMIT } from "../../stores/graphStore";
-import { renderMarkdown, type MarkdownTab } from "../../lib/markdown";
+import { renderMarkdown, MARKDOWN_TAB_OPTIONS, type MarkdownTab } from "../../lib/markdown";
 
 /** Split a commit message into its subject line and (blank-line-separated) body. */
 function splitMessage(message: string): { subject: string; body: string } {
@@ -105,18 +106,6 @@ export function CommitForm({
     }
   };
 
-  const tabStyle = (active: boolean): React.CSSProperties => ({
-    padding: "var(--space-1) var(--space-2)",
-    fontSize: "var(--font-size-xs)",
-    cursor: "pointer",
-    background: "transparent",
-    border: "none",
-    borderBottom: active
-      ? "2px solid var(--color-accent-primary)"
-      : "2px solid transparent",
-    color: active ? "var(--color-text-primary)" : "var(--color-text-muted)",
-  });
-
   return (
     <div
       style={{
@@ -167,18 +156,12 @@ export function CommitForm({
         }}
       />
 
-      <div style={{ display: "flex", gap: "var(--space-1)" }}>
-        <button type="button" style={tabStyle(tab === "write")} onClick={() => setTab("write")}>
-          Write
-        </button>
-        <button
-          type="button"
-          style={tabStyle(tab === "preview")}
-          onClick={() => setTab("preview")}
-        >
-          Preview
-        </button>
-      </div>
+      <SegmentedControl
+        ariaLabel="Description mode"
+        options={MARKDOWN_TAB_OPTIONS}
+        value={tab}
+        onChange={setTab}
+      />
 
       {tab === "write" ? (
         <textarea

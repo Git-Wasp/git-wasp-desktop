@@ -62,6 +62,14 @@ export function RowMenu({ items, label }: { items: RowMenuItem[]; label: string 
                 setOpen(false);
                 item.onSelect();
               }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = item.destructive
+                  ? "var(--color-diff-del-bg)"
+                  : "var(--color-bg-hover)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+              }}
               style={{
                 display: "block",
                 width: "100%",
@@ -74,6 +82,7 @@ export function RowMenu({ items, label }: { items: RowMenuItem[]; label: string 
                 color: item.destructive ? "var(--color-danger)" : "var(--color-text-primary)",
                 cursor: "pointer",
                 whiteSpace: "nowrap",
+                transition: "background var(--duration-fast) var(--ease-default)",
               }}
             >
               {item.label}

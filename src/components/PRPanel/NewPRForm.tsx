@@ -5,8 +5,9 @@ import { useRepoStore } from "../../stores/repoStore";
 import { useRemoteStore } from "../../stores/remoteStore";
 import type { PullRequest } from "../../types/github";
 import { compareUrl, headBranchIsOnRemote } from "../../lib/githubPr";
-import { renderMarkdown, type MarkdownTab } from "../../lib/markdown";
+import { renderMarkdown, MARKDOWN_TAB_OPTIONS, type MarkdownTab } from "../../lib/markdown";
 import { Button } from "../ui/Button";
+import { SegmentedControl } from "../ui/SegmentedControl";
 import { Input } from "../ui/Input";
 import { MultiSelect, type MultiSelectOption } from "../ui/MultiSelect";
 
@@ -176,16 +177,6 @@ export function NewPRForm({
     );
   };
 
-  const tabStyle = (active: boolean): React.CSSProperties => ({
-    padding: "var(--space-1) var(--space-2)",
-    fontSize: "var(--font-size-xs)",
-    cursor: "pointer",
-    background: "transparent",
-    border: "none",
-    borderBottom: active ? "2px solid var(--color-accent-primary)" : "2px solid transparent",
-    color: active ? "var(--color-text-primary)" : "var(--color-text-muted)",
-  });
-
   return (
     <div
       style={{
@@ -238,17 +229,13 @@ export function NewPRForm({
       </div>
 
       <div>
-        <div style={{ display: "flex", gap: "var(--space-1)", marginBottom: "var(--space-1)" }}>
-          <button type="button" style={tabStyle(bodyTab === "write")} onClick={() => setBodyTab("write")}>
-            Write
-          </button>
-          <button
-            type="button"
-            style={tabStyle(bodyTab === "preview")}
-            onClick={() => setBodyTab("preview")}
-          >
-            Preview
-          </button>
+        <div style={{ marginBottom: "var(--space-1)" }}>
+          <SegmentedControl
+            ariaLabel="Description mode"
+            options={MARKDOWN_TAB_OPTIONS}
+            value={bodyTab}
+            onChange={setBodyTab}
+          />
         </div>
         {bodyTab === "write" ? (
           <textarea

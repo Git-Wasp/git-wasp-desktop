@@ -4,9 +4,14 @@ import {
   type ToastVertical,
 } from "../../stores/toastStore";
 import { Button } from "../ui/Button";
+import { SegmentedControl, type SegmentOption } from "../ui/SegmentedControl";
 
-const VERTICALS: ToastVertical[] = ["top", "middle", "bottom"];
-const HORIZONTALS: ToastHorizontal[] = ["left", "right"];
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const toOptions = <T extends string>(values: T[]): SegmentOption<T>[] =>
+  values.map((value) => ({ value, label: capitalize(value) }));
+
+const VERTICALS = toOptions<ToastVertical>(["top", "middle", "bottom"]);
+const HORIZONTALS = toOptions<ToastHorizontal>(["left", "right"]);
 
 const labelStyle: React.CSSProperties = {
   fontSize: "var(--font-size-sm)",
@@ -14,51 +19,6 @@ const labelStyle: React.CSSProperties = {
   width: 80,
   flexShrink: 0,
 };
-
-function Segmented<T extends string>({
-  options,
-  value,
-  onChange,
-}: {
-  options: T[];
-  value: T;
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div
-      role="group"
-      style={{
-        display: "inline-flex",
-        border: "1px solid var(--color-border-subtle)",
-        borderRadius: "var(--radius-sm)",
-        overflow: "hidden",
-      }}
-    >
-      {options.map((opt) => {
-        const active = opt === value;
-        return (
-          <button
-            key={opt}
-            type="button"
-            aria-pressed={active}
-            onClick={() => onChange(opt)}
-            style={{
-              padding: "var(--space-1) var(--space-3)",
-              fontSize: "var(--font-size-sm)",
-              textTransform: "capitalize",
-              border: "none",
-              cursor: "pointer",
-              background: active ? "var(--color-accent-primary)" : "transparent",
-              color: active ? "#fff" : "var(--color-text-secondary)",
-            }}
-          >
-            {opt}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 /**
  * Lets the user choose where toast notifications appear and preview one. The
@@ -73,7 +33,8 @@ export function NotificationSettings() {
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
         <span style={labelStyle}>Vertical</span>
-        <Segmented
+        <SegmentedControl
+          ariaLabel="Vertical placement"
           options={VERTICALS}
           value={placement.vertical}
           onChange={(vertical) => setPlacement({ vertical })}
@@ -81,7 +42,8 @@ export function NotificationSettings() {
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
         <span style={labelStyle}>Horizontal</span>
-        <Segmented
+        <SegmentedControl
+          ariaLabel="Horizontal placement"
           options={HORIZONTALS}
           value={placement.horizontal}
           onChange={(horizontal) => setPlacement({ horizontal })}

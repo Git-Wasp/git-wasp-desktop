@@ -808,7 +808,43 @@ between sections, and add new ideas under the right heading. Items marked
       (stash one row above its base, on a side lane, dotted connector down to the
       base, straight pass-through of the commit above, base has no stash edge) +
       the existing `find_commit_row_accounts_for_an_injected_stash` still holds.
-- [ ] Add hover state to *all* buttons that don't currently have one to make it clear when we're hovering over a button. E.g. "Push", "Pull", "New branch" from menu above the git graph, "Stash", "Apply", "Pop", and "Drop" from sidebar. Let's make sure we have a defined custom `<Button>` component (or similar) for consistent buttons everywhere.
+- [x] Add hover state to *all* buttons that don't currently have one to make it clear when we're hovering over a button. E.g. "Push", "Pull", "New branch" from menu above the git graph, "Stash", "Apply", "Pop", and "Drop" from sidebar. Let's make sure we have a defined custom `<Button>` component (or similar) for consistent buttons everywhere.
+      — the named action buttons (Push/Pull/New branch, Stash/Apply/Pop/Drop) were
+      already on the shared `ui/Button` (with hover states) from the earlier
+      primary/secondary hover work; this item was stale for those. The real
+      remaining inconsistency was the hand-rolled **segmented toggle** pattern,
+      duplicated with divergent styles (and mostly *no* hover) across 5 places. New
+      reusable `ui/SegmentedControl` (bordered "pick one" group, `aria-pressed`
+      segments, accent-filled active segment, clear hover on inactive segments,
+      `sm`/`md` + `iconOnly`); migrated the Git-identity scope toggle, the
+      notification-placement toggles, the Commit-form + New-PR-form Write/Preview
+      tabs (shared `MARKDOWN_TAB_OPTIONS` from `lib/markdown`), and the Stage
+      editor's split/inline icon toggle (removed the local `ViewModeButton` /
+      `Segmented` / `tabStyle` duplicates). Also formalised the Button vocabulary:
+      renamed the borderless `ghost` variant to **`tertiary`** (primary / secondary
+      / tertiary / danger), updating its one use (MergeConfirmDialog). Added the
+      last missing menu-item hover state to the sidebar `RowMenu` items. List rows,
+      nav tabs, and the Dropdown/CollapsibleSection primitives were assessed and
+      left as-is (they already have hover or are not action buttons). Tests:
+      `SegmentedControl` (render/press/onChange, icon-only aria-label, hover) +
+      a `tertiary` Button test; full suite green (514).
+      **Follow-up (secondary hover was invisible):** the `secondary` variant (Push/
+      Pull/New branch, Stash/Apply/Pop, etc.) swapped its background to
+      `--color-bg-hover` on hover — but that token *equals* its resting
+      `--color-bg-elevated` in almost every theme (Monokai default, GitHub Dark/
+      Light, Cobalt2), so hovering changed nothing. Fixed by treating secondary like
+      primary: a solid fill that **brightens** on hover via CSS
+      (`.ui-button[data-variant="secondary"]:hover`, `filter: brightness(1.12)`),
+      plus a subtle `--shadow-sm` lift so the affordance is clear on light themes too
+      (where brightening toward white is weak). Dropped the now-dead JS background
+      swap for secondary (`hoverBackground` returns null for it, like primary); the
+      transparent variants (tertiary/danger) keep their JS swap since a fill
+      appearing over transparent *is* visible. Added `filter` to the button
+      transition so the brightness animates.
+- [ ] Add more "depth" to the UI. Everything feels very "flat" and 1-dimensional. This could be achieved with shadows perhaps.
+- [ ] Add highlight on hover to the menu that opens for sidebar items. Make it consistent with the menu used in the git graph on right-click - ideally using a single menu component.
+- [ ] Review all other components' hover state. E.g. the files listed in the right hand panel when viewing an existing commit - hovering over a file should highlight what's being hovered over.
+- [ ] Extend the "stale branches" feature to also provide the option to prune branches that only exist locally and don't exist on the remote - not just those that did exist on the remote and don't now.
 
 ## Other issues
 

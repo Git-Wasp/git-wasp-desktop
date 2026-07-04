@@ -57,6 +57,13 @@ const OL_ITEM = /^\d+\.\s+/;
  *  the commit form and the PR form, which both use `renderMarkdown` for preview. */
 export type MarkdownTab = "write" | "preview";
 
+/** The Write/Preview options for a `SegmentedControl` — shared by the commit and
+ *  PR forms so both markdown editors read identically. */
+export const MARKDOWN_TAB_OPTIONS: { value: MarkdownTab; label: string }[] = [
+  { value: "write", label: "Write" },
+  { value: "preview", label: "Preview" },
+];
+
 export function renderMarkdown(src: string): string {
   if (!src || !src.trim()) return "";
 
