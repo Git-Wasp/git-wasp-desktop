@@ -20,6 +20,11 @@ export interface StageFileContents {
   isBinary: boolean;
   /** False when the file is a deletion (absent on disk). */
   worktreeExists: boolean;
+  /** `data:` URI preview of each side when the path is a recognised image type
+   *  (null otherwise, or for an absent side). Rendered as `<img>` in place of a
+   *  text diff. */
+  headImage?: string | null;
+  worktreeImage?: string | null;
 }
 
 export interface Identity {

@@ -255,6 +255,67 @@ describe("StageFileEditor", () => {
     expect(overview!.children.length).toBe(1);
   });
 
+  describe("image preview", () => {
+    // An added image: only the new (worktree) side has a data URI.
+    const addedImage: StageFileContents = {
+      headContent: "",
+      worktreeContent: "",
+      isBinary: true,
+      worktreeExists: true,
+      headImage: null,
+      worktreeImage: "data:image/png;base64,AAAA",
+    };
+    // A modified image: both sides preview.
+    const modifiedImage: StageFileContents = {
+      headContent: "",
+      worktreeContent: "",
+      isBinary: true,
+      worktreeExists: true,
+      headImage: "data:image/png;base64,OLD0",
+      worktreeImage: "data:image/png;base64,NEW1",
+    };
+
+    it("previews an image instead of a text diff, offering whole-file staging", () => {
+      const onStageWholeFile = vi.fn();
+      const { container } = render(
+        <StageFileEditor
+          path="logo.png"
+          contents={addedImage}
+          onStage={vi.fn()}
+          onStageWholeFile={onStageWholeFile}
+        />,
+      );
+
+      expect(container.querySelector('[data-testid="image-diff"]')).not.toBeNull();
+      // No text/line panes and no view-mode toggle for an image.
+      expect(container.querySelector('[data-testid="head-pane"]')).toBeNull();
+      expect(screen.queryByRole("button", { name: "Inline view" })).toBeNull();
+
+      const img = screen.getByAltText(/preview/i) as HTMLImageElement;
+      expect(img.src).toBe("data:image/png;base64,AAAA");
+
+      fireEvent.click(screen.getByRole("button", { name: /stage whole file/i }));
+      expect(onStageWholeFile).toHaveBeenCalledWith("logo.png");
+    });
+
+    it("shows both before/after images for a modified image", () => {
+      render(<StageFileEditor path="logo.png" contents={modifiedImage} onStage={vi.fn()} />);
+
+      const imgs = screen.getAllByAltText(/preview/i) as HTMLImageElement[];
+      expect(imgs.map((i) => i.getAttribute("src"))).toEqual([
+        "data:image/png;base64,OLD0",
+        "data:image/png;base64,NEW1",
+      ]);
+    });
+
+    it("has no staging controls when read-only (commit view)", () => {
+      render(
+        <StageFileEditor readOnly path="logo.png" contents={modifiedImage} onStage={vi.fn()} />,
+      );
+      expect(screen.queryByRole("button", { name: /stage whole file/i })).toBeNull();
+    });
+  });
+
   describe("read-only mode", () => {
     it("renders the diff with custom labels and no staging controls", async () => {
       const { container } = render(

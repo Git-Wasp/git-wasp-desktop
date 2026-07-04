@@ -121,6 +121,59 @@ const paneLabelStyle: React.CSSProperties = {
   borderBottom: "1px solid var(--color-border-subtle)",
 };
 
+// A checkerboard so transparent regions of the image read as transparent (not a
+// flat fill that could be mistaken for the image's own background).
+const checkerBackground: React.CSSProperties = {
+  backgroundColor: "var(--color-bg-elevated)",
+  backgroundImage:
+    "linear-gradient(45deg, rgba(128,128,128,0.18) 25%, transparent 25%), linear-gradient(-45deg, rgba(128,128,128,0.18) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(128,128,128,0.18) 75%), linear-gradient(-45deg, transparent 75%, rgba(128,128,128,0.18) 75%)",
+  backgroundSize: "16px 16px",
+  backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0",
+};
+
+/** One side of the image diff: the labelled version, or a muted placeholder when
+ *  that side is absent (an added / deleted image). */
+function ImagePane({
+  label,
+  src,
+  emptyText,
+}: {
+  label?: string;
+  src: string | null | undefined;
+  emptyText: string;
+}) {
+  return (
+    <div
+      style={{ display: "flex", flexDirection: "column", minHeight: 0, background: "var(--color-bg-surface)" }}
+    >
+      {label && <div style={paneLabelStyle}>{label}</div>}
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflow: "auto",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "var(--space-3)",
+        }}
+      >
+        {src ? (
+          <img
+            src={src}
+            alt={label ? `${label} preview` : "image preview"}
+            style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", ...checkerBackground }}
+          />
+        ) : (
+          <span style={{ color: "var(--color-text-muted)", fontSize: "var(--font-size-sm)" }}>
+            {emptyText}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function lineStartOffsets(text: string): number[] {
   const starts = [0];
   for (let i = 0; i < text.length; i++) {
@@ -310,7 +363,11 @@ export function StageFileEditor({
 }: StageFileEditorProps) {
   // In read-only mode a deletion (no "worktree" side) is still a perfectly good
   // diff to render (all-removed); only a binary file can't be shown line by line.
-  const lineEditable = !contents.isBinary && (readOnly || contents.worktreeExists);
+  // A recognised image (either side has a data-URI) previews as an image rather
+  // than a text diff, taking priority over the line editor.
+  const isImage = !!(contents.headImage || contents.worktreeImage);
+  const lineEditable =
+    !isImage && !contents.isBinary && (readOnly || contents.worktreeExists);
 
   const language = useMemo(() => languageForPath(path), [path]);
 
@@ -659,33 +716,71 @@ export function StageFileEditor({
       </div>
 
       {!lineEditable ? (
-        <div
-          style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "var(--space-3)",
-            padding: "var(--space-4)",
-            color: "var(--color-text-muted)",
-            fontSize: "var(--font-size-sm)",
-            textAlign: "center",
-          }}
-        >
-          <span>
-            {contents.isBinary
-              ? readOnly
-                ? "Binary file — no preview available."
-                : "Binary file — can't be staged line by line."
-              : "File deleted — can't be staged line by line."}
-          </span>
-          {!readOnly && onStageWholeFile && (
-            <Button variant="primary" size="sm" onClick={() => onStageWholeFile(path)}>
-              Stage whole file
-            </Button>
-          )}
-        </div>
+        isImage ? (
+          <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+            <div
+              data-testid="image-diff"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                flex: 1,
+                minHeight: 0,
+                gap: "1px",
+                background: "var(--color-border-subtle)",
+              }}
+            >
+              <ImagePane label={leftLabel} src={contents.headImage} emptyText="No previous version" />
+              <ImagePane
+                label={rightLabel}
+                src={contents.worktreeImage}
+                emptyText={contents.worktreeExists ? "—" : "Deleted"}
+              />
+            </div>
+            {!readOnly && onStageWholeFile && (
+              <div
+                style={{
+                  padding: "var(--space-2) var(--space-3)",
+                  borderTop: "1px solid var(--color-border-subtle)",
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  flexShrink: 0,
+                }}
+              >
+                <Button variant="primary" size="sm" onClick={() => onStageWholeFile(path)}>
+                  Stage whole file
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "var(--space-3)",
+              padding: "var(--space-4)",
+              color: "var(--color-text-muted)",
+              fontSize: "var(--font-size-sm)",
+              textAlign: "center",
+            }}
+          >
+            <span>
+              {contents.isBinary
+                ? readOnly
+                  ? "Binary file — no preview available."
+                  : "Binary file — can't be staged line by line."
+                : "File deleted — can't be staged line by line."}
+            </span>
+            {!readOnly && onStageWholeFile && (
+              <Button variant="primary" size="sm" onClick={() => onStageWholeFile(path)}>
+                Stage whole file
+              </Button>
+            )}
+          </div>
+        )
       ) : (
         <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
           {viewMode === "split" ? (

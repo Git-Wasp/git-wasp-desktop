@@ -928,7 +928,25 @@ between sections, and add new ideas under the right heading. Items marked
       excludes published-no-upstream + the base; frontend pre-selects merged but not
       unmerged local-only. Suites green (frontend 522, backend 213).
 - [ ] Add "Search" feature to the git graph. A search button should be included which allows the user to search through the commits for commit hashes or text that matches commit messages. Matching results should be highlighted in the graph, and a count of matches should be shown. "Highlighting" can be via "dimming" non-matching commits, or by highlight matching commits, or both. "Up" and "Down" arrows should allow the user to navigate between matching commits in the graph - the "action bar" at the top should always remain visible. A small "hovering" search component would be acceptable, but open to other ideas.
-- [ ] Add preview for certain binary files when selecting files in staging or viewing previous commits. Primary use case is to view image files so we should support common files including png, gif, jp(e)g
+- [x] Add preview for certain binary files when selecting files in staging or viewing previous commits. Primary use case is to view image files so we should support common files including png, gif, jp(e)g
+      — image files now render an inline before/after **image preview** in the shared
+      `StageFileEditor` (so it works in both the staging diff and the read-only
+      commit-file diff) instead of the "Binary file — no preview" message. Backend:
+      `StageFileContents` gained `head_image`/`worktree_image` — a base64 `data:`
+      URI per side, populated (in both `get_stage_file_contents` and
+      `get_commit_file_contents`) when the path's extension is a recognised raster
+      type (png/gif/jpg/jpeg/webp/bmp/ico) via new `image_mime_from_path` +
+      `image_data_url` helpers (reusing the existing `base64` dep). An absent side
+      (add/delete) is `None`. Frontend: `isImage` (either side has a URI) takes
+      priority over the text/line editor; a two-column `ImagePane` grid shows each
+      version on a transparency checkerboard, with muted "No previous version" /
+      "Deleted" placeholders for an absent side, and a "Stage whole file" button in
+      the staging flow (none when read-only). CSP is already `null`, so `data:`
+      images render without change (flag for the future CSP task: it'll need
+      `img-src 'self' data:`). Tests: backend (PNG → data URI, non-image binary →
+      none) + editor (previews instead of text diff, whole-file stage, before/after
+      pair, no controls when read-only). Suites green (frontend 535, backend 215).
+      Possible follow-up: cap preview size for very large images (currently no limit).
 - [x] Add a "hunk" view to the diff viewer in addition to the current "side by side" and "inline" views. The "hunk" view should show a "hunk" for each change. Also add tooltips to the three buttons that allow the user to change view. Persist the last selected view as the "default" e.g. when closing and re-opening the app.
       — added a third **Hunk** view to `StageFileEditor` (used by both the staging
       diff and the read-only commit-file diff). New pure, tested `hunkLines(rows,
@@ -950,6 +968,7 @@ between sections, and add new ideas under the right heading. Items marked
 - [ ] In the diff view add an option to "wrap" text or "don't wrap text". Currently we wrap text rather than let it overflow horizontally.
 - [ ] In the diff view add an option to hide "leading/trailing whitespace only" changes.
 - [ ] Add a "stash changes" button before "Stage all" when viewing uncommitted files. Remove the "Stash changes" button from the sidebar.
+- [ ] Add a "notifications" button (bell) to the top menu bar. When notifications are fired (currently toasts) append a notification to a floating panel that opens from the right when clicking the "notifications" icon. Allow notifications to be dismissed one at a time or all at once. Notifications should have scope - either to a repo or global. If per-repo, the repo name should be shown in the notification details. All notifications should include a timestamp.
 - [x] Always show current checked out branch at the *top* of the sidebar panel showing local branches
       — the sidebar's Local list now partitions the checked-out (`isHead`) branch to
       the top, keeping the remaining branches in their existing order (`Sidebar.tsx`).

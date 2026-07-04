@@ -65,6 +65,37 @@ pub struct StageFileContents {
     /// Whether the file still exists on disk. False means a deletion (the editor
     /// falls back to whole-file staging rather than writing an empty blob).
     pub worktree_exists: bool,
+    /// A `data:` URI preview of each side when the path is a recognised image
+    /// type (`None` otherwise, or when that side is absent — an add/delete). The
+    /// frontend renders these as `<img>` instead of attempting a text diff.
+    pub head_image: Option<String>,
+    pub worktree_image: Option<String>,
+}
+
+/// The image MIME for a path by extension, or `None` if it isn't a previewable
+/// image. Kept to common raster formats (the ones worth an inline preview).
+fn image_mime_from_path(path: &str) -> Option<&'static str> {
+    let ext = Path::new(path).extension()?.to_str()?.to_ascii_lowercase();
+    match ext.as_str() {
+        "png" => Some("image/png"),
+        "gif" => Some("image/gif"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "webp" => Some("image/webp"),
+        "bmp" => Some("image/bmp"),
+        "ico" => Some("image/x-icon"),
+        _ => None,
+    }
+}
+
+/// Base64 `data:` URI for `bytes` under `mime`, or `None` for an empty side (a
+/// file added on one side / deleted on the other).
+fn image_data_url(bytes: &[u8], mime: &str) -> Option<String> {
+    if bytes.is_empty() {
+        return None;
+    }
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+    Some(format!("data:{mime};base64,{b64}"))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -241,12 +272,21 @@ pub fn get_stage_file_contents(repo: &Repository, path: &str) -> anyhow::Result<
     };
 
     let is_binary = head_bytes.contains(&0) || worktree_bytes.contains(&0);
+    let (head_image, worktree_image) = match image_mime_from_path(path) {
+        Some(mime) => (
+            image_data_url(&head_bytes, mime),
+            image_data_url(&worktree_bytes, mime),
+        ),
+        None => (None, None),
+    };
 
     Ok(StageFileContents {
         head_content: String::from_utf8_lossy(&head_bytes).into_owned(),
         worktree_content: String::from_utf8_lossy(&worktree_bytes).into_owned(),
         is_binary,
         worktree_exists,
+        head_image,
+        worktree_image,
     })
 }
 
@@ -286,12 +326,19 @@ pub fn get_commit_file_contents(
 
     let worktree_exists = commit_tree.get_path(Path::new(path)).is_ok();
     let is_binary = parent_bytes.contains(&0) || commit_bytes.contains(&0);
+    // The parent side is named by old_path on a rename; use its own extension.
+    let head_image = image_mime_from_path(old_path.unwrap_or(path))
+        .and_then(|mime| image_data_url(&parent_bytes, mime));
+    let worktree_image =
+        image_mime_from_path(path).and_then(|mime| image_data_url(&commit_bytes, mime));
 
     Ok(StageFileContents {
         head_content: String::from_utf8_lossy(&parent_bytes).into_owned(),
         worktree_content: String::from_utf8_lossy(&commit_bytes).into_owned(),
         is_binary,
         worktree_exists,
+        head_image,
+        worktree_image,
     })
 }
 
@@ -1302,6 +1349,25 @@ mod tests {
 
         let c = get_stage_file_contents(&repo, "bin").unwrap();
         assert!(c.is_binary);
+    }
+
+    #[test]
+    fn get_stage_file_contents_returns_a_data_uri_for_an_image() {
+        let (dir, repo) = init_repo();
+        make_initial_commit(&repo);
+        // Minimal PNG signature bytes — enough to exercise the data-URI path.
+        fs::write(dir.path().join("logo.png"), [0x89, b'P', b'N', b'G', 0, 1, 2]).unwrap();
+
+        let c = get_stage_file_contents(&repo, "logo.png").unwrap();
+        // New (worktree) side is an image; no previous version on the HEAD side.
+        let uri = c.worktree_image.expect("image data URI");
+        assert!(uri.starts_with("data:image/png;base64,"));
+        assert_eq!(c.head_image, None);
+
+        // A non-image binary gets no image preview.
+        fs::write(dir.path().join("blob.bin"), b"a\0b").unwrap();
+        let bin = get_stage_file_contents(&repo, "blob.bin").unwrap();
+        assert_eq!(bin.worktree_image, None);
     }
 
     #[test]
