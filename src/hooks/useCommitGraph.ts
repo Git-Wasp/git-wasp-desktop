@@ -51,6 +51,9 @@ export function useCommitGraph(
   // The canvas CSS width; a change must re-size the pixel buffer and redraw,
   // otherwise the browser stretches the stale bitmap and squashes the dots.
   width?: number,
+  // The oid of the row under the pointer, for a subtle hover band in the graph
+  // column (DOM cells are handled by GraphRow). Null when nothing is hovered.
+  hoveredOid?: string | null,
 ): void {
   const configRef = useRef<GraphConfig | null>(null);
   const laneColorsRef = useRef<string[]>([]);
@@ -85,6 +88,7 @@ export function useCommitGraph(
     const selectedBg = resolveCssVar("--color-bg-selected") || "rgba(77, 157, 224, 0.15)";
     const nodeBg = resolveCssVar("--color-graph-node-bg") || "rgba(255, 255, 255, 0.035)";
     const headRowBg = resolveCssVar("--color-graph-head-row-bg") || "rgba(77, 157, 224, 0.13)";
+    const hoverBg = resolveCssVar("--color-bg-hover") || "rgba(255, 255, 255, 0.06)";
     const dpr = window.devicePixelRatio || 1;
 
     const cssW = canvas.clientWidth;
@@ -117,10 +121,15 @@ export function useCommitGraph(
         ctx.fillRect(0, rowTop + 1, cssW, rowHeight - 2);
       }
 
-      // The checked-out (HEAD) commit keeps a permanent muted band so it stays
-      // obvious which commit is current; a selection (below) overrides it.
+      // Stronger row band by priority — selection > hover > HEAD (matches the
+      // DOM cell background in GraphRow). A subtle hover band cues the row the
+      // pointer is over; the base nodeBg above stays underneath.
       const isSelected = selection.range.has(node.oid);
-      if (node.isHead && !node.isWorkingTree && !isSelected) {
+      const isHovered = !isSelected && hoveredOid != null && node.oid === hoveredOid;
+      if (isHovered && !node.isWorkingTree) {
+        ctx.fillStyle = hoverBg;
+        ctx.fillRect(0, rowTop, cssW, rowHeight);
+      } else if (node.isHead && !node.isWorkingTree && !isSelected) {
         ctx.fillStyle = headRowBg;
         ctx.fillRect(0, rowTop, cssW, rowHeight);
       }
@@ -279,5 +288,5 @@ export function useCommitGraph(
         }
       }
     });
-  }, [viewport, selection, canvasRef, themeTick, width, avatarVersion]);
+  }, [viewport, selection, canvasRef, themeTick, width, avatarVersion, hoveredOid]);
 }

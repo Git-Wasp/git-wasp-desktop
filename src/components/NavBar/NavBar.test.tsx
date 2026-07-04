@@ -24,6 +24,13 @@ describe("NavBar", () => {
     expect(screen.getByRole("tab", { name: /settings/i })).toBeInTheDocument();
   });
 
+  it("gives each tab an icon (accessible name is unchanged as icons are aria-hidden)", () => {
+    render(<NavBar view="history" onViewChange={vi.fn()} />);
+    expect(screen.getByRole("tab", { name: "History" }).querySelector('[data-icon="history"]')).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "PRs" }).querySelector('[data-icon="pull-request"]')).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /settings/i }).querySelector('[data-icon="settings"]')).toBeInTheDocument();
+  });
+
   it("no longer renders a Changes tab (the uncommitted section handles changes)", () => {
     render(<NavBar view="history" onViewChange={vi.fn()} />);
     expect(screen.queryByRole("tab", { name: "Changes" })).toBeNull();

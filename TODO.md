@@ -258,6 +258,7 @@ between sections, and add new ideas under the right heading. Items marked
       down by one). Regression test `working_tree_node_sits_at_top_but_anchors_to_head`
       (commits ahead of a checked-out older branch; WIP is row 0 on HEAD's lane,
       parent = HEAD, `head_row` points at HEAD).
+- [ ] Support "fast forwarding" e.g. fast forward main to current checked out commit. Experienced an issue when main was pulled from the remote, local main was not updated, and I committed a change. The current "branch" was just "HEAD" so I was not on a branch and could not push changes. Don't let this happen.
 
 ## PR refinements
 
@@ -737,9 +738,36 @@ between sections, and add new ideas under the right heading. Items marked
       viewport is null, hidden once loaded). Note: during boot the SplashScreen
       already warms the first slice, so the skeleton is mainly for repo switches
       and refetches, not first launch.
-- [ ] Add icons to the "history" and "PRs" tabs to make them more obvious. Add colour higlight underline to tabs when selected, on hover (different colour), and when inactive and not selected (muted colour)
-- [ ] Add clear highlighting on hover to sidebar items - currently only the mouse changes to a pointer - some background highlighting would make the hover more obvious
-- [ ] Add clear hover states to all buttons. Primary buttons in particular do not seem to have a clear hover state.
+- [x] Add icons to the "history" and "PRs" tabs to make them more obvious. Add colour higlight underline to tabs when selected, on hover (different colour), and when inactive and not selected (muted colour)
+      — NavBar view tabs now carry icons (new `HistoryIcon` / `PullRequestIcon` /
+      `SettingsIcon`, `aria-hidden` so accessible names are unchanged) and their
+      styling moved from an inline `tabStyle()` to a `.nav-tab` CSS class driven by
+      `aria-selected`: muted (`--color-text-muted`) when inactive, a distinct colour
+      (`--color-text-secondary`) + faint underline (`--color-border-default`) on
+      hover, and primary text + accent underline (`--color-accent-primary`) + bold
+      when selected. Test: each tab renders its `data-icon`.
+- [x] Add clear highlighting on hover to sidebar items - currently only the mouse changes to a pointer - some background highlighting would make the hover more obvious
+      — added a shared `.sidebar-row` class (`:hover` → `--color-bg-hover`,
+      `[data-active="true"]` → `--color-bg-elevated`) applied to the local/remote
+      branch rows and the recent-repo rows; the recent row's inline
+      selected-background moved to `data-active` so hover and selection compose via
+      CSS (an inline background would otherwise beat the `:hover` rule).
+- [x] Add clear hover states to all buttons. Primary buttons in particular do not seem to have a clear hover state.
+      — the primary button's hover swapped its fill to `--color-accent-hover` (a
+      *darker* secondary), which read weakly. It now keeps its accent fill and
+      **brightens** on hover via `.ui-button[data-variant="primary"]:hover
+      { filter: brightness(1.12) }` — a clear, theme-independent lift (filter isn't
+      set inline, so it isn't overridden). Secondary/ghost/danger keep their JS
+      background swap to `--color-bg-hover` / `--color-diff-del-bg`.
+- [x] Add a subtle :hover highlight to commits in the graph as the pointer moves
+      over a row — `GraphRow` tracks a `hovered` flag (stable `onRowHover` setter, so
+      only the entered/left memoized rows re-render); the DOM branch/message cells
+      pick up `--color-bg-hover` with priority selected > hover > HEAD, and
+      `useCommitGraph` paints the matching subtle band in the graph column
+      (`hoveredOid` param, same priority, under the edges/dots so lines stay on top).
+      Rows gained a `data-oid` attr. Test: hovering a commit row sets the cell
+      background and mouse-leave clears it.
+- [ ] Move "stashes" to the line *above* their ancestor rather than the line below as they are now
 
 ## Other issues
 

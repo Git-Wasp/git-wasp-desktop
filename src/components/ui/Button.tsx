@@ -47,8 +47,11 @@ function variantStyles(variant: ButtonVariant): CSSProperties {
   }
 }
 
-function hoverBackground(variant: ButtonVariant): string {
-  if (variant === "primary") return "var(--color-accent-hover)";
+// Primary keeps its accent fill and brightens via CSS (`.ui-button[data-variant]`
+// :hover) rather than a JS background swap, which read too weakly. The other
+// variants swap background here.
+function hoverBackground(variant: ButtonVariant): string | null {
+  if (variant === "primary") return null;
   if (variant === "danger") return "var(--color-diff-del-bg)";
   return "var(--color-bg-hover)";
 }
@@ -82,10 +85,12 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ref={ref}
       {...rest}
       className={["ui-button", className].filter(Boolean).join(" ")}
+      data-variant={variant}
       disabled={isDisabled}
       aria-busy={loading || undefined}
       onMouseEnter={(e) => {
-        if (!isDisabled) e.currentTarget.style.background = hoverBackground(variant);
+        const hover = hoverBackground(variant);
+        if (!isDisabled && hover) e.currentTarget.style.background = hover;
         onMouseEnter?.(e);
       }}
       onMouseLeave={(e) => {

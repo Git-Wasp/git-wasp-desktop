@@ -100,6 +100,17 @@ describe("CommitGraph columns", () => {
     expect(onCommitSelect).toHaveBeenCalled();
   });
 
+  it("highlights a commit row on hover and clears it on leave", () => {
+    const { container } = render(<CommitGraph />);
+    const row = container.querySelector(`[data-oid="${"b".repeat(40)}"]`) as HTMLElement;
+    const cell = row.firstElementChild as HTMLElement; // branch cell carries the bg
+    expect(cell.style.background).toBe("transparent");
+    fireEvent.mouseEnter(row);
+    expect(cell.style.background).toContain("--color-bg-hover");
+    fireEvent.mouseLeave(row);
+    expect(cell.style.background).toBe("transparent");
+  });
+
   it("persists a resized branch column width to localStorage", () => {
     localStorage.removeItem("graphBranchColWidth");
     render(<CommitGraph />);

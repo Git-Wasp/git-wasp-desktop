@@ -54,6 +54,8 @@ const GraphRow = memo(function GraphRow({
   node,
   rowIndex,
   selected,
+  hovered,
+  onRowHover,
   branchWidth,
   graphWidth,
   currentBranch,
@@ -72,21 +74,29 @@ const GraphRow = memo(function GraphRow({
   pillHandlers: PillHandlers;
   onRowClick: (node: GraphNode, shiftKey: boolean) => void;
   onRowContextMenu: (e: React.MouseEvent, node: GraphNode) => void;
+  hovered: boolean;
+  onRowHover: (oid: string | null) => void;
 }) {
   // The checked-out (HEAD) commit's row keeps a permanent muted band so it's
-  // obvious which commit is current; an actual selection takes over with the
-  // normal highlight. (The canvas paints the matching band for the graph column.)
+  // obvious which commit is current; hover shows a subtle highlight, and an
+  // actual selection takes over with the normal highlight. (The canvas paints
+  // the matching band for the graph column.) Priority: selected > hover > HEAD.
   const isHeadRow = node.isHead && !node.isWorkingTree;
   const cellBg = selected
     ? "var(--color-bg-selected)"
-    : isHeadRow
-      ? "var(--color-graph-head-row-bg)"
-      : "transparent";
+    : hovered
+      ? "var(--color-bg-hover)"
+      : isHeadRow
+        ? "var(--color-graph-head-row-bg)"
+        : "transparent";
   return (
     <div
+      data-oid={node.oid}
       data-head-row={isHeadRow ? "true" : undefined}
       onClick={(e) => onRowClick(node, e.shiftKey)}
       onContextMenu={(e) => onRowContextMenu(e, node)}
+      onMouseEnter={() => onRowHover(node.oid)}
+      onMouseLeave={() => onRowHover(null)}
       style={{
         position: "absolute",
         top: rowIndex * ROW_HEIGHT,
@@ -180,6 +190,10 @@ export function CommitGraph({
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [prompt, setPrompt] = useState<PromptState | null>(null);
   const [tagDelete, setTagDelete] = useState<{ name: string; onRemote: boolean } | null>(null);
+  // The row the pointer is over, for a subtle hover highlight. Stable setter, so
+  // memoized rows only re-render when their own hovered flag flips.
+  const [hoveredOid, setHoveredOid] = useState<string | null>(null);
+  const handleRowHover = useCallback((oid: string | null) => setHoveredOid(oid), []);
 
   // Resizable, persisted column widths (the message column flexes to fill).
   const [branchWidth, setBranchWidth] = usePersistedWidth("graphBranchColWidth", BRANCH_COL_WIDTH, 100, 400);
@@ -515,7 +529,7 @@ export function CommitGraph({
     }
   };
 
-  useCommitGraph(canvasRef, viewport, selection, graphWidth);
+  useCommitGraph(canvasRef, viewport, selection, graphWidth, hoveredOid);
 
   const offset = viewport?.offset ?? 0;
   const totalHeight = (viewport?.totalCount ?? 0) * ROW_HEIGHT;
@@ -598,6 +612,8 @@ export function CommitGraph({
               node={node}
               rowIndex={offset + i}
               selected={selection.range.has(node.oid)}
+              hovered={hoveredOid === node.oid}
+              onRowHover={handleRowHover}
               branchWidth={branchWidth}
               graphWidth={graphWidth}
               currentBranch={currentRepo?.headBranch ?? null}

@@ -1,15 +1,15 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useRepoStore } from "../../stores/repoStore";
 import { IconButton } from "../ui/IconButton";
-import { SidebarIcon } from "../ui/icons";
+import { SidebarIcon, HistoryIcon, PullRequestIcon, SettingsIcon } from "../ui/icons";
 import { RepoPicker } from "./RepoPicker";
 import { BranchPicker } from "./BranchPicker";
 
 export type View = "history" | "prs" | "settings";
 
-const VIEW_TABS: { id: View; label: string }[] = [
-  { id: "history", label: "History" },
-  { id: "prs", label: "PRs" },
+const VIEW_TABS: { id: View; label: string; icon: ReactNode }[] = [
+  { id: "history", label: "History", icon: <HistoryIcon /> },
+  { id: "prs", label: "PRs", icon: <PullRequestIcon /> },
 ];
 
 const barStyle: CSSProperties = {
@@ -22,23 +22,6 @@ const barStyle: CSSProperties = {
   background: "var(--color-bg-panel)",
   borderBottom: "1px solid var(--color-border-subtle)",
 };
-
-function tabStyle(active: boolean): CSSProperties {
-  return {
-    display: "inline-flex",
-    alignItems: "center",
-    padding: "0 var(--space-3)",
-    fontSize: "var(--font-size-sm)",
-    background: "transparent",
-    border: "none",
-    borderBottom: active
-      ? "2px solid var(--color-accent-primary)"
-      : "2px solid transparent",
-    color: active ? "var(--color-text-primary)" : "var(--color-text-muted)",
-    fontWeight: active ? "var(--font-weight-semibold)" : "var(--font-weight-normal)",
-    cursor: "pointer",
-  };
-}
 
 const dividerStyle: CSSProperties = {
   alignSelf: "center",
@@ -98,9 +81,10 @@ export function NavBar({
             key={tab.id}
             role="tab"
             aria-selected={view === tab.id}
-            style={tabStyle(view === tab.id)}
+            className="nav-tab"
             onClick={() => onViewChange(tab.id)}
           >
+            {tab.icon}
             {tab.label}
           </button>
         ))}
@@ -110,10 +94,11 @@ export function NavBar({
       <button
         role="tab"
         aria-selected={view === "settings"}
-        style={tabStyle(view === "settings")}
+        className="nav-tab"
         onClick={() => onViewChange("settings")}
       >
-        ⚙ Settings
+        <SettingsIcon />
+        Settings
       </button>
     </div>
   );

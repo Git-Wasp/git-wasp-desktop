@@ -238,7 +238,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
               <div style={branchEmptyHintStyle}>No local branches</div>
             ) : (
               localBranches.map((b) => (
-                <div key={b.name} style={branchRowStyle}>
+                <div key={b.name} className="sidebar-row" style={branchRowStyle}>
                   <span style={branchIconStyle} title="Local branch">
                     <LaptopIcon />
                   </span>
@@ -307,7 +307,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
               <div style={branchEmptyHintStyle}>No remote branches</div>
             ) : (
               remoteBranches.map((b) => (
-                <div key={b.name} style={branchRowStyle}>
+                <div key={b.name} className="sidebar-row" style={branchRowStyle}>
                   <span style={branchIconStyle} title="Remote branch">
                     <GitHubIcon />
                   </span>
@@ -341,13 +341,14 @@ export function Sidebar({ width = 220 }: { width?: number }) {
           {recentRepos.map((r) => (
             <div
               key={r.path}
+              className="sidebar-row"
+              data-active={selectedRecentPath === r.path}
               onClick={() => setSelectedRecentPath((current) => (current === r.path ? null : r.path))}
               style={{
                 display: "flex",
                 alignItems: "center",
                 gap: "var(--space-1)",
                 padding: "var(--space-1) var(--space-3)",
-                background: selectedRecentPath === r.path ? "var(--color-bg-elevated)" : "transparent",
                 cursor: "pointer",
               }}
               title={r.path}

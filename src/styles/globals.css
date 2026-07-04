@@ -132,6 +132,55 @@
   transform: translateY(1px);
 }
 
+/* Primary buttons carry a solid accent fill, so a background swap on hover reads
+   weakly. Brightening the fill (works on every theme, no per-theme token) gives a
+   clear, consistent hover affordance. Secondary/ghost/danger swap background in
+   JS (see Button.tsx). `filter` is not set inline, so this isn't overridden. */
+.ui-button[data-variant="primary"]:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+/* NavBar view tabs (History / PRs / Settings): muted when inactive, a distinct
+   colour + faint underline on hover, and the accent underline + primary text
+   when selected (driven by aria-selected). */
+.nav-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-3);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-default),
+    border-color var(--duration-fast) var(--ease-default);
+}
+.nav-tab:hover:not([aria-selected="true"]) {
+  color: var(--color-text-secondary);
+  border-bottom-color: var(--color-border-default);
+}
+.nav-tab[aria-selected="true"] {
+  color: var(--color-text-primary);
+  border-bottom-color: var(--color-accent-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Interactive sidebar rows (branches, recent repos): a subtle background on
+   hover so the whole row reads as clickable, not just the cursor change. An
+   active/selected row (data-active) keeps the stronger elevated fill. */
+.sidebar-row {
+  transition: background var(--duration-fast) var(--ease-default);
+}
+.sidebar-row:hover {
+  background: var(--color-bg-hover);
+}
+.sidebar-row[data-active="true"] {
+  background: var(--color-bg-elevated);
+}
+
 html,
 body,
 #root {
