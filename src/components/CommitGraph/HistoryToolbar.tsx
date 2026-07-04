@@ -135,7 +135,7 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
   ];
 
   return (
-    <div style={barStyle}>
+    <div className="elevation-below" style={barStyle}>
       <Button type="button" onClick={handlePush} loading={isPushing} disabled={!hasRemote || busy}>
         {!isPushing && <PushIcon />}
         Push

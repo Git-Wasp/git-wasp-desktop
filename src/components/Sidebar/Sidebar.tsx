@@ -120,6 +120,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
 
   return (
     <div
+      className="elevation-right"
       style={{
         width,
         flexShrink: 0,

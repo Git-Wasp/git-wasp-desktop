@@ -841,10 +841,31 @@ between sections, and add new ideas under the right heading. Items marked
       transparent variants (tertiary/danger) keep their JS swap since a fill
       appearing over transparent *is* visible. Added `filter` to the button
       transition so the brightness animates.
-- [ ] Add more "depth" to the UI. Everything feels very "flat" and 1-dimensional. This could be achieved with shadows perhaps.
+- [x] Add more "depth" to the UI. Everything feels very "flat" and 1-dimensional. This could be achieved with shadows perhaps.
+      — root cause: the app's regions (top chrome, sidebar, graph, detail panel)
+      were separated *only* by 1px subtle borders, so the whole UI read as a single
+      plane cut by hairlines — even though the tonal model was already right
+      (`bg-panel` chrome/panels are lighter/raised over the darker `bg-app` content
+      well). Added a token-driven **elevation pass** that sells that hierarchy:
+      new `--shadow-edge` token (theme-tuned — heavier on dark; GitHub Dark/Cobalt2
+      inherit `:root`) drives three one-sided directional-shadow utility classes in
+      globals.css (`.elevation-below` / `.elevation-right` / `.elevation-left`,
+      each with `position:relative` + a small `z-index` so the shadow paints over
+      the adjacent content rather than being covered by a later sibling). Applied:
+      the NavBar and the history toolbar cast a soft shadow *down* onto the content;
+      the sidebar casts *right*; the detail panel casts *left* and was given the
+      raised `bg-panel` (it previously inherited the `bg-app` well), so the layout
+      now reads as a recessed graph well between two raised side panels under a
+      floating top chrome. The 1px borders stay (crisp edge) with the shadow adding
+      the depth. No component structure changed (className added to four region
+      roots); full suite green (514). Left inputs flat on purpose — an inline inset
+      box-shadow would override the `:focus-visible` focus ring. **Subjective/tunable:**
+      the effect intensity lives entirely in `--shadow-edge` + the three classes, so
+      it's a one-line dial if it reads too strong/soft after seeing it live.
 - [ ] Add highlight on hover to the menu that opens for sidebar items. Make it consistent with the menu used in the git graph on right-click - ideally using a single menu component.
 - [ ] Review all other components' hover state. E.g. the files listed in the right hand panel when viewing an existing commit - hovering over a file should highlight what's being hovered over.
 - [ ] Extend the "stale branches" feature to also provide the option to prune branches that only exist locally and don't exist on the remote - not just those that did exist on the remote and don't now.
+- [ ] Add "Search" feature to the git graph. A search button should be included which allows the user to search through the commits for commit hashes or text that matches commit messages. Matching results should be highlighted in the graph, and a count of matches should be shown. "Up" and "Down" arrows should allow the user to navigate between matching commits in the graph - the "action bar" at the top should always remain visible.
 
 ## Other issues
 

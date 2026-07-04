@@ -294,9 +294,11 @@ export default function App() {
               onResize={(dx) => setDetailWidth((w) => w - dx)}
             />
             <div
+              className="elevation-left"
               style={{
                 width: detailWidth,
                 flexShrink: 0,
+                background: "var(--color-bg-panel)",
                 borderLeft: "1px solid var(--color-border-subtle)",
                 overflow: "hidden",
               }}

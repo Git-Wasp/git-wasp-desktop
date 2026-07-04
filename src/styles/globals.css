@@ -148,6 +148,34 @@
   box-shadow: var(--shadow-sm);
 }
 
+/* === Elevation ============================================================
+   The app's regions were separated only by 1px borders, which reads flat. These
+   cast a soft directional shadow from each raised region — the top chrome and
+   the two side panels — onto the recessed content well, so the layout reads as
+   stacked planes rather than one plane cut by hairlines. --shadow-edge is
+   theme-tuned (heavier on dark). The shadow is one-sided (large negative spread)
+   so it only shows on the edge that faces the content.
+
+   Each raised region also needs to sit above the content in paint order, or a
+   later-painted sibling would cover the shadow — hence position:relative + a
+   small z-index. The keeps the 1px border too: the hairline gives a crisp edge,
+   the shadow gives depth. */
+.elevation-below {
+  position: relative;
+  z-index: 2;
+  box-shadow: 0 8px 16px -8px var(--shadow-edge);
+}
+.elevation-right {
+  position: relative;
+  z-index: 1;
+  box-shadow: 8px 0 16px -8px var(--shadow-edge);
+}
+.elevation-left {
+  position: relative;
+  z-index: 1;
+  box-shadow: -8px 0 16px -8px var(--shadow-edge);
+}
+
 /* NavBar view tabs (History / PRs / Settings): muted when inactive, a distinct
    colour + faint underline on hover, and the accent underline + primary text
    when selected (driven by aria-selected). */

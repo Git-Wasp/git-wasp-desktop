@@ -52,7 +52,7 @@ export function NavBar({
   const currentRepo = useRepoStore((s) => s.currentRepo);
 
   return (
-    <div style={barStyle} role="tablist" aria-label="Views">
+    <div className="elevation-below" style={barStyle} role="tablist" aria-label="Views">
       {onToggleSidebar && (
         <div style={{ display: "flex", alignItems: "center", paddingRight: "var(--space-1)" }}>
           <IconButton

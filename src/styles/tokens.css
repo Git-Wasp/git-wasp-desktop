@@ -104,6 +104,11 @@
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+  /* Colour used to build the soft directional "edge" shadows that separate the
+     raised chrome/panels from the recessed content well (see .elevation-* in
+     globals.css). Heavier on dark themes; the light themes lighten it. The
+     other dark themes (GitHub Dark, Cobalt2) inherit this value. */
+  --shadow-edge: rgba(0, 0, 0, 0.55);
 
   /* === ANIMATION === */
   --duration-fast:   100ms;
@@ -181,6 +186,7 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.10);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.12);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.16);
+  --shadow-edge: rgba(15, 23, 42, 0.14);
 
   /* Interactive surfaces */
   --color-bg-selected: #d6e6fb;
@@ -289,6 +295,7 @@
   --shadow-sm: 0 1px 2px rgba(31, 35, 40, 0.10);
   --shadow-md: 0 3px 6px rgba(31, 35, 40, 0.12);
   --shadow-lg: 0 8px 24px rgba(31, 35, 40, 0.16);
+  --shadow-edge: rgba(31, 35, 40, 0.14);
 
   --color-bg-selected:   #ddf4ff;
   --color-bg-input:      #ffffff;
