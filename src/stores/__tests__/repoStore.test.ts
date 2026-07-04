@@ -52,6 +52,16 @@ describe("repoStore", () => {
     expect(useRepoStore.getState().recentRepos).toEqual(repos);
   });
 
+  it("removeRecent drops the entry and stores the returned list", async () => {
+    const remaining = [{ path: "/b", name: "b", pinned: false, lastOpened: 0 }];
+    mockInvoke.mockResolvedValueOnce(remaining);
+
+    await useRepoStore.getState().removeRecent("/a");
+
+    expect(mockInvoke).toHaveBeenCalledWith("remove_recent_repo", { path: "/a" });
+    expect(useRepoStore.getState().recentRepos).toEqual(remaining);
+  });
+
   it("checkoutBranch calls checkout_branch and updates currentRepo", async () => {
     const updatedRepo = { name: "r", path: "/p", headBranch: "feature" };
     mockInvoke.mockResolvedValueOnce(updatedRepo);  // checkout_branch

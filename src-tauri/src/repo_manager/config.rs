@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -104,6 +104,15 @@ impl AppConfig {
         self.open_repos = open_repos;
         self.active_repo_path = active;
     }
+
+    /// Drop a repository from the recent list (e.g. the user removed it). Only
+    /// affects our reference to it; the repository on disk is untouched.
+    pub fn remove_recent(&mut self, path: &Path) {
+        self.recent_repos.retain(|r| r.path != path);
+        if self.last_repo_path.as_deref() == Some(path) {
+            self.last_repo_path = None;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -150,6 +159,38 @@ mod tests {
         let json = r#"{"recentRepos":[],"lastRepoPath":null,"workspaces":[{"id":"ws-1","name":"x","repoPaths":[]}],"activeWorkspaceId":"ws-1"}"#;
         let config: AppConfig = serde_json::from_str(json).unwrap();
         assert!(config.recent_repos.is_empty());
+    }
+
+    #[test]
+    fn remove_recent_drops_the_entry_and_clears_last_when_it_matches() {
+        let mut config = AppConfig::default();
+        config.add_recent(RepoEntry {
+            path: "/tmp/a".into(),
+            name: "a".into(),
+            pinned: false,
+            last_opened: 0,
+        });
+        config.add_recent(RepoEntry {
+            path: "/tmp/b".into(),
+            name: "b".into(),
+            pinned: false,
+            last_opened: 0,
+        });
+        // last_repo_path is now "/tmp/b" (most recent).
+        config.remove_recent(Path::new("/tmp/b"));
+        assert_eq!(config.recent_repos.len(), 1);
+        assert_eq!(config.recent_repos[0].path, PathBuf::from("/tmp/a"));
+        assert_eq!(config.last_repo_path, None);
+
+        // Removing a non-last entry leaves last_repo_path untouched.
+        config.add_recent(RepoEntry {
+            path: "/tmp/c".into(),
+            name: "c".into(),
+            pinned: false,
+            last_opened: 0,
+        });
+        config.remove_recent(Path::new("/tmp/a"));
+        assert_eq!(config.last_repo_path, Some(PathBuf::from("/tmp/c")));
     }
 
     #[test]

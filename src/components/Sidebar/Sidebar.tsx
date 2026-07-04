@@ -39,7 +39,7 @@ const branchEmptyHintStyle: CSSProperties = {
 };
 
 export function Sidebar({ width = 220 }: { width?: number }) {
-  const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, checkoutBranch, createBranch, deleteBranch, createTag } =
+  const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, removeRecent, checkoutBranch, createBranch, deleteBranch, createTag } =
     useRepoStore();
   const { fetchViewport, revealCommit, refresh } = useGraphStore();
   const { remoteInfo } = useGithubStore();
@@ -115,7 +115,10 @@ export function Sidebar({ width = 220 }: { width?: number }) {
     }
   };
 
-  const localBranches = branches.filter((b) => !b.isRemote);
+  const locals = branches.filter((b) => !b.isRemote);
+  // Always float the checked-out branch to the top of the local list; keep the
+  // rest in their existing order.
+  const localBranches = [...locals.filter((b) => b.isHead), ...locals.filter((b) => !b.isHead)];
   const remoteBranches = branches.filter((b) => b.isRemote);
 
   return (
@@ -367,7 +370,17 @@ export function Sidebar({ width = 220 }: { width?: number }) {
               </span>
               <RowMenu
                 label={`${r.name} actions`}
-                items={[{ label: "Open repository", onSelect: () => handleRecentClick(r.path) }]}
+                items={[
+                  { label: "Open repository", onSelect: () => handleRecentClick(r.path) },
+                  {
+                    label: "Remove from recent",
+                    destructive: true,
+                    onSelect: () => {
+                      setSelectedRecentPath((current) => (current === r.path ? null : current));
+                      void removeRecent(r.path);
+                    },
+                  },
+                ]}
               />
             </div>
           ))}

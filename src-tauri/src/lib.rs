@@ -46,6 +46,7 @@ pub fn run() {
             // Repo
             commands::repo::open_repo,
             commands::repo::get_recent_repos,
+            commands::repo::remove_recent_repo,
             commands::repo::get_current_repo,
             commands::repo::list_open_repos,
             commands::repo::activate_repo,

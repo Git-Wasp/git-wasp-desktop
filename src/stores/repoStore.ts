@@ -18,6 +18,9 @@ interface RepoStore {
   closeRepo: (path: string) => Promise<void>;
   newTab: () => void;
   loadRecentRepos: () => Promise<void>;
+  /** Forget a repository in the recent list. Only removes our reference — the
+   *  repository on disk is untouched. */
+  removeRecent: (path: string) => Promise<void>;
   loadBranches: () => Promise<void>;
   checkoutBranch: (name: string) => Promise<void>;
   checkoutRemoteBranch: (remoteRef: string) => Promise<void>;
@@ -99,6 +102,11 @@ export const useRepoStore = create<RepoStore>((set, get) => {
 
     loadRecentRepos: async () => {
       const repos = await invoke<RepoEntry[]>("get_recent_repos");
+      set({ recentRepos: repos });
+    },
+
+    removeRecent: async (path: string) => {
+      const repos = await invoke<RepoEntry[]>("remove_recent_repo", { path });
       set({ recentRepos: repos });
     },
 

@@ -101,6 +101,38 @@ describe("Sidebar", () => {
     expect(container.querySelector('[data-icon="github"]')).not.toBeNull();
   });
 
+  it("floats the checked-out branch to the top of the local list", () => {
+    useRepoStore.setState({
+      branches: [
+        { name: "alpha", isRemote: false, isHead: false, upstream: null, oid: "1", ahead: null, behind: null },
+        { name: "beta", isRemote: false, isHead: false, upstream: null, oid: "2", ahead: null, behind: null },
+        { name: "current", isRemote: false, isHead: true, upstream: null, oid: "3", ahead: null, behind: null },
+      ],
+    });
+
+    render(<Sidebar />);
+
+    const rows = screen.getAllByTitle(/in the commit graph$/);
+    expect(rows[0]).toHaveTextContent("current"); // head first
+    // Remaining branches keep their original order.
+    expect(rows[1]).toHaveTextContent("alpha");
+    expect(rows[2]).toHaveTextContent("beta");
+  });
+
+  it("removes a repo from the recent list via its row menu", () => {
+    const removeRecent = vi.fn().mockResolvedValue(undefined);
+    useRepoStore.setState({
+      recentRepos: [{ path: "/x", name: "x", pinned: false, lastOpened: 0 }],
+      removeRecent,
+    });
+
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole("button", { name: "x actions" }));
+    fireEvent.click(screen.getByText("Remove from recent"));
+
+    expect(removeRecent).toHaveBeenCalledWith("/x");
+  });
+
   it("pushes a branch from its row menu", async () => {
     const push = vi.fn().mockResolvedValue(undefined);
     useRemoteStore.setState({ push });

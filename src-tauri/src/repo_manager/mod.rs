@@ -259,6 +259,15 @@ impl RepoManager {
         Ok(self.config_lock()?.recent_repos.clone())
     }
 
+    /// Remove a repository from the recent list and return the updated list. Only
+    /// forgets our reference — the repository on disk is untouched.
+    pub fn remove_recent(&self, path: &str) -> anyhow::Result<Vec<RepoEntry>> {
+        let mut config = self.config_lock()?;
+        config.remove_recent(Path::new(path));
+        let _ = config.save();
+        Ok(config.recent_repos.clone())
+    }
+
     pub fn with_repo<F, T>(&self, f: F) -> anyhow::Result<T>
     where
         F: FnOnce(&Repository) -> T,
@@ -634,6 +643,10 @@ impl AppState {
 
     pub fn get_recent_repos(&self) -> anyhow::Result<Vec<RepoEntry>> {
         self.manager.get_recent()
+    }
+
+    pub fn remove_recent_repo(&self, path: &str) -> anyhow::Result<Vec<RepoEntry>> {
+        self.manager.remove_recent(path)
     }
 
     pub fn with_repo<F, T>(&self, f: F) -> anyhow::Result<T>

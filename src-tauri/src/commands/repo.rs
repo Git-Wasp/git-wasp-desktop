@@ -26,6 +26,14 @@ pub async fn get_recent_repos(state: State<'_, AppState>) -> Result<Vec<RepoEntr
 }
 
 #[tauri::command]
+pub async fn remove_recent_repo(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<RepoEntry>, String> {
+    state.remove_recent_repo(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn get_current_repo(state: State<'_, AppState>) -> Result<Option<RepoInfo>, String> {
     state.get_current_repo().map_err(|e| e.to_string())
 }

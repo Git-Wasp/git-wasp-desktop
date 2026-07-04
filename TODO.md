@@ -930,8 +930,24 @@ between sections, and add new ideas under the right heading. Items marked
 - [ ] Add "Search" feature to the git graph. A search button should be included which allows the user to search through the commits for commit hashes or text that matches commit messages. Matching results should be highlighted in the graph, and a count of matches should be shown. "Up" and "Down" arrows should allow the user to navigate between matching commits in the graph - the "action bar" at the top should always remain visible. A small "hovering" search component would be acceptable, but open to other ideas.
 - [ ] Add preview for certain binary files when selecting files in staging or viewing previous commits. Primary use case is to view image files so we should support common files including png, gif, jp(e)g
 - [ ] Add a "hunk" view to the diff viewer in addition to the current "side by side" and "inline" views. The "hunk" view should show a "hunk" for each change. Also add tooltips to the three buttons that allow the user to change view. Persist the last selected view as the "default" e.g. when closing and re-opening the app.
-- [ ] Always show current checked out branch at the *top* of the sidebar panel showing local branches
-- [ ] Add option to "recent" repositories menu to "Remove from recent" - this should remove the entry from the recent entries *not* change anything about the repo being removed - just our reference to it.
+- [x] Always show current checked out branch at the *top* of the sidebar panel showing local branches
+      — the sidebar's Local list now partitions the checked-out (`isHead`) branch to
+      the top, keeping the remaining branches in their existing order (`Sidebar.tsx`).
+      Test asserts head-first with the rest order-preserved.
+- [x] Add option to "recent" repositories menu to "Remove from recent" - this should remove the entry from the recent entries *not* change anything about the repo being removed - just our reference to it.
+      — restored a feature that had been implemented (commit `92f2e71`) but never made
+      it into `main`'s history. The sidebar recent-repo ⋮ menu now has a destructive
+      "Remove from recent" alongside "Open repository". It only forgets our reference:
+      backend `AppConfig::remove_recent(path)` drops the entry (and clears
+      `last_repo_path` if it matched) and persists; exposed via `RepoManager::
+      remove_recent` / `AppState::remove_recent_repo` / the `remove_recent_repo`
+      command. Frontend `repoStore.removeRecent(path)` invokes it and stores the
+      returned list; the row also clears its own selection highlight. Nothing on disk
+      is touched. Tests restored/added: backend config (drops entry, clears/keeps
+      last), `repoStore.removeRecent`, and a Sidebar menu-wiring test. Suites green
+      (frontend 525, backend 214). Not extended to the NavBar RepoPicker / WelcomeView
+      recent lists (they don't have per-row menus yet) — flag if you want it there too.
+- [ ] When there are uncommitted changes and the user performs an action that would cause those changes to be lost (such as checking out a different branch, pulling the remote again) auto-stash the changes before performing the action.
 
 ## Other issues
 
