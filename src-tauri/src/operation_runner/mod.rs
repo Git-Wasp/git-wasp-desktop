@@ -4,7 +4,7 @@ use git2::{Repository, RepositoryState};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-const SIDECAR_FILE_NAME: &str = "gitclient-operation.json";
+const SIDECAR_FILE_NAME: &str = "git-wasp-operation.json";
 
 /// The kind of multi-step operation currently in progress. A thin tag used to
 /// dispatch generic commands (`operation_abort`) to the right concrete
@@ -42,7 +42,7 @@ pub enum OperationStatus {
     },
 }
 
-/// On-disk shape of the recovery sidecar at `.git/gitclient-operation.json`.
+/// On-disk shape of the recovery sidecar at `.git/git-wasp-operation.json`.
 /// Only `source_branch` actually needs persisting — everything else about an
 /// in-progress merge (conflicts, resolution state) is re-derived live from
 /// `repo.state()` and `index.conflicts()`, mirroring how `RepoManager`

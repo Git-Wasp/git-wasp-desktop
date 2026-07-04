@@ -16,9 +16,9 @@ pub struct ThemeManifest {
     pub css: String,
 }
 
-/// `~/.config/gitclient/themes` (platform config dir).
+/// `~/.config/git-wasp/themes` (platform config dir).
 pub fn themes_dir() -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join("gitclient").join("themes"))
+    dirs::config_dir().map(|d| d.join("git-wasp").join("themes"))
 }
 
 /// Parses the leading `/* ==Theme== ... */` comment block for `key: value`

@@ -1,12 +1,12 @@
 [package]
-name = "gitclient"
+name = "git-wasp"
 version = "0.1.0"
-description = "A personal Git desktop client"
+description = "Git Wasp — a Git desktop client. Branch fast. Merge clean. Don't get stung."
 authors = []
 edition = "2021"
 
 [lib]
-name = "gitclient_lib"
+name = "git_wasp_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

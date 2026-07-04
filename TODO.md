@@ -434,8 +434,37 @@ between sections, and add new ideas under the right heading. Items marked
 
 ## Branding
 
-- [ ] Rename to "git wasp"
-- [ ] Import branding design assets (logo etc.) Update app to include branding (e.g. app icon)
+- [x] Rename to "git wasp"
+      — full rebrand to **Git Wasp**. User-facing: `productName` + window `title` →
+      "Git Wasp" (`tauri.conf.json`), page `<title>` → "Git Wasp" (`index.html`),
+      splash + welcome now show the wordmark. Internal rename (per decision): Cargo
+      package `gitclient` → `git-wasp`, lib `gitclient_lib` → `git_wasp_lib`
+      (`main.rs` updated, Cargo.lock regenerated, binary is now `git_wasp`), npm
+      package `gitclient` → `git-wasp`. Bundle identifier `com.gitclient.dev` →
+      `dev.michaelrose.gitwasp` (matches the michaelrose.dev design-system origin).
+      Keychain service string, GitHub user-agent, the `.git/` operation-recovery
+      sidecar filename, and the app's on-disk dirs (config `~/.config/git-wasp`,
+      themes `~/.config/git-wasp/themes`, avatar cache `<cache>/git-wasp`) all moved
+      to `git-wasp` too. **Migration note:** because both the identifier and these
+      dirs/service changed, the app starts from a clean slate — saved theme/font
+      prefs, recent-repos config, and stored GitHub tokens need re-entering once
+      (acceptable pre-release; flagged). Test fixtures that reference a repo *named*
+      "gitclient" were left untouched.
+- [x] Import branding design assets (logo etc.) Update app to include branding (e.g. app icon)
+      — from the design handoff in `_assets/design_handoff_git_wasp_branding/`.
+      App icon set regenerated from the recommended 1024 master
+      (`git-wasp-desktop-icon-1024.png`) via `tauri icon` (all of `icons/*.png`,
+      `icon.icns`, `icon.ico`; the mobile `ios/`/`android/` outputs were dropped as
+      this is desktop-only). New reusable `ui/WaspLogo` React component — a faithful
+      port of `wasp.svg` (340×240, preserving the three abdomen stripes cut with the
+      Git moves +/−/⟳) that's **theme-adaptive**: the abdomen stays brand gold
+      (`--wasp-body`, #F5A623) while the structural parts use `currentColor`, so it
+      renders the "reversed" (light) recipe on dark themes and the "standard" (dark)
+      recipe on light themes automatically, with the eye as a background-coloured
+      cutout. Used in the `SplashScreen` (mark + "Git Wasp" wordmark) and
+      `WelcomeView` (mark + wordmark + "Branch fast. Merge clean. Don't get stung."
+      tagline). Favicon set to a bare-mark `public/wasp.svg`. Tests: splash asserts
+      the wordmark + mark render; frontend/backend suites green (507 / 213).
 
 ## Engineering & tooling
 
@@ -728,3 +757,7 @@ between sections, and add new ideas under the right heading. Items marked
       — already resolved in earlier work: the dead `useRepoStore` import was
       replaced by `useToastStore` (which is used). `tsc --noEmit` is clean and the
       test passes 4/4.
+
+## Website
+
+- [ ] Domain gitwasp.com now owned. Create a "showcase" website on-brand. Should include details of features, how to download, and usage documentation. Links to the github repo (to be renamed) to allow people to log issues etc.

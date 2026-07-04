@@ -1,4 +1,4 @@
-# CLAUDE.md — Tauri Git Client
+# CLAUDE.md — Git Wasp Git Client
 
 Project context for Claude Code. Read this file at the start of every session before making any suggestions or writing any code.
 

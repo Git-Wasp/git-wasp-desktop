@@ -41,7 +41,7 @@ pub fn api_base(host: &str) -> String {
 
 fn http_client() -> anyhow::Result<reqwest::Client> {
     reqwest::Client::builder()
-        .user_agent("gitclient/0.1")
+        .user_agent("git-wasp/0.1")
         .build()
         .context("failed to build HTTP client")
 }
