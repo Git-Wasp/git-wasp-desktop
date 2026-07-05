@@ -11,7 +11,7 @@ import { PromptDialog } from "../common/PromptDialog";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { Tooltip } from "../ui/Tooltip";
-import { BranchFocusIcon, BranchIcon, PullIcon, PushIcon, RefreshIcon, TargetIcon } from "../ui/icons";
+import { BranchFocusIcon, BranchIcon, PullIcon, PushIcon, RefreshIcon, SplitViewIcon, TargetIcon } from "../ui/icons";
 
 const barStyle: React.CSSProperties = {
   display: "flex",
@@ -42,6 +42,8 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
   const revealHead = useGraphStore((s) => s.revealHead);
   const focusCurrentBranch = useGraphStore((s) => s.focusCurrentBranch);
   const setFocusCurrentBranch = useGraphStore((s) => s.setFocusCurrentBranch);
+  const graphVariant = useGraphStore((s) => s.graphVariant);
+  const setGraphVariant = useGraphStore((s) => s.setGraphVariant);
   const { createBranch, checkoutBranch } = useRepoStore();
   const remoteInfo = useGithubStore((s) => s.remoteInfo);
   const loadMergeStatus = useMergeStore((s) => s.loadStatus);
@@ -157,8 +159,24 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
         New branch
       </Button>
 
-      {/* Right-aligned: focus toggle, check for changes, jump to HEAD. */}
+      {/* Right-aligned: layout toggle, focus toggle, check for changes, jump to HEAD. */}
       <div style={{ marginLeft: "auto", display: "flex", gap: "var(--space-2)" }}>
+        <Tooltip
+          label={
+            graphVariant === "split"
+              ? "Split Rail layout — click for Ledger Grid (graph on the left)"
+              : "Ledger Grid layout — click for Split Rail (graph on the right)"
+          }
+        >
+          <IconButton
+            aria-label="Switch graph layout"
+            aria-pressed={graphVariant === "split"}
+            onClick={() => setGraphVariant(graphVariant === "split" ? "ledger" : "split")}
+            style={{ color: graphVariant === "split" ? "var(--color-accent-primary)" : undefined }}
+          >
+            <SplitViewIcon />
+          </IconButton>
+        </Tooltip>
         <Tooltip
           label={
             focusCurrentBranch

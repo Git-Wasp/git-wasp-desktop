@@ -79,18 +79,22 @@ beforeEach(() => {
 });
 
 describe("CommitGraph columns", () => {
-  it("renders the column headers", () => {
+  it("renders the ledger column headers", () => {
     render(<CommitGraph />);
-    expect(screen.getByText("Branch / Tag")).toBeInTheDocument();
-    expect(screen.getByText("Graph")).toBeInTheDocument();
-    expect(screen.getByText("Commit message")).toBeInTheDocument();
+    expect(screen.getByText("Commit")).toBeInTheDocument();
+    expect(screen.getByText("Author")).toBeInTheDocument();
+    expect(screen.getByText("Branch")).toBeInTheDocument();
+    expect(screen.getByText("Hash")).toBeInTheDocument();
+    expect(screen.getByText("Date")).toBeInTheDocument();
   });
 
-  it("renders a branch pill and the commit message per row", () => {
+  it("renders a branch pill, the commit message, author and hash per row", () => {
     render(<CommitGraph />);
     expect(screen.getByText("main")).toBeInTheDocument();
     expect(screen.getByText("first commit")).toBeInTheDocument();
     expect(screen.getByText("second commit")).toBeInTheDocument();
+    // The short hash renders in the hash column.
+    expect(screen.getAllByText("aaaaaaa").length).toBeGreaterThan(0);
   });
 
   it("selects a commit when its row is clicked", () => {
@@ -104,7 +108,7 @@ describe("CommitGraph columns", () => {
   it("highlights a commit row on hover and clears it on leave", () => {
     const { container } = render(<CommitGraph />);
     const row = container.querySelector(`[data-oid="${"b".repeat(40)}"]`) as HTMLElement;
-    const cell = row.firstElementChild as HTMLElement; // branch cell carries the bg
+    const cell = row.querySelector('[data-cell="commit"]') as HTMLElement; // a data cell carries the bg
     expect(cell.style.background).toBe("transparent");
     fireEvent.mouseEnter(row);
     expect(cell.style.background).toContain("--color-bg-hover");
@@ -112,16 +116,16 @@ describe("CommitGraph columns", () => {
     expect(cell.style.background).toBe("transparent");
   });
 
-  it("persists a resized branch column width to localStorage", () => {
-    localStorage.removeItem("graphBranchColWidth");
+  it("persists a resized graph column width to localStorage", () => {
+    localStorage.removeItem("graphGraphColWidth");
     render(<CommitGraph />);
-    const handle = screen.getByRole("separator", { name: "Resize branch column" });
+    const handle = screen.getByRole("separator", { name: "Resize graph column" });
 
     act(() => handle.dispatchEvent(new MouseEvent("pointerdown", { clientX: 100, bubbles: true })));
     act(() => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 140, bubbles: true })));
     act(() => window.dispatchEvent(new MouseEvent("pointerup", { clientX: 140, bubbles: true })));
 
-    expect(localStorage.getItem("graphBranchColWidth")).toBe("220"); // 180 default + 40
+    expect(localStorage.getItem("graphGraphColWidth")).toBe("196"); // 156 default + 40
   });
 });
 
@@ -131,7 +135,7 @@ describe("CommitGraph loading skeleton", () => {
     render(<CommitGraph />);
     expect(screen.getByTestId("graph-skeleton")).toBeInTheDocument();
     // The header stays visible; real rows do not render yet.
-    expect(screen.getByText("Branch / Tag")).toBeInTheDocument();
+    expect(screen.getByText("Commit")).toBeInTheDocument();
     expect(screen.queryByText("first commit")).not.toBeInTheDocument();
   });
 
@@ -186,8 +190,10 @@ describe("CommitGraph focus-current-branch mode", () => {
 
   const cellsOf = (container: HTMLElement, oid: string) => {
     const row = container.querySelector(`[data-oid="${oid}"]`) as HTMLElement;
-    // Branch cell is first child; message cell is the last child.
-    return [row.firstElementChild as HTMLElement, row.lastElementChild as HTMLElement];
+    // The data cells (everything but the graph spacer) carry the dimming class.
+    return Array.from(row.querySelectorAll<HTMLElement>("[data-cell]")).filter(
+      (c) => c.getAttribute("data-cell") !== "graph",
+    );
   };
 
   it("dims off-line commits and leaves on-line commits fully opaque when on", () => {

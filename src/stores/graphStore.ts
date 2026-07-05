@@ -32,6 +32,20 @@ const loadFocusCurrentBranch = (): boolean => {
   }
 };
 
+// The two graph layout variants from the redesign: "ledger" (graph anchored
+// left) and "split" (Split Rail — graph mirrored to the right edge, hash read
+// like a log file on the left). Persisted so the choice survives reloads.
+export type GraphVariant = "ledger" | "split";
+const VARIANT_KEY = "graphVariant";
+
+const loadGraphVariant = (): GraphVariant => {
+  try {
+    return localStorage.getItem(VARIANT_KEY) === "split" ? "split" : "ledger";
+  } catch {
+    return "ledger";
+  }
+};
+
 interface GraphStore {
   viewport: GraphViewport | null;
   selection: Selection;
@@ -52,6 +66,9 @@ interface GraphStore {
   // of history. Persisted to localStorage; defaults on.
   focusCurrentBranch: boolean;
   setFocusCurrentBranch: (value: boolean) => void;
+  // Graph layout variant (Ledger Grid vs Split Rail). Persisted to localStorage.
+  graphVariant: GraphVariant;
+  setGraphVariant: (value: GraphVariant) => void;
   fetchViewport: (offset: number, limit: number) => Promise<void>;
   refresh: () => Promise<void>;
   selectCommit: (oid: string, extend: boolean) => void;
@@ -141,6 +158,7 @@ export const useGraphStore = create<GraphStore>((set, get) => {
   scrollToRow: null,
   nodesByRow: new Map(),
   focusCurrentBranch: loadFocusCurrentBranch(),
+  graphVariant: loadGraphVariant(),
 
   setFocusCurrentBranch: (value: boolean) => {
     try {
@@ -149,6 +167,15 @@ export const useGraphStore = create<GraphStore>((set, get) => {
       // Ignore storage failures (private mode etc.) — state still updates.
     }
     set({ focusCurrentBranch: value });
+  },
+
+  setGraphVariant: (value: GraphVariant) => {
+    try {
+      localStorage.setItem(VARIANT_KEY, value);
+    } catch {
+      // Ignore storage failures (private mode etc.) — state still updates.
+    }
+    set({ graphVariant: value });
   },
 
   fetchViewport: async (offset: number, limit: number) => {

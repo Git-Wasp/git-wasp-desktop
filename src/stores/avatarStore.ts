@@ -18,6 +18,8 @@ interface AvatarStore {
   request: (emails: string[]) => void;
   /** The decoded image for an email, or null if not loaded / no avatar. */
   getImage: (email: string) => HTMLImageElement | null;
+  /** The avatar URL for an email (for a DOM `<img>`), or null if none is loaded. */
+  getUrl: (email: string) => string | null;
 }
 
 const norm = (email: string) => email.trim().toLowerCase();
@@ -71,6 +73,11 @@ export const useAvatarStore = create<AvatarStore>((set, get) => {
     getImage: (email) => {
       const entry = get().avatars.get(norm(email));
       return entry?.status === "loaded" ? entry.img ?? null : null;
+    },
+
+    getUrl: (email) => {
+      const entry = get().avatars.get(norm(email));
+      return entry?.status === "loaded" ? (entry.img?.src ?? null) : null;
     },
   };
 });

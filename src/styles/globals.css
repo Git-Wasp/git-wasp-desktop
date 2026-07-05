@@ -65,8 +65,8 @@
   position: absolute;
   /* Base size = the commit dot's diameter (--graph-dot-radius * 2), so the ring
      starts exactly on the dot's edge and expands outward from there. */
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   border-radius: var(--radius-full);
   border: 2px solid var(--color-text-primary);
   pointer-events: none;

@@ -18,11 +18,11 @@ import { runMerge } from "./dragDrop";
 import { useGraphDragDrop } from "./useGraphDragDrop";
 import { MergeConfirmDialog } from "./MergeConfirmDialog";
 import { GraphSkeleton } from "./GraphSkeleton";
-import { BranchCell, MessageCell } from "./columns";
+import { AuthorCell, BranchCell, DateCell, HashCell, MessageCell } from "./columns";
 import {
-  COLUMNS,
+  columnsForVariant,
+  columnStyle,
   ROW_HEIGHT,
-  BRANCH_COL_WIDTH,
   GRAPH_COL_WIDTH,
   type GraphColumn,
   type PillHandlers,
@@ -45,10 +45,19 @@ type PromptState =
   | { kind: "stash" }
   | { kind: "rename-stash"; index: number; current: string };
 
+// The width style for a column — the graph column uses the resizable, persisted
+// `graphWidth`; everything else takes its descriptor width (commit flexes).
+function cellWidthStyle(col: GraphColumn, graphWidth: number): CSSProperties {
+  if (col.kind === "graph") return { width: graphWidth, flexShrink: 0 };
+  return columnStyle(col);
+}
+
 /**
- * A single graph row (branch cell · graph gap the canvas shows through · message
- * cell). Memoized and keyed by commit oid so that, when only the selection
- * changes, just the rows whose `selected` flips re-render — not the whole list.
+ * A single graph row, laid out as the variant's ordered columns. The graph
+ * column is an empty spacer the canvas paints through; every other column
+ * renders its cell. Memoized and keyed by commit oid so that, when only the
+ * selection changes, just the rows whose `selected` flips re-render — not the
+ * whole list.
  */
 const GraphRow = memo(function GraphRow({
   node,
@@ -57,7 +66,7 @@ const GraphRow = memo(function GraphRow({
   hovered,
   muted,
   onRowHover,
-  branchWidth,
+  columns,
   graphWidth,
   currentBranch,
   isTagOnRemote,
@@ -68,7 +77,7 @@ const GraphRow = memo(function GraphRow({
   node: GraphNode;
   rowIndex: number;
   selected: boolean;
-  branchWidth: number;
+  columns: GraphColumn[];
   graphWidth: number;
   currentBranch: string | null;
   isTagOnRemote: (name: string) => boolean;
@@ -76,8 +85,8 @@ const GraphRow = memo(function GraphRow({
   onRowClick: (node: GraphNode, shiftKey: boolean) => void;
   onRowContextMenu: (e: React.MouseEvent, node: GraphNode) => void;
   hovered: boolean;
-  // Dim the branch pills + message when this commit is off the focused branch's
-  // line of history (focus mode). The row stays fully interactive.
+  // Dim the cells when this commit is off the focused branch's line of history
+  // (focus mode). The row stays fully interactive.
   muted: boolean;
   onRowHover: (oid: string | null) => void;
 }) {
@@ -93,6 +102,31 @@ const GraphRow = memo(function GraphRow({
       : isHeadRow
         ? "var(--color-graph-head-row-bg)"
         : "transparent";
+
+  const renderCell = (col: GraphColumn) => {
+    switch (col.kind) {
+      case "commit":
+        return <MessageCell node={node} />;
+      case "author":
+        return <AuthorCell node={node} />;
+      case "branch":
+        return (
+          <BranchCell
+            node={node}
+            handlers={pillHandlers}
+            currentBranch={currentBranch}
+            isTagOnRemote={isTagOnRemote}
+          />
+        );
+      case "hash":
+        return <HashCell node={node} />;
+      case "date":
+        return <DateCell node={node} />;
+      default:
+        return null;
+    }
+  };
+
   return (
     <div
       data-oid={node.oid}
@@ -113,42 +147,29 @@ const GraphRow = memo(function GraphRow({
         cursor: "pointer",
       }}
     >
-      <div
-        className={muted ? "graph-row-muted" : undefined}
-        style={{
-          width: branchWidth,
-          flexShrink: 0,
-          height: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "flex-end",
-          padding: "0 var(--space-2)",
-          background: cellBg,
-        }}
-      >
-        <BranchCell
-          node={node}
-          handlers={pillHandlers}
-          currentBranch={currentBranch}
-          isTagOnRemote={isTagOnRemote}
-        />
-      </div>
-      {/* graph gap — canvas shows through */}
-      <div style={{ width: graphWidth, flexShrink: 0, height: "100%" }} />
-      <div
-        className={muted ? "graph-row-muted" : undefined}
-        style={{
-          flex: 1,
-          minWidth: 0,
-          height: "100%",
-          display: "flex",
-          alignItems: "center",
-          padding: "0 var(--space-3)",
-          background: cellBg,
-        }}
-      >
-        <MessageCell node={node} />
-      </div>
+      {columns.map((col) =>
+        col.kind === "graph" ? (
+          // Graph gap — the canvas shows through (it paints its own bands).
+          <div key={col.id} data-cell="graph" style={{ ...cellWidthStyle(col, graphWidth), height: "100%" }} />
+        ) : (
+          <div
+            key={col.id}
+            data-cell={col.kind}
+            className={muted ? "graph-row-muted" : undefined}
+            style={{
+              ...cellWidthStyle(col, graphWidth),
+              height: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: col.align === "end" ? "flex-end" : "flex-start",
+              padding: "0 var(--space-3)",
+              background: cellBg,
+            }}
+          >
+            {renderCell(col)}
+          </div>
+        ),
+      )}
     </div>
   );
 });
@@ -180,6 +201,7 @@ export function CommitGraph({
     useGraphStore();
   const scrollToRow = useGraphStore((s) => s.scrollToRow);
   const focusCurrentBranch = useGraphStore((s) => s.focusCurrentBranch);
+  const graphVariant = useGraphStore((s) => s.graphVariant);
   const { currentRepo, createBranch, checkoutBranch, renameBranch, deleteBranch, checkoutCommit, createTag, revertCommit } =
     useRepoStore();
   const remoteInfo = useGithubStore((s) => s.remoteInfo);
@@ -203,15 +225,18 @@ export function CommitGraph({
   const [hoveredOid, setHoveredOid] = useState<string | null>(null);
   const handleRowHover = useCallback((oid: string | null) => setHoveredOid(oid), []);
 
-  // Resizable, persisted column widths (the message column flexes to fill).
-  const [branchWidth, setBranchWidth] = usePersistedWidth("graphBranchColWidth", BRANCH_COL_WIDTH, 100, 400);
-  const [graphWidth, setGraphWidth] = usePersistedWidth("graphGraphColWidth", GRAPH_COL_WIDTH, 60, 400);
+  // The ordered columns for the active layout variant (Ledger Grid vs Split
+  // Rail). Stable per variant so memoized rows don't churn on every render.
+  const columns = useMemo(() => columnsForVariant(graphVariant), [graphVariant]);
+  // Split Rail anchors the graph to the right edge; Ledger Grid to the left.
+  const graphOnRight = graphVariant === "split";
 
-  const colStyle = (col: GraphColumn): CSSProperties => {
-    if (col.kind === "branch") return { width: branchWidth, flexShrink: 0 };
-    if (col.kind === "graph") return { width: graphWidth, flexShrink: 0 };
-    return { flex: 1, minWidth: 0 };
-  };
+  // The graph column is resizable + persisted (it drives the canvas width);
+  // the commit column flexes and the rest keep their fixed descriptor widths.
+  const [graphWidth, setGraphWidth] = usePersistedWidth("graphGraphColWidth", GRAPH_COL_WIDTH, 80, 400);
+
+  const colStyle = (col: GraphColumn): CSSProperties =>
+    col.kind === "graph" ? { width: graphWidth, flexShrink: 0 } : columnStyle(col);
 
   // Initial load.
   useEffect(() => {
@@ -546,17 +571,20 @@ export function CommitGraph({
 
   // Position of the HEAD commit dot (when it's in the loaded slice), so a CSS
   // pulse overlay can draw expanding rings on it — a clear "you are here" cue.
+  // The graph column sits at the left edge (Ledger) or the right edge (Split
+  // Rail), so the dot's x is measured from whichever edge the column anchors to.
   const headPulse = useMemo(() => {
     const nodes = viewport?.nodes ?? [];
     const idx = nodes.findIndex((n) => n.isHead && !n.isWorkingTree);
     if (idx < 0) return null;
     const laneWidth =
       parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--graph-lane-width")) ||
-      20;
-    const x = branchWidth + GRAPH_PAD_LEFT + nodes[idx].lane * laneWidth + laneWidth / 2;
+      24;
+    const graphLeft = graphOnRight ? (containerRef.current?.clientWidth ?? 0) - graphWidth : 0;
+    const x = graphLeft + GRAPH_PAD_LEFT + nodes[idx].lane * laneWidth + laneWidth / 2;
     const y = (offset + idx) * ROW_HEIGHT + ROW_HEIGHT / 2;
     return { x, y };
-  }, [viewport, offset, branchWidth]);
+  }, [viewport, offset, graphWidth, graphOnRight]);
 
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--color-bg-app)" }}>
@@ -572,41 +600,52 @@ export function CommitGraph({
           background: "var(--color-bg-panel)",
         }}
       >
-        {COLUMNS.map((col) => (
-          <div key={col.id} style={{ ...colStyle(col), ...headerCellStyle }}>
+        {columns.map((col) => (
+          <div
+            key={col.id}
+            style={{
+              ...colStyle(col),
+              ...headerCellStyle,
+              textAlign: col.align === "end" ? "right" : "left",
+            }}
+          >
             {col.header}
           </div>
         ))}
       </div>
 
-      {/* Draggable column dividers (full height, overlaid on the boundaries). */}
-      <ResizeHandle
-        ariaLabel="Resize branch column"
-        onResize={(dx) => setBranchWidth((w) => w + dx)}
-        style={{ position: "absolute", top: 0, bottom: 0, left: branchWidth - 3, zIndex: 5 }}
-      />
+      {/* Draggable divider on the graph column's inner edge (its right edge in
+          Ledger Grid, its left edge in Split Rail where the graph is anchored
+          right). Resizing the graph column re-sizes the canvas. */}
       <ResizeHandle
         ariaLabel="Resize graph column"
-        onResize={(dx) => setGraphWidth((w) => w + dx)}
-        style={{ position: "absolute", top: 0, bottom: 0, left: branchWidth + graphWidth - 3, zIndex: 5 }}
+        onResize={(dx) => setGraphWidth((w) => (graphOnRight ? w - dx : w + dx))}
+        style={{
+          position: "absolute",
+          top: 0,
+          bottom: 0,
+          zIndex: 5,
+          ...(graphOnRight ? { right: graphWidth - 3 } : { left: graphWidth - 3 }),
+        }}
       />
 
       {/* Scrollable rows */}
       <div ref={containerRef} style={{ flex: 1, minHeight: 0, overflowY: "auto" }} onScroll={handleScroll}>
         {viewport === null ? (
           <GraphSkeleton
-            branchWidth={branchWidth}
             graphWidth={graphWidth}
+            graphOnRight={graphOnRight}
             rowCount={Math.ceil(window.innerHeight / ROW_HEIGHT)}
           />
         ) : (
         <div style={{ height: totalHeight, position: "relative" }}>
-          {/* Canvas draws the graph column only */}
+          {/* Canvas draws the graph column only, anchored to whichever edge the
+              variant places the graph column against. */}
           <canvas
             ref={canvasRef}
             style={{
               position: "absolute",
-              left: branchWidth,
+              ...(graphOnRight ? { right: 0 } : { left: 0 }),
               top: canvasTop,
               width: graphWidth,
               height: sliceHeight,
@@ -623,7 +662,7 @@ export function CommitGraph({
               hovered={hoveredOid === node.oid}
               muted={focusCurrentBranch && !node.onHeadLine}
               onRowHover={handleRowHover}
-              branchWidth={branchWidth}
+              columns={columns}
               graphWidth={graphWidth}
               currentBranch={currentRepo?.headBranch ?? null}
               isTagOnRemote={isTagOnRemote}

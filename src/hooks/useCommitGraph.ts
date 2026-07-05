@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { GraphViewport } from "../types/graph";
 import { THEME_CHANGE_EVENT } from "../lib/applyTheme";
 import { useAvatarStore } from "../stores/avatarStore";
+import { initials } from "../lib/initials";
 
 // Left padding inside the graph column so dots clear the branch|graph divider.
 export const GRAPH_PAD_LEFT = 10;
@@ -94,6 +95,12 @@ export function useCommitGraph(
     const hoverBg = resolveCssVar("--color-bg-hover") || "rgba(255, 255, 255, 0.06)";
     const mutedColor = resolveCssVar("--color-graph-muted") || "#5b6270";
     const mutedAlpha = parseFloat(resolveCssVar("--graph-muted-opacity")) || 0.4;
+    // Page background: painted as a "cutout" ring around each dot so crossing
+    // lane lines never visibly pierce the marker. Accent: the dashed selection
+    // ring. Sans stack: canvas text for the commit-dot initials fallback.
+    const pageBg = resolveCssVar("--color-bg-app") || "#1e1f1c";
+    const selectionAccent = resolveCssVar("--color-accent-primary") || "#4d9de0";
+    const sansFont = resolveCssVar("--font-family-sans") || "sans-serif";
     const dpr = window.devicePixelRatio || 1;
 
     // In focus mode, commits/edges off HEAD's line of history are greyed. These
@@ -123,11 +130,12 @@ export function useCommitGraph(
     // iteration's selection band would then paint over, clipping the top of the
     // line into a selected commit. Separate passes avoid that.
 
-    // Pass 1 — row bands and the right-aligned accent line.
-    // row 0 here corresponds to viewport.offset in the full graph.
+    // Pass 1 — row bands only. The redesign carries the "current commit" cue on
+    // the marker itself (a lane-coloured ring around the HEAD dot, drawn in pass
+    // 3) rather than a right-edge accent line, so the band is all that's needed
+    // here. row 0 here corresponds to viewport.offset in the full graph.
     viewport.nodes.forEach((node, localRow) => {
       const rowTop = localRow * rowHeight;
-      const color = nodeColor(node);
 
       // Per-commit highlight band behind the row.
       if (!node.isWorkingTree) {
@@ -152,28 +160,6 @@ export function useCommitGraph(
       if (isSelected) {
         ctx.fillStyle = selectedBg;
         ctx.fillRect(0, rowTop, cssW, rowHeight);
-      }
-
-      // Right-edge marker in the commit's lane colour, drawn on top of the bands
-      // so it reads clearly even when the row is selected. Normally a strong
-      // vertical accent line; for the checked-out commit (HEAD) it's a
-      // left-pointing triangle, so the current commit stands out even when other
-      // branches sit several commits ahead.
-      if (!node.isWorkingTree) {
-        ctx.fillStyle = color;
-        if (node.isHead) {
-          const yMid = rowTop + rowHeight / 2;
-          const w = 8;
-          const h = 7;
-          ctx.beginPath();
-          ctx.moveTo(cssW, yMid - h);
-          ctx.lineTo(cssW, yMid + h);
-          ctx.lineTo(cssW - w, yMid);
-          ctx.closePath();
-          ctx.fill();
-        } else {
-          ctx.fillRect(cssW - 3, rowTop + 5, 3, rowHeight - 10);
-        }
       }
     });
 
@@ -251,12 +237,16 @@ export function useCommitGraph(
       const muted = nodeMuted(node);
       if (muted) ctx.globalAlpha = mutedAlpha;
 
-      // Working-tree node: a hollow dashed marker (label lives in the DOM cell).
+      // Working-tree node: a hollow dashed marker in the lane colour (its label
+      // lives in the DOM cell). Filled with the page colour so lane lines don't
+      // show through the hollow centre.
       if (node.isWorkingTree) {
         ctx.beginPath();
         ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
+        ctx.fillStyle = pageBg;
+        ctx.fill();
         ctx.setLineDash([2, 2]);
-        ctx.strokeStyle = resolveCssVar("--color-warning") || "#ff9f0a";
+        ctx.strokeStyle = color;
         ctx.lineWidth = 2;
         ctx.stroke();
         ctx.setLineDash([]);
@@ -282,9 +272,16 @@ export function useCommitGraph(
         return;
       }
 
-      // Commit dot — the author's gravatar (clipped to a circle) when resolved,
-      // otherwise the lane-coloured dot as a fallback. Either way a ring gives
-      // it definition and marks HEAD.
+      // Background "cutout" ring straddling the dot edge, so lane lines crossing
+      // the row never visibly pierce the marker.
+      ctx.beginPath();
+      ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = pageBg;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      // Marker body — the author's gravatar (clipped to a circle) when resolved,
+      // otherwise a lane-coloured dot carrying the author's initials.
       const avatar = useAvatarStore.getState().getImage(node.authorEmail);
       if (avatar) {
         ctx.save();
@@ -294,22 +291,47 @@ export function useCommitGraph(
         ctx.clip();
         ctx.drawImage(avatar, x - dotRadius, y - dotRadius, dotRadius * 2, dotRadius * 2);
         ctx.restore();
+        // A thin lane-coloured ring gives the avatar definition.
         ctx.beginPath();
         ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
-        ctx.strokeStyle = node.isHead ? "#ffffff" : color;
-        ctx.lineWidth = node.isHead ? 1.5 : 1;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
         ctx.stroke();
       } else {
         ctx.beginPath();
         ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
         ctx.fillStyle = color;
         ctx.fill();
-        if (node.isHead) {
-          ctx.strokeStyle = "#ffffff";
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
-        }
+        // Author initials, white, centred on the dot.
+        ctx.fillStyle = "#ffffff";
+        ctx.font = `700 8.5px ${sansFont}`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(initials(node.authorName), x, y + 0.5);
       }
+
+      // HEAD marker: an outer ring in the lane colour around the dot — the
+      // "current commit" cue, kept especially around the graph marker.
+      if (node.isHead) {
+        ctx.beginPath();
+        ctx.arc(x, y, dotRadius + 5, 0, Math.PI * 2);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
+      // Selected commit: a dashed accent ring — but only when it isn't also HEAD,
+      // so two rings never stack.
+      if (selection.range.has(node.oid) && !node.isHead) {
+        ctx.beginPath();
+        ctx.arc(x, y, dotRadius + 4, 0, Math.PI * 2);
+        ctx.strokeStyle = selectionAccent;
+        ctx.lineWidth = 1.75;
+        ctx.setLineDash([3, 2]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
       ctx.globalAlpha = 1;
     });
   }, [viewport, selection, canvasRef, themeTick, width, avatarVersion, hoveredOid, focusCurrentBranch]);

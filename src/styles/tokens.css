@@ -135,11 +135,13 @@
   --control-height-md: 30px;
   --focus-ring: 0 0 0 2px var(--color-accent-primary);
 
-  /* === LAYOUT — Commit graph === */
-  --graph-row-height: 34px;
-  --graph-lane-width: 20px;
-  --graph-dot-radius: 8px;
-  --graph-line-width: 2px;
+  /* === LAYOUT — Commit graph ===
+     Redesign geometry (see _assets/design_handoff_git_graph_view): a compact
+     56px ledger row, 24px lane pitch, and avatar-marker commit dots (r=10). */
+  --graph-row-height: 56px;
+  --graph-lane-width: 24px;
+  --graph-dot-radius: 10px;
+  --graph-line-width: 2.5px;
   /* Semi-opaque highlight behind each commit row in the graph column. */
   --color-graph-node-bg: rgba(255, 255, 255, 0.035);
   /* Permanent muted band behind the checked-out (HEAD) commit's row, so the
