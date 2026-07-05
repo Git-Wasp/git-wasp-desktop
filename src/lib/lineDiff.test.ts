@@ -46,6 +46,35 @@ describe("diffLines", () => {
     expect(headPaneText(rows)).toBe(head);
     expect(worktreePaneText(rows)).toBe(worktree);
   });
+
+  it("still reports a real (non-whitespace) change when ignoring whitespace", () => {
+    const rows = diffLines("a\nb\nc\n", "a\nB\nc\n", { ignoreWhitespace: true });
+    expect(rows.filter((r) => r.kind === "removed").map((r) => r.text)).toEqual(["b"]);
+    expect(rows.filter((r) => r.kind === "added").map((r) => r.text)).toEqual(["B"]);
+  });
+
+  it("folds a leading/trailing-whitespace-only change into context when ignoring whitespace", () => {
+    // Line 2 gains leading indentation and trailing spaces — nothing else.
+    const head = "a\nfoo\nc\n";
+    const worktree = "a\n  foo  \nc\n";
+
+    // By default it's a real change (removed + added).
+    const shown = diffLines(head, worktree);
+    expect(shown.some((r) => r.kind === "removed")).toBe(true);
+    expect(shown.some((r) => r.kind === "added")).toBe(true);
+
+    // Ignoring whitespace collapses it to context, showing the worktree text.
+    const hidden = diffLines(head, worktree, { ignoreWhitespace: true });
+    expect(hidden.every((r) => r.kind === "context")).toBe(true);
+    expect(hidden.map((r) => r.text)).toEqual(["a", "  foo  ", "c", ""]);
+  });
+
+  it("keeps an internal-whitespace change visible even when ignoring whitespace", () => {
+    // A doubled internal space is not leading/trailing, so it stays a change.
+    const rows = diffLines("a\nfoo bar\nc\n", "a\nfoo  bar\nc\n", { ignoreWhitespace: true });
+    expect(rows.some((r) => r.kind === "removed" && r.text === "foo bar")).toBe(true);
+    expect(rows.some((r) => r.kind === "added" && r.text === "foo  bar")).toBe(true);
+  });
 });
 
 describe("composeStagedText", () => {

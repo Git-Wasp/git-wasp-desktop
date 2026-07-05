@@ -337,6 +337,60 @@ export function HunkViewIcon({ size = 14, title }: IconProps) {
   );
 }
 
+/** Text-wrap glyph: a full line, a line curving back with a return arrow, and a
+ *  short wrapped remainder — toggles soft line wrapping in the diff panes. */
+export function WrapLinesIcon({ size = 14, title }: IconProps) {
+  return (
+    <svg
+      data-icon="wrap-lines"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      style={{ flexShrink: 0 }}
+    >
+      {title && <title>{title}</title>}
+      <path d="M4 6h16" />
+      <path d="M4 12h13a3 3 0 0 1 0 6h-3" />
+      <path d="M13 15l-3 3 3 3" />
+      <path d="M4 18h4" />
+    </svg>
+  );
+}
+
+/** Whitespace glyph: middot markers on a baseline — toggles hiding of
+ *  leading/trailing-whitespace-only changes in the diff. */
+export function WhitespaceIcon({ size = 14, title }: IconProps) {
+  return (
+    <svg
+      data-icon="whitespace"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      style={{ flexShrink: 0 }}
+    >
+      {title && <title>{title}</title>}
+      <path d="M4 17h16" />
+      <circle cx="8" cy="11" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="11" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="11" r="1.1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 /** A crosshair / target — jump to and select the checked-out (HEAD) commit. */
 export function TargetIcon({ size = 14, title }: IconProps) {
   return (

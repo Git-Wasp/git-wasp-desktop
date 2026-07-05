@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { EditorState, type Extension } from "@codemirror/state";
+import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import {
   Decoration,
   EditorView,
@@ -29,7 +29,14 @@ import { ChangeOverview } from "./ChangeOverview";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { SegmentedControl } from "../ui/SegmentedControl";
-import { HunkViewIcon, InlineViewIcon, SplitViewIcon } from "../ui/icons";
+import { Tooltip } from "../ui/Tooltip";
+import {
+  HunkViewIcon,
+  InlineViewIcon,
+  SplitViewIcon,
+  WhitespaceIcon,
+  WrapLinesIcon,
+} from "../ui/icons";
 
 type ViewMode = "split" | "inline" | "hunk";
 const VIEW_MODES: ViewMode[] = ["split", "inline", "hunk"];
@@ -41,6 +48,22 @@ function loadViewMode(): ViewMode {
     return VIEW_MODES.includes(stored as ViewMode) ? (stored as ViewMode) : "split";
   } catch {
     return "split";
+  }
+}
+
+// Soft line-wrapping in the diff panes. Defaults on (the historical behaviour);
+// turning it off lets long lines overflow horizontally with a scrollbar.
+const WRAP_KEY = "stageFileEditor.wrap";
+// Hide changes that differ only in leading/trailing whitespace. Defaults off.
+const IGNORE_WS_KEY = "stageFileEditor.ignoreWhitespace";
+
+// A localStorage-backed boolean with a default for the first run / storage errors.
+function loadBool(storageKey: string, fallback: boolean): boolean {
+  try {
+    const stored = localStorage.getItem(storageKey);
+    return stored === null ? fallback : stored === "true";
+  } catch {
+    return fallback;
   }
 }
 
@@ -253,6 +276,7 @@ function ReadOnlyStagePane({
   onView,
   onScroll,
   showStageGutter = true,
+  wrap = true,
 }: {
   label?: string;
   content: string;
@@ -272,9 +296,19 @@ function ReadOnlyStagePane({
   /** Render the per-line `+`/`−` stage toggles. False for the read-only commit
    *  diff viewer, which has no staging. */
   showStageGutter?: boolean;
+  /** Soft-wrap long lines; when false they overflow horizontally (scrollbar). */
+  wrap?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  // Line wrapping lives in a compartment so toggling it reconfigures the live
+  // editor rather than rebuilding it — preserving scroll, cursor, and the staged
+  // gutter state (which is only re-pushed when the staged set itself changes).
+  // `wrap` is read through a ref in the build effect so it seeds the initial
+  // config without making the effect rebuild on every toggle.
+  const wrapCompartment = useRef(new Compartment());
+  const wrapRef = useRef(wrap);
+  wrapRef.current = wrap;
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -298,7 +332,7 @@ function ReadOnlyStagePane({
           editorThemeExtension(),
           paneTheme,
           EditorState.readOnly.of(true),
-          EditorView.lineWrapping,
+          wrapCompartment.current.of(wrapRef.current ? EditorView.lineWrapping : []),
           EditorView.decorations.of(decorations),
           ...(showStageGutter ? [stageGutter(changedLines, onToggle)] : []),
           EditorView.domEventHandlers({
@@ -332,6 +366,13 @@ function ReadOnlyStagePane({
     onScroll,
     showStageGutter,
   ]);
+
+  // Toggle wrapping on the live editor via the compartment (no rebuild).
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: wrapCompartment.current.reconfigure(wrap ? EditorView.lineWrapping : []),
+    });
+  }, [wrap]);
 
   // Push the controlled staged-line set into the gutter markers.
   useEffect(() => {
@@ -381,9 +422,37 @@ export function StageFileEditor({
     }
   }, []);
 
+  // Persisted diff-view options: soft-wrap (default on) and hide whitespace-only
+  // changes (default off).
+  const [wrap, setWrap] = useState<boolean>(() => loadBool(WRAP_KEY, true));
+  const [ignoreWhitespace, setIgnoreWhitespace] = useState<boolean>(() =>
+    loadBool(IGNORE_WS_KEY, false),
+  );
+  const persistBool = (storageKey: string, value: boolean) => {
+    try {
+      localStorage.setItem(storageKey, String(value));
+    } catch {
+      // Best-effort persistence; ignore storage failures.
+    }
+  };
+  const toggleWrap = useCallback(() => {
+    setWrap((w) => {
+      const next = !w;
+      persistBool(WRAP_KEY, next);
+      return next;
+    });
+  }, []);
+  const toggleIgnoreWhitespace = useCallback(() => {
+    setIgnoreWhitespace((v) => {
+      const next = !v;
+      persistBool(IGNORE_WS_KEY, next);
+      return next;
+    });
+  }, []);
+
   const rows = useMemo(
-    () => diffLines(contents.headContent, contents.worktreeContent),
-    [contents.headContent, contents.worktreeContent],
+    () => diffLines(contents.headContent, contents.worktreeContent, { ignoreWhitespace }),
+    [contents.headContent, contents.worktreeContent, ignoreWhitespace],
   );
   // Aligned pane texts + real line-number maps: every diff row is one line in
   // both panes, with the absent side padded by a blank (coloured) placeholder so
@@ -690,6 +759,32 @@ export function StageFileEditor({
                   { value: "hunk", label: <HunkViewIcon />, ariaLabel: "Hunk view" },
                 ]}
               />
+              <Tooltip label={wrap ? "Wrapping long lines — click to overflow" : "Wrap long lines"}>
+                <IconButton
+                  aria-label="Wrap long lines"
+                  aria-pressed={wrap}
+                  onClick={toggleWrap}
+                  style={{ color: wrap ? "var(--color-accent-primary)" : undefined }}
+                >
+                  <WrapLinesIcon />
+                </IconButton>
+              </Tooltip>
+              <Tooltip
+                label={
+                  ignoreWhitespace
+                    ? "Hiding whitespace-only changes — click to show"
+                    : "Hide whitespace-only changes"
+                }
+              >
+                <IconButton
+                  aria-label="Hide whitespace-only changes"
+                  aria-pressed={ignoreWhitespace}
+                  onClick={toggleIgnoreWhitespace}
+                  style={{ color: ignoreWhitespace ? "var(--color-accent-primary)" : undefined }}
+                >
+                  <WhitespaceIcon />
+                </IconButton>
+              </Tooltip>
               {!readOnly && (
                 <>
                   <Button size="sm" type="button" onClick={handleReset}>
@@ -808,6 +903,7 @@ export function StageFileEditor({
                 onView={registerHeadView}
                 onScroll={onScrollHead}
                 showStageGutter={!readOnly}
+                wrap={wrap}
               />
               <ReadOnlyStagePane
                 label={rightLabel}
@@ -822,6 +918,7 @@ export function StageFileEditor({
                 onView={registerWorktreeView}
                 onScroll={onScrollWorktree}
                 showStageGutter={!readOnly}
+                wrap={wrap}
               />
             </div>
           ) : viewMode === "inline" ? (
@@ -839,6 +936,7 @@ export function StageFileEditor({
                 language={language}
                 onView={registerInlineView}
                 showStageGutter={!readOnly}
+                wrap={wrap}
               />
             </div>
           ) : (
@@ -856,6 +954,7 @@ export function StageFileEditor({
                 language={language}
                 onView={registerHunkView}
                 showStageGutter={!readOnly}
+                wrap={wrap}
               />
             </div>
           )}

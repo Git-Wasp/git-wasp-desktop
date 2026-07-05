@@ -255,6 +255,70 @@ describe("StageFileEditor", () => {
     expect(overview!.children.length).toBe(1);
   });
 
+  describe("diff-view options", () => {
+    // A change that is only leading/trailing whitespace on line 2.
+    const whitespaceOnly: StageFileContents = {
+      headContent: "a\nfoo\nc\n",
+      worktreeContent: "a\n  foo  \nc\n",
+      isBinary: false,
+      worktreeExists: true,
+    };
+
+    it("wrap toggle defaults on and flips + persists when clicked", () => {
+      render(<StageFileEditor path="f.txt" contents={modified} onStage={vi.fn()} />);
+      const btn = screen.getByRole("button", { name: "Wrap long lines" });
+
+      expect(btn).toHaveAttribute("aria-pressed", "true"); // wraps by default
+      fireEvent.click(btn);
+      expect(btn).toHaveAttribute("aria-pressed", "false");
+      expect(localStorage.getItem("stageFileEditor.wrap")).toBe("false");
+    });
+
+    it("remembers the wrap preference across remounts", () => {
+      const first = render(<StageFileEditor path="f.txt" contents={modified} onStage={vi.fn()} />);
+      fireEvent.click(screen.getByRole("button", { name: "Wrap long lines" }));
+      first.unmount();
+
+      render(<StageFileEditor path="f.txt" contents={modified} onStage={vi.fn()} />);
+      expect(screen.getByRole("button", { name: "Wrap long lines" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    });
+
+    it("hides whitespace-only changes when the whitespace toggle is on", async () => {
+      const { container } = render(
+        <StageFileEditor path="f.txt" contents={whitespaceOnly} onStage={vi.fn()} />,
+      );
+
+      // Shown by default: the whitespace-only change has stage toggles.
+      await waitFor(() =>
+        expect(container.querySelectorAll(".cm-stage-toggle").length).toBeGreaterThan(0),
+      );
+
+      const btn = screen.getByRole("button", { name: "Hide whitespace-only changes" });
+      expect(btn).toHaveAttribute("aria-pressed", "false");
+      fireEvent.click(btn);
+
+      // Collapsed to context — nothing left to stage.
+      await waitFor(() => expect(container.querySelectorAll(".cm-stage-toggle").length).toBe(0));
+      expect(btn).toHaveAttribute("aria-pressed", "true");
+      expect(localStorage.getItem("stageFileEditor.ignoreWhitespace")).toBe("true");
+    });
+
+    it("keeps a real change visible with the whitespace toggle on", async () => {
+      localStorage.setItem("stageFileEditor.ignoreWhitespace", "true");
+      const { container } = render(
+        <StageFileEditor path="f.txt" contents={modified} onStage={vi.fn()} />,
+      );
+
+      // "b" → "B" is a genuine change, so it still shows even while ignoring ws.
+      await waitFor(() =>
+        expect(container.querySelectorAll(".cm-stage-toggle").length).toBeGreaterThan(0),
+      );
+    });
+  });
+
   describe("image preview", () => {
     // An added image: only the new (worktree) side has a data URI.
     const addedImage: StageFileContents = {

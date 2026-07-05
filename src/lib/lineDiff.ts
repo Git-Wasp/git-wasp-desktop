@@ -25,26 +25,44 @@ export interface ResultLine {
   staged: boolean;
 }
 
+export interface DiffOptions {
+  /**
+   * Treat two lines that differ only in leading/trailing whitespace as equal, so
+   * such changes collapse to `context` instead of a removed/added pair. Internal
+   * whitespace differences remain a real change. When a line matches this way its
+   * `context` text is the `worktree` (new) version, so the pane shows the file's
+   * current content.
+   */
+  ignoreWhitespace?: boolean;
+}
+
 /**
  * Line-level diff between two texts, as an ordered list of rows. `context` lines
  * appear in both sides; `removed` only in `head`; `added` only in `worktree`.
  * Texts are split on "\n" (so a trailing newline yields a final empty line);
- * joining the rows belonging to a side with "\n" reproduces that side exactly.
+ * joining the rows belonging to a side with "\n" reproduces that side exactly
+ * (unless `ignoreWhitespace` folds a whitespace-only change into context).
  *
  * Uses a standard LCS (O(n·m)) — fine for the file sizes a staging review
  * involves.
  */
-export function diffLines(head: string, worktree: string): DiffRow[] {
+export function diffLines(head: string, worktree: string, options: DiffOptions = {}): DiffRow[] {
   const a = head.split("\n");
   const b = worktree.split("\n");
   const m = a.length;
   const n = b.length;
 
-  // dp[i][j] = LCS length of a[i..] and b[j..].
+  // Comparison key: identity, or the whitespace-trimmed line when ignoring
+  // leading/trailing whitespace. Lines equal under this key become context.
+  const key = options.ignoreWhitespace ? (s: string) => s.trim() : (s: string) => s;
+  const ka = a.map(key);
+  const kb = b.map(key);
+
+  // dp[i][j] = LCS length of a[i..] and b[j..], compared by key.
   const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
   for (let i = m - 1; i >= 0; i--) {
     for (let j = n - 1; j >= 0; j--) {
-      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+      dp[i][j] = ka[i] === kb[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
     }
   }
 
@@ -52,8 +70,10 @@ export function diffLines(head: string, worktree: string): DiffRow[] {
   let i = 0;
   let j = 0;
   while (i < m && j < n) {
-    if (a[i] === b[j]) {
-      rows.push({ kind: "context", text: a[i] });
+    if (ka[i] === kb[j]) {
+      // Prefer the worktree text for context (identical to head unless a
+      // whitespace-only difference was folded away).
+      rows.push({ kind: "context", text: b[j] });
       i++;
       j++;
     } else if (dp[i + 1][j] >= dp[i][j + 1]) {

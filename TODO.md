@@ -965,8 +965,26 @@ between sections, and add new ideas under the right heading. Items marked
       hunk per distant change, `@@` ranges, old/new numbers) + editor (button
       present, switches to hunk pane with `@@` header + add/del decorations, stages
       line-by-line from hunk, persists across remount). Full suite green (532).
-- [ ] In the diff view add an option to "wrap" text or "don't wrap text". Currently we wrap text rather than let it overflow horizontally.
-- [ ] In the diff view add an option to hide "leading/trailing whitespace only" changes.
+- [x] In the diff view add an option to "wrap" text or "don't wrap text". Currently we wrap text rather than let it overflow horizontally.
+      — added a `WrapLinesIcon` toggle to the diff header (`StageFileEditor`, used
+      by both the staging diff and the read-only commit diff). Defaults on (the
+      historical wrapping behaviour), persisted to `localStorage`
+      (`stageFileEditor.wrap`); off lets long lines overflow horizontally with a
+      scrollbar (the panes' `.cm-scroller` already scrolls, and split-view
+      horizontal scroll stays in sync). Wrapping is held in a CodeMirror
+      `Compartment` and reconfigured live on toggle rather than rebuilding the
+      editor, so scroll/cursor and the staged-gutter state are preserved. Tests:
+      toggle defaults on, flips + persists, and survives remount.
+- [x] In the diff view add an option to hide "leading/trailing whitespace only" changes.
+      — `diffLines` gained an `ignoreWhitespace` option: lines are compared by
+      their trimmed form, so a change that is only leading/trailing whitespace
+      collapses to a `context` row (shown with the worktree/new text); internal
+      whitespace differences stay a real change. A `WhitespaceIcon` toggle in the
+      diff header drives it (defaults off, persisted to
+      `stageFileEditor.ignoreWhitespace`). Tests: lineDiff (folds ws-only into
+      context, keeps real + internal-ws changes visible) and editor (ws-only
+      change loses its stage toggles when hidden; a genuine change stays).
+      Suites green (frontend 548).
 - [ ] Add a "stash changes" button before "Stage all" when viewing uncommitted files. Remove the "Stash changes" button from the sidebar.
 - [ ] Add a "notifications" button (bell) to the top menu bar. When notifications are fired (currently toasts) append a notification to a floating panel that opens from the right when clicking the "notifications" icon. Allow notifications to be dismissed one at a time or all at once. Notifications should have scope - either to a repo or global. If per-repo, the repo name should be shown in the notification details. All notifications should include a timestamp.
 - [x] Always show current checked out branch at the *top* of the sidebar panel showing local branches
