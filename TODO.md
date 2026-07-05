@@ -1024,7 +1024,17 @@ between sections, and add new ideas under the right heading. Items marked
 
 ## Other issues
 
-- [ ] "Split rail" view keeps the graph pinned to the left instead of "repinning" it to the right
+- [x] "Split rail" view keeps the graph pinned to the left instead of "repinning" it to the right
+      — the frozen graph overlay used `position: sticky` with `right: 0`, but sticky
+      only pulls a box back when it would scroll *out* of view; it does not
+      right-align a box whose in-flow position is the left edge. The rows are
+      absolutely positioned, so the overlay is the only in-flow child and defaulted
+      to `left: 0`. Added `marginLeft: auto` (Split Rail only) so its natural flow
+      position is the right edge; `right: 0` then keeps it pinned there on
+      horizontal scroll. The data model / header already anchored the graph right.
+      NOTE: the canvas still draws lanes from the *left* edge of the rail
+      (`GRAPH_PAD_LEFT`); the loading skeleton mirrors them to the right, so
+      mirroring the real lanes for Split Rail is a possible follow-up.
 - [x] When reopening app and "state" is restoring (e.g. when a large repo was previously opened and is now being re-opened) then:
   - [x] app remains in the default theme until loading has completed, then switches to previously-selected preferred theme
         main app window is "blank" and appears to have stalled

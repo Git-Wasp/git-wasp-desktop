@@ -851,6 +851,12 @@ export function CommitGraph({
             style={{
               position: "sticky",
               [graphOnRight ? "right" : "left"]: 0,
+              // `sticky` only pulls the box back when it would scroll out of view;
+              // it does not right-align a box whose in-flow position is the left
+              // edge. The rows are absolutely positioned, so this overlay is the
+              // only in-flow child — `marginLeft: auto` right-aligns its natural
+              // position in Split Rail so `right: 0` keeps it pinned to the right.
+              marginLeft: graphOnRight ? "auto" : undefined,
               width: graphWidth,
               height: totalHeight,
               zIndex: 3,
