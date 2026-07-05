@@ -2,85 +2,130 @@ import type { BranchLabel, GraphNode } from "../../types/graph";
 import { MAX_BODY_CHARS, type PillHandlers } from "./columnModel";
 import { CheckIcon, GitHubIcon, LaptopIcon, TagIcon } from "../ui/icons";
 import { Tooltip } from "../ui/Tooltip";
+import { useAvatarStore } from "../../stores/avatarStore";
+import { initials } from "../../lib/initials";
+import { formatRelativeDate } from "../../lib/formatDate";
+
+// The lane colour for a commit/branch, as a CSS token reference so it re-themes
+// with the rest of the app. Mirrors the canvas graph's per-commit colouring so a
+// branch pill and its lane share a colour.
+function laneColor(colorIndex: number): string {
+  return `var(--color-lane-${((colorIndex % 8) + 8) % 8})`;
+}
 
 // --- Branch / Tag cell -------------------------------------------------------
 
-function pillColor(label: BranchLabel): string {
-  if (label.isTag) return "#f59e0b";
-  if (label.isRemote) return "#a855f7";
-  return "#4d9de0";
-}
-
 function BranchPill({
   label,
+  color,
   handlers,
   isCurrent,
-  tagOnRemote,
 }: {
   label: BranchLabel;
+  /** The commit's lane colour, so the pill matches its graph lane. */
+  color: string;
   handlers?: PillHandlers;
   isCurrent?: boolean;
-  /** For tag pills: whether the tag also exists on the remote ("both"). */
-  tagOnRemote?: boolean;
 }) {
-  const local = !label.isRemote && !label.isTag;
+  const local = !label.isRemote;
   const isTarget = handlers?.isDropTarget(label.name) ?? false;
-  const tooltip = isCurrent
-    ? `${label.name} (checked out)`
-    : label.isTag
-      ? `${label.name} (tag, ${tagOnRemote ? "on remote" : "local only"})`
-      : label.name;
+  const tooltip = isCurrent ? `${label.name} (checked out)` : label.name;
   return (
     <Tooltip label={tooltip}>
+      <span
+        data-branch={label.name}
+        data-local={local ? "true" : "false"}
+        data-current={isCurrent ? "true" : undefined}
+        onPointerDown={local && handlers ? (e) => handlers.onPointerDown(e, label) : undefined}
+        onPointerEnter={handlers ? () => handlers.onPointerEnter(label) : undefined}
+        onPointerLeave={handlers ? () => handlers.onPointerLeave() : undefined}
+        style={{
+          maxWidth: "100%",
+          padding: "3px var(--space-2)",
+          borderRadius: "var(--radius-full)",
+          fontSize: "var(--font-size-xs)",
+          fontWeight: "var(--font-weight-semibold)",
+          // Subtle tint background + solid-colour text/border, per the redesign.
+          background: `color-mix(in srgb, ${color} 16%, transparent)`,
+          color,
+          border: `1px solid color-mix(in srgb, ${color} 32%, transparent)`,
+          cursor: local ? "grab" : "default",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          outline: isTarget ? "2px solid var(--color-accent-primary)" : "none",
+          outlineOffset: 1,
+          // The checked-out branch gets a crisp inset ring in its own colour so
+          // it stands out from other (same-lane) local pills.
+          boxShadow: isCurrent ? `inset 0 0 0 1.5px ${color}` : "none",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "var(--space-1)",
+        }}
+      >
+        {/* The checked-out branch shows a check; other branches show their
+            provenance — laptop for local, GitHub for remote. */}
+        {isCurrent ? <CheckIcon /> : label.isRemote ? <GitHubIcon /> : <LaptopIcon />}
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {label.name}
+        </span>
+      </span>
+    </Tooltip>
+  );
+}
+
+function HeadBadge() {
+  return (
     <span
-      data-branch={label.name}
-      data-local={local ? "true" : "false"}
-      data-current={isCurrent ? "true" : undefined}
-      onPointerDown={local && handlers ? (e) => handlers.onPointerDown(e, label) : undefined}
-      onPointerEnter={handlers ? () => handlers.onPointerEnter(label) : undefined}
-      onPointerLeave={handlers ? () => handlers.onPointerLeave() : undefined}
+      data-head-badge
       style={{
-        maxWidth: "100%",
-        padding: "1px var(--space-2)",
-        borderRadius: "var(--radius-sm)",
-        fontSize: "var(--font-size-xs)",
-        fontFamily: "var(--font-family-mono)",
-        fontWeight: isCurrent ? "var(--font-weight-bold)" : "var(--font-weight-normal)",
-        background: pillColor(label),
-        color: "#fff",
-        cursor: local ? "grab" : "default",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-        outline: isTarget ? "2px solid var(--color-accent-primary)" : "none",
-        outlineOffset: 1,
-        // The checked-out branch gets a crisp light ring so it stands out from
-        // the other (same-coloured) local pills.
-        boxShadow: isCurrent ? "inset 0 0 0 1.5px #fff, 0 0 0 1px rgba(0,0,0,0.25)" : "none",
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "var(--space-1)",
+        flexShrink: 0,
+        fontSize: "9.5px",
+        fontWeight: "var(--font-weight-bold)",
+        letterSpacing: "0.04em",
+        textTransform: "uppercase",
+        padding: "2.5px 7px",
+        borderRadius: "var(--radius-full)",
+        background: "var(--color-warning)",
+        color: "#241a00",
       }}
     >
-      {/* The checked-out branch shows a check; tags show a tag glyph (plus a
-          GitHub mark when the tag is also on the remote); branches show their
-          provenance — laptop for local, GitHub for remote. */}
-      {isCurrent ? (
-        <CheckIcon />
-      ) : label.isTag ? (
-        <>
-          <TagIcon />
-          {tagOnRemote && <GitHubIcon />}
-        </>
-      ) : label.isRemote ? (
-        <GitHubIcon />
-      ) : (
-        <LaptopIcon />
-      )}
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+      HEAD
+    </span>
+  );
+}
+
+// A tag is a point-in-time label, not a lane, so it's kept out of the branch
+// colour coding: a neutral, notched monospace chip (matching the hash cell's
+// type) sitting next to the branch pill.
+function TagChip({ label, onRemote }: { label: BranchLabel; onRemote?: boolean }) {
+  return (
+    <Tooltip label={`${label.name} (tag, ${onRemote ? "on remote" : "local only"})`}>
+      <span
+        data-tag={label.name}
+        style={{
+          flexShrink: 0,
+          fontFamily: "var(--font-family-mono)",
+          fontSize: "10px",
+          fontWeight: "var(--font-weight-semibold)",
+          padding: "2.5px 8px 2.5px 11px",
+          borderRadius: "4px",
+          clipPath: "polygon(8px 0, 100% 0, 100% 100%, 8px 100%, 0 50%)",
+          background: "var(--color-bg-elevated)",
+          color: "var(--color-text-secondary)",
+          border: "1px solid var(--color-border-default)",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "var(--space-1)",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        <TagIcon />
+        {onRemote && <GitHubIcon />}
         {label.name}
       </span>
-    </span>
     </Tooltip>
   );
 }
@@ -98,16 +143,24 @@ export function BranchCell({
   /** Whether a tag name is also on the remote, for the local/both indicator. */
   isTagOnRemote?: (name: string) => boolean;
 }) {
+  const color = laneColor(node.colorIndex);
+  const branches = node.branchLabels.filter((l) => !l.isTag);
+  const tags = node.branchLabels.filter((l) => l.isTag);
+  const showHead = node.isHead && !node.isWorkingTree && !node.isStash;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", overflow: "hidden" }}>
-      {node.branchLabels.map((label) => (
+    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", overflow: "hidden" }}>
+      {branches.map((label) => (
         <BranchPill
           key={label.name}
           label={label}
+          color={color}
           handlers={handlers}
-          isCurrent={!label.isRemote && !label.isTag && label.name === currentBranch}
-          tagOnRemote={label.isTag && (isTagOnRemote?.(label.name) ?? false)}
+          isCurrent={!label.isRemote && label.name === currentBranch}
         />
+      ))}
+      {showHead && <HeadBadge />}
+      {tags.map((label) => (
+        <TagChip key={label.name} label={label} onRemote={isTagOnRemote?.(label.name) ?? false} />
       ))}
     </div>
   );
@@ -121,54 +174,187 @@ export function MessageCell({ node }: { node: GraphNode }) {
   const wip = node.isWorkingTree;
 
   return (
-    <div
-      style={{
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-        fontSize: "var(--font-size-sm)",
-      }}
-    >
-      {node.isStash && (
-        <span
-          style={{
-            marginRight: "var(--space-2)",
-            padding: "0 var(--space-1)",
-            borderRadius: "var(--radius-sm)",
-            border: "1px dashed var(--color-text-muted)",
-            color: "var(--color-text-muted)",
-            fontSize: "var(--font-size-xs)",
-            fontWeight: "var(--font-weight-semibold)",
-            textTransform: "uppercase",
-            letterSpacing: "0.04em",
-          }}
-        >
-          stash
-        </span>
-      )}
-      <span
+    <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: "1px" }}>
+      <div
         style={{
-          fontWeight: "var(--font-weight-semibold)",
-          color: wip
-            ? "var(--color-warning)"
-            : node.isStash
-              ? "var(--color-text-secondary)"
-              : "var(--color-text-primary)",
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--space-2)",
+          overflow: "hidden",
+          whiteSpace: "nowrap",
+          textOverflow: "ellipsis",
         }}
       >
-        {node.summary}
-      </span>
+        {node.isStash && (
+          <span
+            style={{
+              flexShrink: 0,
+              padding: "0 var(--space-1)",
+              borderRadius: "var(--radius-sm)",
+              border: "1px dashed var(--color-text-muted)",
+              color: "var(--color-text-muted)",
+              fontSize: "var(--font-size-xs)",
+              fontWeight: "var(--font-weight-semibold)",
+              textTransform: "uppercase",
+              letterSpacing: "0.04em",
+            }}
+          >
+            stash
+          </span>
+        )}
+        <span
+          style={{
+            fontSize: "var(--font-size-base)",
+            fontWeight: "var(--font-weight-semibold)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            color: wip
+              ? "var(--color-warning)"
+              : node.isStash
+                ? "var(--color-text-secondary)"
+                : "var(--color-text-primary)",
+          }}
+        >
+          {node.summary}
+        </span>
+      </div>
       {cappedBody && (
         <span
           style={{
-            marginLeft: "var(--space-2)",
+            fontSize: "var(--font-size-xs)",
             fontWeight: "var(--font-weight-normal)",
             color: "var(--color-text-muted)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
           }}
         >
           {cappedBody}
         </span>
       )}
     </div>
+  );
+}
+
+// --- Author cell -------------------------------------------------------------
+
+const AVATAR_SIZE = 26;
+
+export function AuthorCell({ node }: { node: GraphNode }) {
+  // Subscribe to the resolved avatar URL directly — the selector re-runs when
+  // the store settles a photo, swapping the initials fallback for the image.
+  // Photos are preferred; initials-on-lane-colour otherwise.
+  const url = useAvatarStore((s) => (node.isWorkingTree ? null : s.getUrl(node.authorEmail)));
+
+  // No author on the uncommitted-changes row — a dashed placeholder + em dash.
+  if (node.isWorkingTree) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", overflow: "hidden" }}>
+        <span
+          style={{
+            width: AVATAR_SIZE,
+            height: AVATAR_SIZE,
+            borderRadius: "var(--radius-full)",
+            border: "1.5px dashed var(--color-border-strong)",
+            flexShrink: 0,
+          }}
+        />
+        <span style={{ color: "var(--color-text-muted)", fontSize: "var(--font-size-sm)" }}>—</span>
+      </div>
+    );
+  }
+
+  const color = laneColor(node.colorIndex);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", overflow: "hidden" }}>
+      {url ? (
+        <img
+          src={url}
+          alt=""
+          width={AVATAR_SIZE}
+          height={AVATAR_SIZE}
+          style={{ borderRadius: "var(--radius-full)", flexShrink: 0, objectFit: "cover" }}
+        />
+      ) : (
+        <span
+          aria-hidden
+          style={{
+            width: AVATAR_SIZE,
+            height: AVATAR_SIZE,
+            borderRadius: "var(--radius-full)",
+            background: color,
+            color: "#fff",
+            fontSize: "10.5px",
+            fontWeight: "var(--font-weight-bold)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          {initials(node.authorName)}
+        </span>
+      )}
+      <div style={{ minWidth: 0, display: "flex", flexDirection: "column", lineHeight: 1.25 }}>
+        <span
+          style={{
+            fontSize: "var(--font-size-sm)",
+            color: "var(--color-text-primary)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {node.authorName}
+        </span>
+        <span
+          style={{
+            fontSize: "10.5px",
+            color: "var(--color-text-muted)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {node.authorEmail}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// --- Hash & date cells -------------------------------------------------------
+
+export function HashCell({ node }: { node: GraphNode }) {
+  return (
+    <span
+      style={{
+        fontFamily: "var(--font-family-mono)",
+        fontSize: "var(--font-size-sm)",
+        color: "var(--color-text-muted)",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {node.isWorkingTree ? "—" : node.shortOid}
+    </span>
+  );
+}
+
+export function DateCell({ node }: { node: GraphNode }) {
+  return (
+    <span
+      style={{
+        fontSize: "var(--font-size-sm)",
+        color: "var(--color-text-muted)",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {node.isWorkingTree ? "Now" : formatRelativeDate(node.authorTimestamp)}
+    </span>
   );
 }

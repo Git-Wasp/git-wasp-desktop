@@ -61,6 +61,12 @@ beforeEach(() => {
     selectedOid: null,
     lastOffset: 0,
     lastLimit: 40,
+    graphVariant: "ledger",
+    visibleColumns: { author: true, branch: true, hash: true, date: true },
+    columnOrder: {
+      ledger: ["commit", "author", "branch", "hash", "date"],
+      split: ["hash", "commit", "author", "branch", "date"],
+    },
     fetchViewport: vi.fn(),
     refresh: vi.fn(),
     selectCommit,
@@ -79,18 +85,22 @@ beforeEach(() => {
 });
 
 describe("CommitGraph columns", () => {
-  it("renders the column headers", () => {
+  it("renders the ledger column headers", () => {
     render(<CommitGraph />);
-    expect(screen.getByText("Branch / Tag")).toBeInTheDocument();
-    expect(screen.getByText("Graph")).toBeInTheDocument();
-    expect(screen.getByText("Commit message")).toBeInTheDocument();
+    expect(screen.getByText("Commit")).toBeInTheDocument();
+    expect(screen.getByText("Author")).toBeInTheDocument();
+    expect(screen.getByText("Branch")).toBeInTheDocument();
+    expect(screen.getByText("Hash")).toBeInTheDocument();
+    expect(screen.getByText("Date")).toBeInTheDocument();
   });
 
-  it("renders a branch pill and the commit message per row", () => {
+  it("renders a branch pill, the commit message, author and hash per row", () => {
     render(<CommitGraph />);
     expect(screen.getByText("main")).toBeInTheDocument();
     expect(screen.getByText("first commit")).toBeInTheDocument();
     expect(screen.getByText("second commit")).toBeInTheDocument();
+    // The short hash renders in the hash column.
+    expect(screen.getAllByText("aaaaaaa").length).toBeGreaterThan(0);
   });
 
   it("selects a commit when its row is clicked", () => {
@@ -104,7 +114,7 @@ describe("CommitGraph columns", () => {
   it("highlights a commit row on hover and clears it on leave", () => {
     const { container } = render(<CommitGraph />);
     const row = container.querySelector(`[data-oid="${"b".repeat(40)}"]`) as HTMLElement;
-    const cell = row.firstElementChild as HTMLElement; // branch cell carries the bg
+    const cell = row.querySelector('[data-cell="commit"]') as HTMLElement; // a data cell carries the bg
     expect(cell.style.background).toBe("transparent");
     fireEvent.mouseEnter(row);
     expect(cell.style.background).toContain("--color-bg-hover");
@@ -112,16 +122,76 @@ describe("CommitGraph columns", () => {
     expect(cell.style.background).toBe("transparent");
   });
 
-  it("persists a resized branch column width to localStorage", () => {
-    localStorage.removeItem("graphBranchColWidth");
+  it("persists a resized graph column width to localStorage", () => {
+    localStorage.removeItem("graphCol:graph");
     render(<CommitGraph />);
-    const handle = screen.getByRole("separator", { name: "Resize branch column" });
+    const handle = screen.getByRole("separator", { name: "Resize graph column" });
 
     act(() => handle.dispatchEvent(new MouseEvent("pointerdown", { clientX: 100, bubbles: true })));
     act(() => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 140, bubbles: true })));
     act(() => window.dispatchEvent(new MouseEvent("pointerup", { clientX: 140, bubbles: true })));
 
-    expect(localStorage.getItem("graphBranchColWidth")).toBe("220"); // 180 default + 40
+    expect(localStorage.getItem("graphCol:graph")).toBe("196"); // 156 default + 40
+  });
+
+  it("persists a resized data (author) column width to localStorage", () => {
+    localStorage.removeItem("graphCol:author");
+    render(<CommitGraph />);
+    const handle = screen.getByRole("separator", { name: "Resize author column" });
+
+    act(() => handle.dispatchEvent(new MouseEvent("pointerdown", { clientX: 100, bubbles: true })));
+    act(() => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 130, bubbles: true })));
+    act(() => window.dispatchEvent(new MouseEvent("pointerup", { clientX: 130, bubbles: true })));
+
+    expect(localStorage.getItem("graphCol:author")).toBe("210"); // 180 default + 30
+  });
+
+  it("drops a column from the rows when it is toggled off in the store", () => {
+    const { container } = render(<CommitGraph />);
+    expect(container.querySelector('[data-cell="author"]')).not.toBeNull();
+    act(() => useGraphStore.getState().toggleColumn("author"));
+    expect(container.querySelector('[data-cell="author"]')).toBeNull();
+    // The commit column is structural and stays.
+    expect(container.querySelector('[data-cell="commit"]')).not.toBeNull();
+  });
+
+  it("reflects a reordered column order in the row's cell order", () => {
+    const { container } = render(<CommitGraph />);
+    const dataCells = () => {
+      const row = container.querySelector(`[data-oid="${"b".repeat(40)}"]`)!;
+      return Array.from(row.querySelectorAll("[data-cell]"))
+        .map((c) => c.getAttribute("data-cell"))
+        .filter((k) => k !== "graph" && k !== "filler");
+    };
+    expect(dataCells()).toEqual(["commit", "author", "branch", "hash", "date"]);
+    act(() =>
+      useGraphStore.getState().setColumnOrder("ledger", ["date", "commit", "author", "branch", "hash"]),
+    );
+    expect(dataCells()).toEqual(["date", "commit", "author", "branch", "hash"]);
+  });
+
+  it("reorders columns by dragging a header label (pointer drag)", () => {
+    const { container } = render(<CommitGraph />);
+    // Window pointer events carry coordinates via MouseEvent (jsdom drops them
+    // from PointerEvent) — matches the branch-pill drag tests.
+    const fireWindow = (type: string, clientX: number, clientY: number) =>
+      act(() => {
+        window.dispatchEvent(new MouseEvent(type, { clientX, clientY, bubbles: true }));
+      });
+
+    // Drag the Date header label onto the Commit header → Date moves before Commit.
+    act(() => fireEvent.pointerDown(screen.getByText("Date"), { clientX: 400, clientY: 10 }));
+    fireWindow("pointermove", 440, 10); // past the drag threshold
+    act(() => fireEvent.pointerEnter(container.querySelector('[data-header="commit"]')!));
+    fireWindow("pointerup", 440, 10);
+
+    expect(useGraphStore.getState().columnOrder.ledger).toEqual([
+      "date",
+      "commit",
+      "author",
+      "branch",
+      "hash",
+    ]);
   });
 });
 
@@ -131,7 +201,7 @@ describe("CommitGraph loading skeleton", () => {
     render(<CommitGraph />);
     expect(screen.getByTestId("graph-skeleton")).toBeInTheDocument();
     // The header stays visible; real rows do not render yet.
-    expect(screen.getByText("Branch / Tag")).toBeInTheDocument();
+    expect(screen.getByText("Commit")).toBeInTheDocument();
     expect(screen.queryByText("first commit")).not.toBeInTheDocument();
   });
 
@@ -186,8 +256,11 @@ describe("CommitGraph focus-current-branch mode", () => {
 
   const cellsOf = (container: HTMLElement, oid: string) => {
     const row = container.querySelector(`[data-oid="${oid}"]`) as HTMLElement;
-    // Branch cell is first child; message cell is the last child.
-    return [row.firstElementChild as HTMLElement, row.lastElementChild as HTMLElement];
+    // The content data cells carry the dimming class (not the graph spacer or
+    // the decorative trailing filler).
+    return Array.from(row.querySelectorAll<HTMLElement>("[data-cell]")).filter(
+      (c) => !["graph", "filler"].includes(c.getAttribute("data-cell") ?? ""),
+    );
   };
 
   it("dims off-line commits and leaves on-line commits fully opaque when on", () => {

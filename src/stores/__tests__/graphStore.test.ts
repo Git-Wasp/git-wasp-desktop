@@ -277,4 +277,27 @@ describe("graphStore", () => {
     expect(useGraphStore.getState().focusCurrentBranch).toBe(true);
     expect(localStorage.getItem("graphFocusCurrentBranch")).toBe("true");
   });
+
+  it("setColumnOrder updates the variant's order and persists it", () => {
+    useGraphStore.getState().setColumnOrder("ledger", ["date", "commit", "author", "branch", "hash"]);
+    expect(useGraphStore.getState().columnOrder.ledger).toEqual([
+      "date",
+      "commit",
+      "author",
+      "branch",
+      "hash",
+    ]);
+    // The split order is untouched.
+    expect(useGraphStore.getState().columnOrder.split[0]).toBe("hash");
+    const persisted = JSON.parse(localStorage.getItem("graphColumnOrder")!);
+    expect(persisted.ledger[0]).toBe("date");
+  });
+
+  it("setColumnOrder sanitises a partial/dirty order (drops unknown, appends missing)", () => {
+    // Only some columns provided, plus a bogus one — the rest are appended.
+    useGraphStore.getState().setColumnOrder("ledger", ["date", "bogus", "commit"] as never);
+    const order = useGraphStore.getState().columnOrder.ledger;
+    expect(order.slice(0, 2)).toEqual(["date", "commit"]);
+    expect([...order].sort()).toEqual(["author", "branch", "commit", "date", "hash"]);
+  });
 });

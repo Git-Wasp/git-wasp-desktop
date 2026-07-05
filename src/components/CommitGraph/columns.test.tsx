@@ -1,17 +1,22 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import "@testing-library/jest-dom";
-import { BranchCell, MessageCell } from "./columns";
-import { COLUMNS } from "./columnModel";
+import { AuthorCell, BranchCell, DateCell, HashCell, MessageCell } from "./columns";
+import { columnsForVariant } from "./columnModel";
+import type { ColumnVisibility, DataColumn } from "../../stores/graphStore";
 import type { GraphNode } from "../../types/graph";
+
+const ALL_VISIBLE: ColumnVisibility = { author: true, branch: true, hash: true, date: true };
+const LEDGER_ORDER: DataColumn[] = ["commit", "author", "branch", "hash", "date"];
+const SPLIT_ORDER: DataColumn[] = ["hash", "commit", "author", "branch", "date"];
 
 const node = (over: Partial<GraphNode>): GraphNode => ({
   oid: "a".repeat(40),
   shortOid: "aaaaaaa",
   summary: "feat: do a thing",
   body: "with some extra detail",
-  authorName: "A",
-  authorEmail: "a@a",
+  authorName: "Priya Natarajan",
+  authorEmail: "priya@wasp.dev",
   authorTimestamp: 0,
   lane: 0,
   row: 0,
@@ -25,10 +30,52 @@ const node = (over: Partial<GraphNode>): GraphNode => ({
   ...over,
 });
 
-describe("COLUMNS", () => {
-  it("defines branch, graph and message columns in order", () => {
-    expect(COLUMNS.map((c) => c.kind)).toEqual(["branch", "graph", "message"]);
-    expect(COLUMNS.map((c) => c.header)).toEqual(["Branch / Tag", "Graph", "Commit message"]);
+describe("columnsForVariant", () => {
+  it("orders Ledger Grid graph-first with the data columns after", () => {
+    expect(columnsForVariant("ledger", ALL_VISIBLE, LEDGER_ORDER).map((c) => c.kind)).toEqual([
+      "graph",
+      "commit",
+      "author",
+      "branch",
+      "hash",
+      "date",
+    ]);
+  });
+
+  it("orders Split Rail hash-first with the graph anchored last (right edge)", () => {
+    expect(columnsForVariant("split", ALL_VISIBLE, SPLIT_ORDER).map((c) => c.kind)).toEqual([
+      "hash",
+      "commit",
+      "author",
+      "branch",
+      "date",
+      "graph",
+    ]);
+  });
+
+  it("follows a reordered data-column order, keeping the graph pinned", () => {
+    const reordered: DataColumn[] = ["date", "commit", "hash", "author", "branch"];
+    expect(columnsForVariant("ledger", ALL_VISIBLE, reordered).map((c) => c.kind)).toEqual([
+      "graph",
+      "date",
+      "commit",
+      "hash",
+      "author",
+      "branch",
+    ]);
+  });
+
+  it("hides optional columns that are toggled off, keeping graph and commit", () => {
+    const cols = columnsForVariant("ledger", { author: false, branch: true, hash: false, date: true }, LEDGER_ORDER);
+    expect(cols.map((c) => c.kind)).toEqual(["graph", "commit", "branch", "date"]);
+  });
+
+  it("right-aligns hash and date in Ledger Grid only", () => {
+    const ledger = columnsForVariant("ledger", ALL_VISIBLE, LEDGER_ORDER);
+    expect(ledger.find((c) => c.kind === "hash")!.align).toBe("end");
+    expect(ledger.find((c) => c.kind === "date")!.align).toBe("end");
+    const split = columnsForVariant("split", ALL_VISIBLE, SPLIT_ORDER);
+    expect(split.find((c) => c.kind === "hash")!.align).toBe("start");
   });
 });
 
@@ -53,7 +100,7 @@ describe("MessageCell", () => {
 });
 
 describe("BranchCell", () => {
-  it("renders a pill for each branch label", () => {
+  it("renders a pill for each branch and a chip for each tag", () => {
     render(
       <BranchCell
         node={node({
@@ -86,7 +133,6 @@ describe("BranchCell", () => {
     const other = container.querySelector('[data-branch="feature"]');
     expect(current).toHaveAttribute("data-current", "true");
     expect(other).not.toHaveAttribute("data-current");
-    // The current pill shows a check; the other keeps its laptop marker.
     expect(current!.querySelector('[data-icon="check"]')).not.toBeNull();
     expect(current!.querySelector('[data-icon="laptop"]')).toBeNull();
     expect(other!.querySelector('[data-icon="laptop"]')).not.toBeNull();
@@ -102,7 +148,7 @@ describe("BranchCell", () => {
     expect(container.querySelector('[data-branch="origin/main"]')).not.toHaveAttribute("data-current");
   });
 
-  it("marks local branches with a laptop icon and remotes with a GitHub icon", () => {
+  it("marks local branches with a laptop icon and remotes with a GitHub icon; the tag gets neither", () => {
     const { container } = render(
       <BranchCell
         node={node({
@@ -114,8 +160,62 @@ describe("BranchCell", () => {
         })}
       />,
     );
-    // One laptop (local), one GitHub (remote); the tag gets neither.
     expect(container.querySelectorAll('[data-icon="laptop"]')).toHaveLength(1);
     expect(container.querySelectorAll('[data-icon="github"]')).toHaveLength(1);
+    // The tag renders as a notched chip, not a branch pill.
+    expect(container.querySelector('[data-tag="v1.0"]')).not.toBeNull();
+    expect(container.querySelector('[data-branch="v1.0"]')).toBeNull();
+  });
+
+  it("appends a HEAD badge on the checked-out commit's row", () => {
+    const { container, rerender } = render(
+      <BranchCell
+        node={node({ isHead: true, branchLabels: [{ name: "main", isRemote: false, isTag: false }] })}
+        currentBranch="main"
+      />,
+    );
+    expect(container.querySelector("[data-head-badge]")).not.toBeNull();
+    expect(screen.getByText("HEAD")).toBeInTheDocument();
+
+    rerender(
+      <BranchCell
+        node={node({ isHead: false, branchLabels: [{ name: "main", isRemote: false, isTag: false }] })}
+      />,
+    );
+    expect(container.querySelector("[data-head-badge]")).toBeNull();
+  });
+});
+
+describe("AuthorCell", () => {
+  it("renders computed initials, the name and the email when no photo is available", () => {
+    render(<AuthorCell node={node({})} />);
+    expect(screen.getByText("PN")).toBeInTheDocument();
+    expect(screen.getByText("Priya Natarajan")).toBeInTheDocument();
+    expect(screen.getByText("priya@wasp.dev")).toBeInTheDocument();
+  });
+
+  it("renders an em dash and no initials on the uncommitted-changes row", () => {
+    render(<AuthorCell node={node({ isWorkingTree: true, authorName: "" })} />);
+    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.queryByText("PN")).toBeNull();
+  });
+});
+
+describe("HashCell", () => {
+  it("renders the short hash for a commit", () => {
+    render(<HashCell node={node({ shortOid: "7c02e88" })} />);
+    expect(screen.getByText("7c02e88")).toBeInTheDocument();
+  });
+
+  it("renders an em dash on the uncommitted-changes row", () => {
+    render(<HashCell node={node({ isWorkingTree: true })} />);
+    expect(screen.getByText("—")).toBeInTheDocument();
+  });
+});
+
+describe("DateCell", () => {
+  it("renders 'Now' on the uncommitted-changes row", () => {
+    render(<DateCell node={node({ isWorkingTree: true })} />);
+    expect(screen.getByText("Now")).toBeInTheDocument();
   });
 });

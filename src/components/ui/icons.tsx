@@ -51,6 +51,31 @@ export function SplitViewIcon({ size = 14, title }: IconProps) {
   );
 }
 
+/** A checklist — the show/hide columns menu (pick which columns are shown). */
+export function ColumnsIcon({ size = 14, title }: IconProps) {
+  return (
+    <svg
+      data-icon="columns"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      style={{ flexShrink: 0 }}
+    >
+      {title && <title>{title}</title>}
+      <path d="M4 6.5l1.8 1.8L9 5" />
+      <path d="M4 16.5l1.8 1.8L9 13" />
+      <path d="M13 7h7M13 17h7" />
+    </svg>
+  );
+}
+
 /** Up arrow to a bar — push (send commits up to the remote). */
 export function PushIcon({ size = 14, title }: IconProps) {
   return (

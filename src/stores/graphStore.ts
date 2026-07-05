@@ -32,6 +32,85 @@ const loadFocusCurrentBranch = (): boolean => {
   }
 };
 
+// The two graph layout variants from the redesign: "ledger" (graph anchored
+// left) and "split" (Split Rail — graph mirrored to the right edge, hash read
+// like a log file on the left). Persisted so the choice survives reloads.
+export type GraphVariant = "ledger" | "split";
+const VARIANT_KEY = "graphVariant";
+
+const loadGraphVariant = (): GraphVariant => {
+  try {
+    return localStorage.getItem(VARIANT_KEY) === "split" ? "split" : "ledger";
+  } catch {
+    return "ledger";
+  }
+};
+
+// The optional (hideable) data columns and their persisted on/off state. The
+// graph and commit columns are structural and always shown, so they aren't
+// listed here. Persisted to localStorage; all default on.
+export type OptionalColumn = "author" | "branch" | "hash" | "date";
+export type ColumnVisibility = Record<OptionalColumn, boolean>;
+const OPTIONAL_COLUMNS: OptionalColumn[] = ["author", "branch", "hash", "date"];
+const COLUMNS_KEY = "graphVisibleColumns";
+
+const loadColumnVisibility = (): ColumnVisibility => {
+  const all = Object.fromEntries(OPTIONAL_COLUMNS.map((c) => [c, true])) as ColumnVisibility;
+  try {
+    const raw = localStorage.getItem(COLUMNS_KEY);
+    if (!raw) return all;
+    const parsed = JSON.parse(raw) as Partial<Record<OptionalColumn, boolean>>;
+    for (const c of OPTIONAL_COLUMNS) {
+      if (typeof parsed[c] === "boolean") all[c] = parsed[c] as boolean;
+    }
+    return all;
+  } catch {
+    return all;
+  }
+};
+
+// The reorderable data columns (the graph column is always pinned to its edge
+// and isn't part of the order). Each layout variant keeps its own order — Ledger
+// Grid and Split Rail default to different arrangements — and both persist.
+export type DataColumn = "commit" | OptionalColumn;
+export type ColumnOrder = Record<GraphVariant, DataColumn[]>;
+const DATA_COLUMNS: DataColumn[] = ["commit", "author", "branch", "hash", "date"];
+const DEFAULT_ORDER: ColumnOrder = {
+  ledger: ["commit", "author", "branch", "hash", "date"],
+  split: ["hash", "commit", "author", "branch", "date"],
+};
+const ORDER_KEY = "graphColumnOrder";
+
+// Sanitise a persisted order: keep only known columns (deduped) and append any
+// that are missing, so a stored order always covers every data column.
+const sanitizeOrder = (saved: unknown, fallback: DataColumn[]): DataColumn[] => {
+  const seen = new Set<DataColumn>();
+  const out: DataColumn[] = [];
+  if (Array.isArray(saved)) {
+    for (const k of saved) {
+      if (DATA_COLUMNS.includes(k as DataColumn) && !seen.has(k as DataColumn)) {
+        seen.add(k as DataColumn);
+        out.push(k as DataColumn);
+      }
+    }
+  }
+  for (const k of fallback) if (!seen.has(k)) out.push(k);
+  return out;
+};
+
+const loadColumnOrder = (): ColumnOrder => {
+  try {
+    const raw = localStorage.getItem(ORDER_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Partial<ColumnOrder>) : {};
+    return {
+      ledger: sanitizeOrder(parsed.ledger, DEFAULT_ORDER.ledger),
+      split: sanitizeOrder(parsed.split, DEFAULT_ORDER.split),
+    };
+  } catch {
+    return { ledger: [...DEFAULT_ORDER.ledger], split: [...DEFAULT_ORDER.split] };
+  }
+};
+
 interface GraphStore {
   viewport: GraphViewport | null;
   selection: Selection;
@@ -52,6 +131,15 @@ interface GraphStore {
   // of history. Persisted to localStorage; defaults on.
   focusCurrentBranch: boolean;
   setFocusCurrentBranch: (value: boolean) => void;
+  // Graph layout variant (Ledger Grid vs Split Rail). Persisted to localStorage.
+  graphVariant: GraphVariant;
+  setGraphVariant: (value: GraphVariant) => void;
+  // Which optional data columns are shown. Persisted to localStorage.
+  visibleColumns: ColumnVisibility;
+  toggleColumn: (column: OptionalColumn) => void;
+  // Per-variant data-column order (drag-to-reorder in the header). Persisted.
+  columnOrder: ColumnOrder;
+  setColumnOrder: (variant: GraphVariant, order: DataColumn[]) => void;
   fetchViewport: (offset: number, limit: number) => Promise<void>;
   refresh: () => Promise<void>;
   selectCommit: (oid: string, extend: boolean) => void;
@@ -141,6 +229,7 @@ export const useGraphStore = create<GraphStore>((set, get) => {
   scrollToRow: null,
   nodesByRow: new Map(),
   focusCurrentBranch: loadFocusCurrentBranch(),
+  graphVariant: loadGraphVariant(),
 
   setFocusCurrentBranch: (value: boolean) => {
     try {
@@ -149,6 +238,39 @@ export const useGraphStore = create<GraphStore>((set, get) => {
       // Ignore storage failures (private mode etc.) — state still updates.
     }
     set({ focusCurrentBranch: value });
+  },
+
+  setGraphVariant: (value: GraphVariant) => {
+    try {
+      localStorage.setItem(VARIANT_KEY, value);
+    } catch {
+      // Ignore storage failures (private mode etc.) — state still updates.
+    }
+    set({ graphVariant: value });
+  },
+
+  visibleColumns: loadColumnVisibility(),
+
+  toggleColumn: (column: OptionalColumn) => {
+    const next = { ...get().visibleColumns, [column]: !get().visibleColumns[column] };
+    try {
+      localStorage.setItem(COLUMNS_KEY, JSON.stringify(next));
+    } catch {
+      // Ignore storage failures (private mode etc.) — state still updates.
+    }
+    set({ visibleColumns: next });
+  },
+
+  columnOrder: loadColumnOrder(),
+
+  setColumnOrder: (variant: GraphVariant, order: DataColumn[]) => {
+    const next = { ...get().columnOrder, [variant]: sanitizeOrder(order, DEFAULT_ORDER[variant]) };
+    try {
+      localStorage.setItem(ORDER_KEY, JSON.stringify(next));
+    } catch {
+      // Ignore storage failures (private mode etc.) — state still updates.
+    }
+    set({ columnOrder: next });
   },
 
   fetchViewport: async (offset: number, limit: number) => {

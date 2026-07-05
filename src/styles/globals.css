@@ -65,8 +65,8 @@
   position: absolute;
   /* Base size = the commit dot's diameter (--graph-dot-radius * 2), so the ring
      starts exactly on the dot's edge and expands outward from there. */
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   border-radius: var(--radius-full);
   border: 2px solid var(--color-text-primary);
   pointer-events: none;
@@ -285,9 +285,11 @@ body,
   color: var(--color-accent-primary);
 }
 
-/* While dragging a branch pill in the graph, suppress text selection so the
-   pointer move doesn't highlight commit messages and other text under the drag. */
-body.dragging-branch-pill {
+/* While dragging a branch pill or reordering a column header in the graph,
+   suppress text selection so the pointer move doesn't highlight commit messages
+   and other text under the drag. */
+body.dragging-branch-pill,
+body.dragging-column {
   user-select: none;
   -webkit-user-select: none;
   cursor: grabbing;

@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useGraphStore } from "../../stores/graphStore";
 import { useRepoStore } from "../../stores/repoStore";
 import { useGithubStore } from "../../stores/githubStore";
@@ -18,12 +18,13 @@ import { runMerge } from "./dragDrop";
 import { useGraphDragDrop } from "./useGraphDragDrop";
 import { MergeConfirmDialog } from "./MergeConfirmDialog";
 import { GraphSkeleton } from "./GraphSkeleton";
-import { BranchCell, MessageCell } from "./columns";
+import { AuthorCell, BranchCell, DateCell, HashCell, MessageCell } from "./columns";
 import {
-  COLUMNS,
+  columnsForVariant,
+  COLUMN_META,
   ROW_HEIGHT,
-  BRANCH_COL_WIDTH,
-  GRAPH_COL_WIDTH,
+  type ColumnKind,
+  type DataColumn,
   type GraphColumn,
   type PillHandlers,
 } from "./columnModel";
@@ -45,10 +46,23 @@ type PromptState =
   | { kind: "stash" }
   | { kind: "rename-stash"; index: number; current: string };
 
+// Resolved, resizable widths keyed by column kind.
+export type ColWidths = Partial<Record<GraphColumn["kind"], number>>;
+
+// Flex style for a cell: fixed to its (resizable) width, never shrinking below
+// it — that fixed floor is what drives the horizontal scroll when the pane is
+// narrow. A trailing filler (rendered separately) absorbs any leftover width.
+function cellFlex(col: GraphColumn, widths: ColWidths): CSSProperties {
+  const w = widths[col.kind] ?? COLUMN_META[col.kind].defaultWidth;
+  return { flex: `0 0 ${w}px`, minWidth: 0 };
+}
+
 /**
- * A single graph row (branch cell · graph gap the canvas shows through · message
- * cell). Memoized and keyed by commit oid so that, when only the selection
- * changes, just the rows whose `selected` flips re-render — not the whole list.
+ * A single graph row, laid out as the variant's ordered columns. The graph
+ * column is an empty spacer the (frozen) canvas paints over; every other column
+ * renders its cell. Memoized and keyed by commit oid so that, when only the
+ * selection changes, just the rows whose `selected` flips re-render — not the
+ * whole list.
  */
 const GraphRow = memo(function GraphRow({
   node,
@@ -57,27 +71,29 @@ const GraphRow = memo(function GraphRow({
   hovered,
   muted,
   onRowHover,
-  branchWidth,
-  graphWidth,
+  columns,
+  widths,
   currentBranch,
   isTagOnRemote,
   pillHandlers,
   onRowClick,
   onRowContextMenu,
+  graphOnRight,
 }: {
   node: GraphNode;
   rowIndex: number;
   selected: boolean;
-  branchWidth: number;
-  graphWidth: number;
+  columns: GraphColumn[];
+  widths: ColWidths;
+  graphOnRight: boolean;
   currentBranch: string | null;
   isTagOnRemote: (name: string) => boolean;
   pillHandlers: PillHandlers;
   onRowClick: (node: GraphNode, shiftKey: boolean) => void;
   onRowContextMenu: (e: React.MouseEvent, node: GraphNode) => void;
   hovered: boolean;
-  // Dim the branch pills + message when this commit is off the focused branch's
-  // line of history (focus mode). The row stays fully interactive.
+  // Dim the cells when this commit is off the focused branch's line of history
+  // (focus mode). The row stays fully interactive.
   muted: boolean;
   onRowHover: (oid: string | null) => void;
 }) {
@@ -93,6 +109,31 @@ const GraphRow = memo(function GraphRow({
       : isHeadRow
         ? "var(--color-graph-head-row-bg)"
         : "transparent";
+
+  const renderCell = (col: GraphColumn) => {
+    switch (col.kind) {
+      case "commit":
+        return <MessageCell node={node} />;
+      case "author":
+        return <AuthorCell node={node} />;
+      case "branch":
+        return (
+          <BranchCell
+            node={node}
+            handlers={pillHandlers}
+            currentBranch={currentBranch}
+            isTagOnRemote={isTagOnRemote}
+          />
+        );
+      case "hash":
+        return <HashCell node={node} />;
+      case "date":
+        return <DateCell node={node} />;
+      default:
+        return null;
+    }
+  };
+
   return (
     <div
       data-oid={node.oid}
@@ -113,42 +154,48 @@ const GraphRow = memo(function GraphRow({
         cursor: "pointer",
       }}
     >
-      <div
-        className={muted ? "graph-row-muted" : undefined}
-        style={{
-          width: branchWidth,
-          flexShrink: 0,
-          height: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "flex-end",
-          padding: "0 var(--space-2)",
-          background: cellBg,
-        }}
-      >
-        <BranchCell
-          node={node}
-          handlers={pillHandlers}
-          currentBranch={currentBranch}
-          isTagOnRemote={isTagOnRemote}
-        />
-      </div>
-      {/* graph gap — canvas shows through */}
-      <div style={{ width: graphWidth, flexShrink: 0, height: "100%" }} />
-      <div
-        className={muted ? "graph-row-muted" : undefined}
-        style={{
-          flex: 1,
-          minWidth: 0,
-          height: "100%",
-          display: "flex",
-          alignItems: "center",
-          padding: "0 var(--space-3)",
-          background: cellBg,
-        }}
-      >
-        <MessageCell node={node} />
-      </div>
+      {columns.flatMap((col) => {
+        // A flexible filler carries the row background across any leftover width
+        // so the highlight spans the full row. It sits after the data columns
+        // and before the (edge-frozen) graph — i.e. just before the graph cell
+        // in Split Rail, or at the very end in Ledger Grid.
+        const filler = (
+          <div
+            key="filler"
+            data-cell="filler"
+            style={{ flex: "1 1 0", minWidth: 0, height: "100%", background: cellBg }}
+          />
+        );
+        if (col.kind === "graph") {
+          // Graph gap — the frozen canvas paints over this (it draws its own
+          // bands), so the spacer just reserves the column's width.
+          const graphCell = (
+            <div key={col.id} data-cell="graph" style={{ ...cellFlex(col, widths), height: "100%" }} />
+          );
+          return graphOnRight ? [filler, graphCell] : [graphCell];
+        }
+        return [
+          <div
+            key={col.id}
+            data-cell={col.kind}
+            className={muted ? "graph-row-muted" : undefined}
+            style={{
+              ...cellFlex(col, widths),
+              height: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: col.align === "end" ? "flex-end" : "flex-start",
+              padding: "0 var(--space-3)",
+              background: cellBg,
+            }}
+          >
+            {renderCell(col)}
+          </div>,
+        ];
+      })}
+      {!graphOnRight && (
+        <div data-cell="filler" style={{ flex: "1 1 0", minWidth: 0, height: "100%", background: cellBg }} />
+      )}
     </div>
   );
 });
@@ -180,6 +227,7 @@ export function CommitGraph({
     useGraphStore();
   const scrollToRow = useGraphStore((s) => s.scrollToRow);
   const focusCurrentBranch = useGraphStore((s) => s.focusCurrentBranch);
+  const graphVariant = useGraphStore((s) => s.graphVariant);
   const { currentRepo, createBranch, checkoutBranch, renameBranch, deleteBranch, checkoutCommit, createTag, revertCommit } =
     useRepoStore();
   const remoteInfo = useGithubStore((s) => s.remoteInfo);
@@ -203,15 +251,62 @@ export function CommitGraph({
   const [hoveredOid, setHoveredOid] = useState<string | null>(null);
   const handleRowHover = useCallback((oid: string | null) => setHoveredOid(oid), []);
 
-  // Resizable, persisted column widths (the message column flexes to fill).
-  const [branchWidth, setBranchWidth] = usePersistedWidth("graphBranchColWidth", BRANCH_COL_WIDTH, 100, 400);
-  const [graphWidth, setGraphWidth] = usePersistedWidth("graphGraphColWidth", GRAPH_COL_WIDTH, 60, 400);
+  const visibleColumns = useGraphStore((s) => s.visibleColumns);
+  const columnOrder = useGraphStore((s) => s.columnOrder);
+  // The ordered, visible columns for the active layout variant (Ledger Grid vs
+  // Split Rail). Stable per input so memoized rows don't churn on every render.
+  const columns = useMemo(
+    () => columnsForVariant(graphVariant, visibleColumns, columnOrder[graphVariant]),
+    [graphVariant, visibleColumns, columnOrder],
+  );
+  // Split Rail anchors the graph to the right edge; Ledger Grid to the left.
+  const graphOnRight = graphVariant === "split";
 
-  const colStyle = (col: GraphColumn): CSSProperties => {
-    if (col.kind === "branch") return { width: branchWidth, flexShrink: 0 };
-    if (col.kind === "graph") return { width: graphWidth, flexShrink: 0 };
-    return { flex: 1, minWidth: 0 };
+  // Resizable, persisted per-column widths — every column is resizable. Hooks
+  // are called in a fixed order (one per kind) so they stay stable across
+  // renders. The commit column simply starts wider.
+  const [graphWidth, setGraphWidth] = usePersistedWidth("graphCol:graph", COLUMN_META.graph.defaultWidth, COLUMN_META.graph.minWidth, 600);
+  const [commitWidth, setCommitWidth] = usePersistedWidth("graphCol:commit", COLUMN_META.commit.defaultWidth, COLUMN_META.commit.minWidth, 900);
+  const [authorWidth, setAuthorWidth] = usePersistedWidth("graphCol:author", COLUMN_META.author.defaultWidth, COLUMN_META.author.minWidth, 600);
+  const [branchWidth, setBranchWidth] = usePersistedWidth("graphCol:branch", COLUMN_META.branch.defaultWidth, COLUMN_META.branch.minWidth, 600);
+  const [hashWidth, setHashWidth] = usePersistedWidth("graphCol:hash", COLUMN_META.hash.defaultWidth, COLUMN_META.hash.minWidth, 600);
+  const [dateWidth, setDateWidth] = usePersistedWidth("graphCol:date", COLUMN_META.date.defaultWidth, COLUMN_META.date.minWidth, 600);
+
+  // Memoized so the object identity only changes when a width actually changes —
+  // a hover/selection change must not force every row to re-render.
+  const widths: ColWidths = useMemo(
+    () => ({ graph: graphWidth, commit: commitWidth, author: authorWidth, branch: branchWidth, hash: hashWidth, date: dateWidth }),
+    [graphWidth, commitWidth, authorWidth, branchWidth, hashWidth, dateWidth],
+  );
+  const widthSetters: Record<string, (fn: (w: number) => number) => void> = {
+    graph: setGraphWidth,
+    commit: setCommitWidth,
+    author: setAuthorWidth,
+    branch: setBranchWidth,
+    hash: setHashWidth,
+    date: setDateWidth,
   };
+  const widthOf = (kind: ColumnKind): number => widths[kind] ?? COLUMN_META[kind].defaultWidth;
+
+  // The graph column stays frozen (canvas-painted, always visible); the data
+  // columns scroll horizontally "after" it. `dataMinWidth` is the floor of all
+  // data columns combined — when the pane is narrower than graph + this, a
+  // horizontal scrollbar appears rather than the commit column collapsing.
+  const dataMinWidth = columns
+    .filter((c) => c.kind !== "graph")
+    .reduce((sum, c) => sum + widthOf(c.kind), 0);
+  const contentMinWidth = graphWidth + dataMinWidth;
+
+  // The frozen graph (canvas + HEAD pulse) is pinned by CSS `position: sticky`,
+  // so the compositor keeps it glued to its edge without a per-frame JS write
+  // (which used to lag the scroll and made the graph appear to vibrate). Only
+  // the header's data area still needs a scroll-position mirror.
+  const headerScrollRef = useRef<HTMLDivElement>(null);
+
+  const syncHeaderScroll = useCallback(() => {
+    const sc = containerRef.current;
+    if (sc && headerScrollRef.current) headerScrollRef.current.scrollLeft = sc.scrollLeft;
+  }, []);
 
   // Initial load.
   useEffect(() => {
@@ -235,6 +330,9 @@ export function CommitGraph({
 
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
+      // Mirror the horizontal scroll onto the header's data area (the graph is
+      // pinned by CSS sticky, so it needs no JS).
+      syncHeaderScroll();
       pendingScroll.current = {
         scrollTop: e.currentTarget.scrollTop,
         clientHeight: e.currentTarget.clientHeight,
@@ -260,7 +358,7 @@ export function CommitGraph({
         fetchViewport(offset, limit);
       });
     },
-    [fetchViewport],
+    [fetchViewport, syncHeaderScroll],
   );
 
   useEffect(() => {
@@ -268,6 +366,12 @@ export function CommitGraph({
       if (scrollRaf.current !== null) cancelAnimationFrame(scrollRaf.current);
     };
   }, []);
+
+  // Keep the header's data scroll aligned with the body after any layout change
+  // (variant, widths, visibility, a new slice) — the graph itself is CSS-sticky.
+  useLayoutEffect(() => {
+    syncHeaderScroll();
+  }, [syncHeaderScroll, columns, widths, viewport]);
 
   // Scroll a revealed commit (a branch head clicked in the sidebar) into view,
   // centring it, then load the slice around it. Consumes the pending row.
@@ -546,74 +650,177 @@ export function CommitGraph({
 
   // Position of the HEAD commit dot (when it's in the loaded slice), so a CSS
   // pulse overlay can draw expanding rings on it — a clear "you are here" cue.
+  // The pulse lives inside the CSS-sticky graph wrapper, so its coordinates are
+  // local to the graph column (x from the column's own left edge).
   const headPulse = useMemo(() => {
     const nodes = viewport?.nodes ?? [];
     const idx = nodes.findIndex((n) => n.isHead && !n.isWorkingTree);
     if (idx < 0) return null;
     const laneWidth =
       parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--graph-lane-width")) ||
-      20;
-    const x = branchWidth + GRAPH_PAD_LEFT + nodes[idx].lane * laneWidth + laneWidth / 2;
+      24;
+    const x = GRAPH_PAD_LEFT + nodes[idx].lane * laneWidth + laneWidth / 2;
     const y = (offset + idx) * ROW_HEIGHT + ROW_HEIGHT / 2;
     return { x, y };
-  }, [viewport, offset, branchWidth]);
+  }, [viewport, offset]);
+
+  const dataColumns = columns.filter((c) => c.kind !== "graph");
+
+  // Drag-to-reorder the data columns from their headers. Pointer-based (like the
+  // branch-pill drag) rather than the HTML5 drag API, which Tauri's webview
+  // intercepts for OS file drops. `dragCol` is the column being dragged;
+  // `dropCol` is the header it's hovering (a "drop before" target).
+  const [dragCol, setDragCol] = useState<ColumnKind | null>(null);
+  const [dropCol, setDropCol] = useState<ColumnKind | null>(null);
+  const dragCandidate = useRef<{ kind: ColumnKind; startX: number; startY: number } | null>(null);
+  const draggingRef = useRef(false);
+  const dropRef = useRef<ColumnKind | null>(null);
+
+  const onHeaderPointerDown = (e: React.PointerEvent, kind: ColumnKind) => {
+    dragCandidate.current = { kind, startX: e.clientX, startY: e.clientY };
+  };
+  const onHeaderPointerEnter = (kind: ColumnKind) => {
+    if (!draggingRef.current || dragCandidate.current?.kind === kind) return;
+    dropRef.current = kind;
+    setDropCol(kind);
+  };
+  const onHeaderPointerLeave = (kind: ColumnKind) => {
+    if (draggingRef.current && dropRef.current === kind) {
+      dropRef.current = null;
+      setDropCol(null);
+    }
+  };
+
+  // Window-level pointer move/up drive the drag once the press passes a small
+  // threshold. Stable listeners (empty deps) reading refs + the store, so an
+  // in-flight drag survives re-renders (mirrors useGraphDragDrop).
+  useEffect(() => {
+    const move = (e: PointerEvent) => {
+      const c = dragCandidate.current;
+      if (!c || draggingRef.current) return;
+      if (Math.hypot(e.clientX - c.startX, e.clientY - c.startY) <= 4) return;
+      draggingRef.current = true;
+      setDragCol(c.kind);
+      document.body.classList.add("dragging-column");
+      window.getSelection?.()?.removeAllRanges();
+    };
+    const up = () => {
+      const c = dragCandidate.current;
+      if (c && draggingRef.current && dropRef.current && dropRef.current !== c.kind) {
+        const st = useGraphStore.getState();
+        const variant = st.graphVariant;
+        const arr = [...st.columnOrder[variant]];
+        const fromIdx = arr.indexOf(c.kind as DataColumn);
+        const toIdx = arr.indexOf(dropRef.current as DataColumn);
+        if (fromIdx >= 0 && toIdx >= 0) {
+          arr.splice(fromIdx, 1);
+          arr.splice(arr.indexOf(dropRef.current as DataColumn), 0, c.kind as DataColumn);
+          st.setColumnOrder(variant, arr);
+        }
+      }
+      dragCandidate.current = null;
+      draggingRef.current = false;
+      dropRef.current = null;
+      document.body.classList.remove("dragging-column");
+      setDragCol(null);
+      setDropCol(null);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.classList.remove("dragging-column");
+    };
+  }, []);
+
+  // A frozen graph-column header cell (empty label) carrying the graph resize
+  // grip on its inner edge (right in Ledger Grid, left in Split Rail).
+  const graphHeaderCell = (
+    <div style={{ position: "relative", flex: `0 0 ${graphWidth}px`, height: "100%" }}>
+      <ResizeHandle
+        ariaLabel="Resize graph column"
+        onResize={(dx) => setGraphWidth((w) => (graphOnRight ? w - dx : w + dx))}
+        style={{ position: "absolute", top: 0, bottom: 0, [graphOnRight ? "left" : "right"]: -2 }}
+      />
+    </div>
+  );
 
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--color-bg-app)" }}>
-      {/* Column header */}
+      {/* Column header. The graph header cell is frozen; the data header cells
+          live in a clip that mirrors the body's horizontal scroll. */}
       <div
         role="row"
         style={{
           display: "flex",
-          alignItems: "center",
+          alignItems: "stretch",
           height: 28,
           flexShrink: 0,
           borderBottom: "1px solid var(--color-border-subtle)",
           background: "var(--color-bg-panel)",
         }}
       >
-        {COLUMNS.map((col) => (
-          <div key={col.id} style={{ ...colStyle(col), ...headerCellStyle }}>
-            {col.header}
+        {!graphOnRight && graphHeaderCell}
+        <div ref={headerScrollRef} style={{ flex: 1, minWidth: 0, height: "100%", overflow: "hidden" }}>
+          <div style={{ display: "flex", height: "100%", width: "100%", minWidth: dataMinWidth }}>
+            {dataColumns.map((col) => {
+              const isDropTarget = dropCol === col.kind && dragCol !== null && dragCol !== col.kind;
+              return (
+                <div
+                  key={col.id}
+                  data-header={col.kind}
+                  onPointerEnter={() => onHeaderPointerEnter(col.kind)}
+                  onPointerLeave={() => onHeaderPointerLeave(col.kind)}
+                  style={{
+                    ...cellFlex(col, widths),
+                    position: "relative",
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: col.align === "end" ? "flex-end" : "flex-start",
+                    opacity: dragCol === col.kind ? 0.4 : 1,
+                    boxShadow: isDropTarget ? "inset 2px 0 0 var(--color-accent-primary)" : undefined,
+                  }}
+                >
+                  {/* Only the label is the drag handle, so dragging the right-edge
+                      grip resizes instead of starting a reorder. */}
+                  <span
+                    onPointerDown={(e) => onHeaderPointerDown(e, col.kind)}
+                    style={{ ...headerCellStyle, cursor: "grab" }}
+                  >
+                    {col.header}
+                  </span>
+                  {COLUMN_META[col.kind].resizable && (
+                    <ResizeHandle
+                      ariaLabel={`Resize ${col.kind} column`}
+                      onResize={(dx) => widthSetters[col.kind]?.((w) => w + dx)}
+                      style={{ position: "absolute", top: 0, bottom: 0, right: -2 }}
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
-        ))}
+        </div>
+        {graphOnRight && graphHeaderCell}
       </div>
 
-      {/* Draggable column dividers (full height, overlaid on the boundaries). */}
-      <ResizeHandle
-        ariaLabel="Resize branch column"
-        onResize={(dx) => setBranchWidth((w) => w + dx)}
-        style={{ position: "absolute", top: 0, bottom: 0, left: branchWidth - 3, zIndex: 5 }}
-      />
-      <ResizeHandle
-        ariaLabel="Resize graph column"
-        onResize={(dx) => setGraphWidth((w) => w + dx)}
-        style={{ position: "absolute", top: 0, bottom: 0, left: branchWidth + graphWidth - 3, zIndex: 5 }}
-      />
-
-      {/* Scrollable rows */}
-      <div ref={containerRef} style={{ flex: 1, minHeight: 0, overflowY: "auto" }} onScroll={handleScroll}>
+      {/* Scrollable rows — vertical (virtualised) and horizontal (data columns,
+          with the graph column frozen). */}
+      <div
+        ref={containerRef}
+        style={{ flex: 1, minHeight: 0, overflow: "auto" }}
+        onScroll={handleScroll}
+      >
         {viewport === null ? (
           <GraphSkeleton
-            branchWidth={branchWidth}
             graphWidth={graphWidth}
+            graphOnRight={graphOnRight}
             rowCount={Math.ceil(window.innerHeight / ROW_HEIGHT)}
           />
         ) : (
-        <div style={{ height: totalHeight, position: "relative" }}>
-          {/* Canvas draws the graph column only */}
-          <canvas
-            ref={canvasRef}
-            style={{
-              position: "absolute",
-              left: branchWidth,
-              top: canvasTop,
-              width: graphWidth,
-              height: sliceHeight,
-              pointerEvents: "none",
-            }}
-          />
-
+        <div style={{ height: totalHeight, minWidth: contentMinWidth, position: "relative" }}>
           {viewport?.nodes.map((node, i) => (
             <GraphRow
               key={node.oid}
@@ -623,8 +830,9 @@ export function CommitGraph({
               hovered={hoveredOid === node.oid}
               muted={focusCurrentBranch && !node.onHeadLine}
               onRowHover={handleRowHover}
-              branchWidth={branchWidth}
-              graphWidth={graphWidth}
+              columns={columns}
+              widths={widths}
+              graphOnRight={graphOnRight}
               currentBranch={currentRepo?.headBranch ?? null}
               isTagOnRemote={isTagOnRemote}
               pillHandlers={pillHandlers}
@@ -632,14 +840,43 @@ export function CommitGraph({
               onRowContextMenu={handleRowContextMenu}
             />
           ))}
-          {headPulse && (
-            <span
-              data-testid="head-pulse"
-              className="graph-head-pulse"
-              aria-hidden
-              style={{ left: headPulse.x, top: headPulse.y }}
+
+          {/* Frozen graph column. `position: sticky` (horizontal only — no top
+              inset, so it still scrolls vertically) lets the compositor keep it
+              glued to its edge as the data columns scroll, with no per-frame JS —
+              which is what removes the visible "vibration" on horizontal scroll.
+              It's opaque and above the rows, so data scrolls underneath it, and
+              pointer-events:none lets row clicks/hover pass through. */}
+          <div
+            style={{
+              position: "sticky",
+              [graphOnRight ? "right" : "left"]: 0,
+              width: graphWidth,
+              height: totalHeight,
+              zIndex: 3,
+              pointerEvents: "none",
+              background: "var(--color-bg-app)",
+            }}
+          >
+            <canvas
+              ref={canvasRef}
+              style={{
+                position: "absolute",
+                left: 0,
+                top: canvasTop,
+                width: graphWidth,
+                height: sliceHeight,
+              }}
             />
-          )}
+            {headPulse && (
+              <span
+                data-testid="head-pulse"
+                className="graph-head-pulse"
+                aria-hidden
+                style={{ left: headPulse.x, top: headPulse.y }}
+              />
+            )}
+          </div>
         </div>
         )}
       </div>

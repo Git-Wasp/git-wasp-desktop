@@ -1020,9 +1020,11 @@ between sections, and add new ideas under the right heading. Items marked
       backend (ancestors-only, both merge sides, unborn all-on-line); frontend
       (store toggle persists, toolbar flips state, rows mute/unmute with the
       flag). Suites green (frontend 539, backend 218).
+- [ ] Add an integrated terminal that can be shown by clicking a button above the graph view. Should open automatically in the directory that contains the currently opened git repo.
 
 ## Other issues
 
+- [ ] "Split rail" view keeps the graph pinned to the left instead of "repinning" it to the right
 - [x] When reopening app and "state" is restoring (e.g. when a large repo was previously opened and is now being re-opened) then:
   - [x] app remains in the default theme until loading has completed, then switches to previously-selected preferred theme
         main app window is "blank" and appears to have stalled
@@ -1059,7 +1061,7 @@ between sections, and add new ideas under the right heading. Items marked
 
 ## Website
 
-- [ ] Domain gitwasp.com now owned. Create a "showcase" website on-brand. Should include details of features, how to download, and usage documentation. Links to the github repo (to be renamed) to allow people to log issues etc.
+- [ ] Domain gitwasp.com now owned. Create a "showcase" website on-brand. Should include details of features, how to download, and usage documentation. Links to the github repo (to be renamed) to allow people to log issues etc. Should be based on a popular static website framework ideally and should be suitable for including "docs" for the tool. Similar sites would include <https://aspire.dev/docs/>, <https://docs.usebruno.com/introduction/getting-started>, <https://docs.stripe.com/stripe-cli>
 
 ## Pre-release
 
