@@ -11,7 +11,7 @@ import { PromptDialog } from "../common/PromptDialog";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { Tooltip } from "../ui/Tooltip";
-import { BranchIcon, PullIcon, PushIcon, RefreshIcon, TargetIcon } from "../ui/icons";
+import { BranchFocusIcon, BranchIcon, PullIcon, PushIcon, RefreshIcon, TargetIcon } from "../ui/icons";
 
 const barStyle: React.CSSProperties = {
   display: "flex",
@@ -40,6 +40,8 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
   } = useRemoteStore();
   const refresh = useGraphStore((s) => s.refresh);
   const revealHead = useGraphStore((s) => s.revealHead);
+  const focusCurrentBranch = useGraphStore((s) => s.focusCurrentBranch);
+  const setFocusCurrentBranch = useGraphStore((s) => s.setFocusCurrentBranch);
   const { createBranch, checkoutBranch } = useRepoStore();
   const remoteInfo = useGithubStore((s) => s.remoteInfo);
   const loadMergeStatus = useMergeStore((s) => s.loadStatus);
@@ -155,8 +157,24 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
         New branch
       </Button>
 
-      {/* Right-aligned: check for changes, then jump to the checked-out (HEAD) commit. */}
+      {/* Right-aligned: focus toggle, check for changes, jump to HEAD. */}
       <div style={{ marginLeft: "auto", display: "flex", gap: "var(--space-2)" }}>
+        <Tooltip
+          label={
+            focusCurrentBranch
+              ? "Focusing current branch — click to show all branches equally"
+              : "Focus current branch (dim other branches)"
+          }
+        >
+          <IconButton
+            aria-label="Focus current branch"
+            aria-pressed={focusCurrentBranch}
+            onClick={() => setFocusCurrentBranch(!focusCurrentBranch)}
+            style={{ color: focusCurrentBranch ? "var(--color-accent-primary)" : undefined }}
+          >
+            <BranchFocusIcon />
+          </IconButton>
+        </Tooltip>
         <Tooltip label="Check for changes">
           <IconButton
             aria-label="Check for changes"

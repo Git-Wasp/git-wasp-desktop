@@ -1,14 +1,21 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
+// Room the bubble needs above the trigger (its height + the 6px gap). Below this
+// much clearance to the viewport top we flip it under the trigger instead, so a
+// tooltip on a control near the top of a panel isn't clipped or hidden behind it.
+const FLIP_THRESHOLD = 40;
 
 /**
  * A small hover tooltip. Wraps its children and, after a short hover delay,
- * shows `label` in a token-styled bubble centred above the wrapped element.
- * Used for branch/tag pills, whose text is often truncated, so the full ref name
- * is still readable.
+ * shows `label` in a token-styled bubble centred above the wrapped element (or
+ * below it, when there isn't room above). Used for branch/tag pills — whose text
+ * is often truncated — and for icon buttons.
  *
- * Positioned with `position: fixed` from the element's bounding rect (the same
- * approach as ContextMenu) — no transformed ancestors in the graph, so it
- * escapes the rows' `overflow: hidden` and isn't clipped.
+ * The bubble is rendered through a portal to `document.body` and positioned with
+ * `position: fixed` from the trigger's bounding rect, so no ancestor's
+ * `overflow: hidden`, stacking context, or transformed containing block can clip
+ * it or paint over it (e.g. an adjacent panel above the toolbar).
  */
 export function Tooltip({
   label,
@@ -21,7 +28,7 @@ export function Tooltip({
 }) {
   const ref = useRef<HTMLSpanElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const [pos, setPos] = useState<{ x: number; y: number; below: boolean } | null>(null);
 
   const clear = () => {
     if (timer.current) {
@@ -34,7 +41,15 @@ export function Tooltip({
     clear();
     timer.current = setTimeout(() => {
       const rect = ref.current?.getBoundingClientRect();
-      if (rect) setPos({ x: rect.left + rect.width / 2, y: rect.top });
+      if (!rect) return;
+      // Flip below the trigger when it sits too close to the viewport top for
+      // the bubble to open upward without being clipped.
+      const below = rect.top < FLIP_THRESHOLD;
+      setPos({
+        x: rect.left + rect.width / 2,
+        y: below ? rect.bottom : rect.top,
+        below,
+      });
     }, delay);
   };
 
@@ -55,30 +70,34 @@ export function Tooltip({
       style={{ display: "inline-flex", maxWidth: "100%", minWidth: 0 }}
     >
       {children}
-      {pos && (
-        <span
-          role="tooltip"
-          style={{
-            position: "fixed",
-            left: pos.x,
-            top: pos.y,
-            transform: "translate(-50%, calc(-100% - 6px))",
-            padding: "2px var(--space-2)",
-            background: "var(--color-bg-elevated)",
-            color: "var(--color-text-primary)",
-            border: "1px solid var(--color-border-subtle)",
-            borderRadius: "var(--radius-sm)",
-            boxShadow: "var(--shadow-md)",
-            fontSize: "var(--font-size-xs)",
-            fontFamily: "var(--font-family-mono)",
-            whiteSpace: "nowrap",
-            pointerEvents: "none",
-            zIndex: 250,
-          }}
-        >
-          {label}
-        </span>
-      )}
+      {pos &&
+        createPortal(
+          <span
+            role="tooltip"
+            style={{
+              position: "fixed",
+              left: pos.x,
+              top: pos.y,
+              transform: pos.below
+                ? "translate(-50%, 6px)"
+                : "translate(-50%, calc(-100% - 6px))",
+              padding: "2px var(--space-2)",
+              background: "var(--color-bg-elevated)",
+              color: "var(--color-text-primary)",
+              border: "1px solid var(--color-border-subtle)",
+              borderRadius: "var(--radius-sm)",
+              boxShadow: "var(--shadow-md)",
+              fontSize: "var(--font-size-xs)",
+              fontFamily: "var(--font-family-mono)",
+              whiteSpace: "nowrap",
+              pointerEvents: "none",
+              zIndex: 250,
+            }}
+          >
+            {label}
+          </span>,
+          document.body,
+        )}
     </span>
   );
 }

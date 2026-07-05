@@ -54,6 +54,9 @@ export function useCommitGraph(
   // The oid of the row under the pointer, for a subtle hover band in the graph
   // column (DOM cells are handled by GraphRow). Null when nothing is hovered.
   hoveredOid?: string | null,
+  // "Focus current branch" mode: when true, commits/edges not on HEAD's line of
+  // history are drawn greyed out (still visible) so the current branch stands out.
+  focusCurrentBranch?: boolean,
 ): void {
   const configRef = useRef<GraphConfig | null>(null);
   const laneColorsRef = useRef<string[]>([]);
@@ -89,7 +92,18 @@ export function useCommitGraph(
     const nodeBg = resolveCssVar("--color-graph-node-bg") || "rgba(255, 255, 255, 0.035)";
     const headRowBg = resolveCssVar("--color-graph-head-row-bg") || "rgba(77, 157, 224, 0.13)";
     const hoverBg = resolveCssVar("--color-bg-hover") || "rgba(255, 255, 255, 0.06)";
+    const mutedColor = resolveCssVar("--color-graph-muted") || "#5b6270";
+    const mutedAlpha = parseFloat(resolveCssVar("--graph-muted-opacity")) || 0.4;
     const dpr = window.devicePixelRatio || 1;
+
+    // In focus mode, commits/edges off HEAD's line of history are greyed. These
+    // resolve the effective colour (and, for dots, whether to dim) per element.
+    const nodeColor = (node: GraphViewport["nodes"][number]): string => {
+      const base = laneColors[node.colorIndex % 8] || "#4d9de0";
+      return focusCurrentBranch && !node.onHeadLine ? mutedColor : base;
+    };
+    const nodeMuted = (node: GraphViewport["nodes"][number]): boolean =>
+      !!focusCurrentBranch && !node.onHeadLine;
 
     const cssW = canvas.clientWidth;
     const cssH = canvas.clientHeight;
@@ -113,7 +127,7 @@ export function useCommitGraph(
     // row 0 here corresponds to viewport.offset in the full graph.
     viewport.nodes.forEach((node, localRow) => {
       const rowTop = localRow * rowHeight;
-      const color = laneColors[node.colorIndex % 8] || "#4d9de0";
+      const color = nodeColor(node);
 
       // Per-commit highlight band behind the row.
       if (!node.isWorkingTree) {
@@ -172,10 +186,13 @@ export function useCommitGraph(
       const yNext = yMid + rowHeight;
       node.edges.forEach((edge) => {
         // Stash edges are drawn dotted and muted; real history edges are solid.
+        // In focus mode, edges off HEAD's line are greyed to match their commits.
         const isStashEdge = edge.kind === "Stash";
         ctx.strokeStyle = isStashEdge
           ? resolveCssVar("--color-text-muted") || "#8a8a8a"
-          : laneColors[edge.colorIndex % 8] || "#4d9de0";
+          : focusCurrentBranch && !edge.onHeadLine
+            ? mutedColor
+            : laneColors[edge.colorIndex % 8] || "#4d9de0";
         ctx.lineWidth = lineWidth;
         ctx.setLineDash(isStashEdge ? [3, 3] : []);
         ctx.beginPath();
@@ -228,7 +245,11 @@ export function useCommitGraph(
     viewport.nodes.forEach((node, localRow) => {
       const y = localRow * rowHeight + rowHeight / 2;
       const x = laneX(node.lane);
-      const color = laneColors[node.colorIndex % 8] || "#4d9de0";
+      const color = nodeColor(node);
+      // Off-line commit dots (and their avatars) are dimmed in focus mode. Set
+      // once here and restored at the end of this node's drawing.
+      const muted = nodeMuted(node);
+      if (muted) ctx.globalAlpha = mutedAlpha;
 
       // Working-tree node: a hollow dashed marker (label lives in the DOM cell).
       if (node.isWorkingTree) {
@@ -239,6 +260,7 @@ export function useCommitGraph(
         ctx.lineWidth = 2;
         ctx.stroke();
         ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
         return;
       }
 
@@ -256,6 +278,7 @@ export function useCommitGraph(
         ctx.lineWidth = 2;
         ctx.stroke();
         ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
         return;
       }
 
@@ -287,6 +310,7 @@ export function useCommitGraph(
           ctx.stroke();
         }
       }
+      ctx.globalAlpha = 1;
     });
-  }, [viewport, selection, canvasRef, themeTick, width, avatarVersion, hoveredOid]);
+  }, [viewport, selection, canvasRef, themeTick, width, avatarVersion, hoveredOid, focusCurrentBranch]);
 }

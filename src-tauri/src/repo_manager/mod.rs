@@ -1368,7 +1368,14 @@ mod tests {
             // "wip": local-only with a commit the base branch doesn't have (unmerged).
             let sig = Signature::now("Test", "test@test.com").unwrap();
             let wip_oid = repo
-                .commit(None, &sig, &sig, "wip work", &head.tree().unwrap(), &[&head])
+                .commit(
+                    None,
+                    &sig,
+                    &sig,
+                    "wip work",
+                    &head.tree().unwrap(),
+                    &[&head],
+                )
                 .unwrap();
             repo.branch("wip", &repo.find_commit(wip_oid).unwrap(), false)
                 .unwrap();

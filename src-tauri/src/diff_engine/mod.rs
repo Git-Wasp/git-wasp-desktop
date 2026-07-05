@@ -250,7 +250,10 @@ mod tests {
 
         assert_eq!(detail.changed_files.len(), 1);
         assert_eq!(detail.changed_files[0].path, "a.txt");
-        assert!(matches!(detail.changed_files[0].status, FileStatus::Modified));
+        assert!(matches!(
+            detail.changed_files[0].status,
+            FileStatus::Modified
+        ));
     }
 
     #[test]

@@ -22,6 +22,7 @@ const node = (oid: string, summary: string, branch: string): GraphNode => ({
   edges: [],
   branchLabels: [{ name: branch, isRemote: false, isTag: false }],
   isHead: false,
+  onHeadLine: true,
 });
 
 const viewport: GraphViewport = {

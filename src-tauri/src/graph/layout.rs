@@ -1,7 +1,7 @@
 use crate::graph::{BranchLabel, EdgeKind, GraphEdge, GraphNode, GraphViewport};
 use anyhow::Context;
 use git2::{ObjectType, Oid, Repository, Sort};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::time::Instant;
 
@@ -105,7 +105,8 @@ fn build_full_layout(repo: &Repository) -> anyhow::Result<Vec<GraphNode>> {
     let commits = walk_commits(repo, usize::MAX)?;
     let walk_ms = walk_started.elapsed().as_millis();
 
-    let nodes = assign_lanes(&commits, &label_map, head_id);
+    let reachable = head_reachable_set(&commits, head_id);
+    let nodes = assign_lanes(&commits, &label_map, head_id, &reachable);
     let nodes = inject_stashes(repo, nodes);
     log_full_build(
         repo,
@@ -367,11 +368,41 @@ fn build_label_map(repo: &Repository) -> HashMap<git2::Oid, Vec<BranchLabel>> {
     map
 }
 
+/// The set of commits on the current branch's line of history: HEAD and every
+/// ancestor reachable from it. Used to flag [`GraphNode::on_head_line`] so the
+/// frontend's "focus current branch" mode can mute everything else.
+///
+/// `commits` is topologically ordered (children before parents), so a single
+/// forward pass propagates reachability: when a commit is already known to be on
+/// the line, all of its parents are too. An empty set is returned when HEAD is
+/// unborn — the caller treats that as "no focus target", leaving everything lit.
+fn head_reachable_set(commits: &[CommitRaw], head_id: Option<git2::Oid>) -> HashSet<git2::Oid> {
+    let mut set = HashSet::new();
+    let Some(head) = head_id else {
+        return set;
+    };
+    set.insert(head);
+    for c in commits {
+        if set.contains(&c.oid) {
+            for parent in &c.parents {
+                set.insert(*parent);
+            }
+        }
+    }
+    set
+}
+
 fn assign_lanes(
     commits: &[CommitRaw],
     label_map: &HashMap<git2::Oid, Vec<BranchLabel>>,
     head_id: Option<git2::Oid>,
+    reachable: &HashSet<git2::Oid>,
 ) -> Vec<GraphNode> {
+    // Whether an oid sits on the current branch's line of history. When HEAD is
+    // unborn the set is empty and there's nothing to focus, so everything counts
+    // as on-line (no muting).
+    let on_line = |oid: &git2::Oid| reachable.is_empty() || reachable.contains(oid);
+
     // active_lanes[i] = Some(oid) means lane i is occupied by a commit that
     // has not yet appeared in the walk (i.e., we are waiting for its parent).
     let mut active_lanes: Vec<Option<git2::Oid>> = Vec::new();
@@ -423,15 +454,23 @@ fn assign_lanes(
         // row's centre, so lines join dot-to-dot.
         let mut edges: Vec<GraphEdge> = Vec::new();
 
+        // On the current commit's line of history? Continuation edges and the
+        // node itself take this; lanes passing straight through take the status
+        // of whichever commit owns them.
+        let head_line = on_line(oid);
+
         // Other occupied lanes pass straight through to the next row.
         for (i, slot) in active_lanes.iter().enumerate() {
-            if slot.is_some() && i != lane {
-                edges.push(GraphEdge {
-                    src_lane: i,
-                    dst_lane: i,
-                    color_index: lane_colors[i],
-                    kind: EdgeKind::Straight,
-                });
+            if let Some(slot_oid) = slot {
+                if i != lane {
+                    edges.push(GraphEdge {
+                        src_lane: i,
+                        dst_lane: i,
+                        color_index: lane_colors[i],
+                        kind: EdgeKind::Straight,
+                        on_head_line: on_line(slot_oid),
+                    });
+                }
             }
         }
 
@@ -448,6 +487,7 @@ fn assign_lanes(
                     dst_lane: plane,
                     color_index,
                     kind: EdgeKind::Merge,
+                    on_head_line: head_line,
                 });
             } else if !primary_lane_given {
                 // Primary parent inherits this commit's lane: draw the straight
@@ -461,6 +501,7 @@ fn assign_lanes(
                     dst_lane: lane,
                     color_index,
                     kind: EdgeKind::Straight,
+                    on_head_line: head_line,
                 });
             } else {
                 // Secondary parent → new lane (branch opening).
@@ -486,6 +527,7 @@ fn assign_lanes(
                     dst_lane: new_lane,
                     color_index,
                     kind: EdgeKind::Branch,
+                    on_head_line: head_line,
                 });
             }
         }
@@ -512,6 +554,7 @@ fn assign_lanes(
             edges,
             branch_labels,
             is_head: head_id == Some(*oid),
+            on_head_line: head_line,
             is_working_tree: false,
             change_count: None,
             is_stash: false,
@@ -578,11 +621,17 @@ fn inject_stashes(repo: &Repository, nodes: Vec<GraphNode>) -> Vec<GraphNode> {
     // Lanes (with colours) flowing out of the last real commit into the next
     // row — i.e. the lanes present just above the row we're about to emit. Stash
     // rows are spliced above their base, so they must carry these straight
-    // through, or the real history lines would break where they're inserted.
-    let mut prev_out: Vec<(usize, usize)> = Vec::new();
+    // through, or the real history lines would break where they're inserted. The
+    // `on_head_line` flag rides along so a mainline pass-through stays coloured
+    // (and off-line ones stay muted) even across a stash splice.
+    let mut prev_out: Vec<(usize, usize, bool)> = Vec::new();
     for node in nodes {
         let Some(chain) = by_base.get(&node.oid).cloned() else {
-            prev_out = node.edges.iter().map(|e| (e.dst_lane, e.color_index)).collect();
+            prev_out = node
+                .edges
+                .iter()
+                .map(|e| (e.dst_lane, e.color_index, e.on_head_line))
+                .collect();
             out.push(node);
             continue;
         };
@@ -591,7 +640,7 @@ fn inject_stashes(repo: &Repository, nodes: Vec<GraphNode>) -> Vec<GraphNode> {
         let base_color = node.color_index;
         // A side lane for the stash chain, free of the lanes passing through here.
         let mut stash_lane = 0;
-        while stash_lane == base_lane || prev_out.iter().any(|(l, _)| *l == stash_lane) {
+        while stash_lane == base_lane || prev_out.iter().any(|(l, _, _)| *l == stash_lane) {
             stash_lane += 1;
         }
 
@@ -603,11 +652,12 @@ fn inject_stashes(repo: &Repository, nodes: Vec<GraphNode>) -> Vec<GraphNode> {
         for (i, s) in chain.iter().rev().enumerate() {
             let mut edges: Vec<GraphEdge> = prev_out
                 .iter()
-                .map(|(lane, color)| GraphEdge {
+                .map(|(lane, color, on_head_line)| GraphEdge {
                     src_lane: *lane,
                     dst_lane: *lane,
                     color_index: *color,
                     kind: EdgeKind::Straight,
+                    on_head_line: *on_head_line,
                 })
                 .collect();
             let dotted_dst = if i + 1 < n { stash_lane } else { base_lane };
@@ -616,6 +666,8 @@ fn inject_stashes(repo: &Repository, nodes: Vec<GraphNode>) -> Vec<GraphNode> {
                 dst_lane: dotted_dst,
                 color_index: base_color,
                 kind: EdgeKind::Stash,
+                // A stash never sits on the current branch's line of history.
+                on_head_line: false,
             });
             let oid_str = s.oid.to_string();
             out.push(GraphNode {
@@ -634,6 +686,7 @@ fn inject_stashes(repo: &Repository, nodes: Vec<GraphNode>) -> Vec<GraphNode> {
                 edges,
                 branch_labels: Vec::new(),
                 is_head: false,
+                on_head_line: false,
                 is_working_tree: false,
                 change_count: None,
                 is_stash: true,
@@ -643,7 +696,11 @@ fn inject_stashes(repo: &Repository, nodes: Vec<GraphNode>) -> Vec<GraphNode> {
 
         // The base commit follows the stash rows, unchanged — its dotted stash
         // connector is emitted by the stash row above it, not by the base itself.
-        prev_out = node.edges.iter().map(|e| (e.dst_lane, e.color_index)).collect();
+        prev_out = node
+            .edges
+            .iter()
+            .map(|e| (e.dst_lane, e.color_index, e.on_head_line))
+            .collect();
         out.push(node);
     }
 
@@ -719,6 +776,8 @@ fn working_tree_node(head: &GraphNode, change_count: u32) -> GraphNode {
         edges: Vec::new(),
         branch_labels: Vec::new(),
         is_head: false,
+        // The uncommitted-changes node belongs to the checked-out branch's tip.
+        on_head_line: true,
         is_working_tree: true,
         change_count: Some(change_count),
         is_stash: false,
@@ -966,6 +1025,96 @@ mod tests {
         // Commits ahead of HEAD still sit above it, unchanged.
         assert!(viewport.nodes[1].summary == "third" || viewport.nodes[1].summary == "second");
         let _ = c2;
+    }
+
+    #[test]
+    fn on_head_line_marks_head_and_its_ancestors_only() {
+        // first → second → third on the default branch, plus a `feature` branch
+        // with its own commit off `second`. Check out `second`: HEAD and its
+        // ancestors (first, second) are on the line; `third` (ahead of HEAD) and
+        // the feature commit (a sibling) are not.
+        let (_dir, repo) = init_repo();
+        let c1 = repo.find_commit(make_commit(&repo, "first", &[])).unwrap();
+        let c2 = repo
+            .find_commit(make_commit(&repo, "second", &[&c1]))
+            .unwrap();
+        make_commit(&repo, "third", &[&c2]);
+        // A sibling branch off `second`, created without moving HEAD.
+        let feat = {
+            let tree = repo.find_tree(empty_tree(&repo)).unwrap();
+            repo.commit(None, &sig(), &sig(), "feature-work", &tree, &[&c2])
+                .unwrap()
+        };
+        repo.branch("feature", &repo.find_commit(feat).unwrap(), false)
+            .unwrap();
+        // Check out `second` (two behind the default tip).
+        repo.branch("mid", &c2, false).unwrap();
+        repo.set_head("refs/heads/mid").unwrap();
+
+        let viewport = compute_layout(&repo, 0, 100).unwrap();
+        let by_summary = |s: &str| {
+            viewport
+                .nodes
+                .iter()
+                .find(|n| n.summary == s)
+                .unwrap_or_else(|| panic!("missing {s}"))
+        };
+
+        assert!(by_summary("first").on_head_line, "ancestor of HEAD");
+        assert!(by_summary("second").on_head_line, "HEAD itself");
+        assert!(!by_summary("third").on_head_line, "ahead of HEAD");
+        assert!(!by_summary("feature-work").on_head_line, "sibling branch");
+
+        // A merge folds another line into HEAD's — both parents' histories then
+        // count as ancestors. (Covered here to guard the propagation over merges.)
+    }
+
+    #[test]
+    fn on_head_line_includes_both_sides_of_a_merge() {
+        let (_dir, repo) = init_repo();
+        let root = repo.find_commit(make_commit(&repo, "root", &[])).unwrap();
+        let a = repo.find_commit(make_commit(&repo, "a", &[&root])).unwrap();
+        let b = {
+            let tree = repo.find_tree(empty_tree(&repo)).unwrap();
+            repo.find_commit(
+                repo.commit(None, &sig(), &sig(), "b", &tree, &[&root])
+                    .unwrap(),
+            )
+            .unwrap()
+        };
+        make_commit(&repo, "merge", &[&a, &b]); // HEAD is the merge
+
+        let viewport = compute_layout(&repo, 0, 100).unwrap();
+        for s in ["merge", "a", "b", "root"] {
+            assert!(
+                viewport
+                    .nodes
+                    .iter()
+                    .find(|n| n.summary == s)
+                    .unwrap()
+                    .on_head_line,
+                "{s} is an ancestor of the merged HEAD"
+            );
+        }
+    }
+
+    #[test]
+    fn on_head_line_is_all_true_when_head_is_unborn() {
+        // An unborn HEAD (no target) means there's nothing to focus on — no node
+        // should be muted, so every commit reads as on-line.
+        let (_dir, repo) = init_repo();
+        // A commit made off any branch, with HEAD left unborn (target None).
+        let tree = repo.find_tree(empty_tree(&repo)).unwrap();
+        let oid = repo
+            .commit(None, &sig(), &sig(), "loose", &tree, &[])
+            .unwrap();
+        repo.reference("refs/heads/loose", oid, true, "test")
+            .unwrap();
+        // HEAD still points at the unborn default branch, so head().target() is
+        // None and there's no focus target.
+
+        let viewport = compute_layout(&repo, 0, 100).unwrap();
+        assert!(viewport.nodes.iter().all(|n| n.on_head_line));
     }
 
     #[test]

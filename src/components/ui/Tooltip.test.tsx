@@ -59,6 +59,42 @@ describe("Tooltip", () => {
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
+  const rectAt = (top: number, bottom: number): DOMRect =>
+    ({ top, bottom, left: 100, right: 120, width: 20, height: bottom - top, x: 100, y: top, toJSON: () => ({}) }) as DOMRect;
+
+  it("opens above the trigger when there is room", () => {
+    render(
+      <Tooltip label="main" delay={100}>
+        <span>pill</span>
+      </Tooltip>,
+    );
+    const wrapper = screen.getByText("pill").parentElement!;
+    vi.spyOn(wrapper, "getBoundingClientRect").mockReturnValue(rectAt(500, 522));
+
+    fireEvent.mouseEnter(wrapper);
+    advance(100);
+
+    const tip = screen.getByRole("tooltip");
+    expect(tip.style.transform).toContain("-100%"); // positioned above
+  });
+
+  it("flips below the trigger when it sits too close to the viewport top", () => {
+    render(
+      <Tooltip label="main" delay={100}>
+        <span>pill</span>
+      </Tooltip>,
+    );
+    const wrapper = screen.getByText("pill").parentElement!;
+    vi.spyOn(wrapper, "getBoundingClientRect").mockReturnValue(rectAt(8, 30));
+
+    fireEvent.mouseEnter(wrapper);
+    advance(100);
+
+    const tip = screen.getByRole("tooltip");
+    expect(tip.style.transform).toBe("translate(-50%, 6px)"); // flipped below
+    expect(tip.style.top).toBe("30px"); // anchored to the trigger's bottom
+  });
+
   it("hides on pointer down (e.g. when a drag starts)", () => {
     render(
       <Tooltip label="main" delay={100}>

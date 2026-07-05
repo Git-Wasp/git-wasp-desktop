@@ -21,6 +21,7 @@ const node = (over: Partial<GraphNode>): GraphNode => ({
   edges: [],
   branchLabels: [],
   isHead: false,
+  onHeadLine: true,
   ...over,
 });
 

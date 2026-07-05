@@ -25,6 +25,15 @@ pub struct GraphNode {
     pub edges: Vec<GraphEdge>,
     pub branch_labels: Vec<BranchLabel>,
     pub is_head: bool,
+    /// True when this commit is the checked-out tip (HEAD) or one of its
+    /// ancestors — i.e. it lies on the current branch's line of history. The
+    /// frontend's "focus current branch" view mode keeps these coloured and
+    /// mutes everything else (sibling branches, commits ahead of HEAD). The flag
+    /// is a structural fact computed once here; whether muting is *applied* is a
+    /// frontend concern driven by the (persisted) toggle. The working-tree node
+    /// is on the line; stash nodes are not.
+    #[serde(default)]
+    pub on_head_line: bool,
     /// True for the synthetic "uncommitted changes" node drawn above the
     /// current branch tip. Such a node has a sentinel oid and no real commit.
     #[serde(default)]
@@ -49,6 +58,13 @@ pub struct GraphEdge {
     pub dst_lane: usize,
     pub color_index: usize,
     pub kind: EdgeKind,
+    /// True when this edge belongs to the current branch's line of history (see
+    /// [`GraphNode::on_head_line`]). Continuation/merge/branch edges take the
+    /// source commit's status; a lane passing straight through takes the status
+    /// of the commit that owns the lane. Lets the renderer grey off-line edges
+    /// in "focus current branch" mode.
+    #[serde(default)]
+    pub on_head_line: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

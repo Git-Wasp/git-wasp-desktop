@@ -55,6 +55,7 @@ const GraphRow = memo(function GraphRow({
   rowIndex,
   selected,
   hovered,
+  muted,
   onRowHover,
   branchWidth,
   graphWidth,
@@ -75,6 +76,9 @@ const GraphRow = memo(function GraphRow({
   onRowClick: (node: GraphNode, shiftKey: boolean) => void;
   onRowContextMenu: (e: React.MouseEvent, node: GraphNode) => void;
   hovered: boolean;
+  // Dim the branch pills + message when this commit is off the focused branch's
+  // line of history (focus mode). The row stays fully interactive.
+  muted: boolean;
   onRowHover: (oid: string | null) => void;
 }) {
   // The checked-out (HEAD) commit's row keeps a permanent muted band so it's
@@ -93,6 +97,7 @@ const GraphRow = memo(function GraphRow({
     <div
       data-oid={node.oid}
       data-head-row={isHeadRow ? "true" : undefined}
+      data-muted={muted ? "true" : undefined}
       onClick={(e) => onRowClick(node, e.shiftKey)}
       onContextMenu={(e) => onRowContextMenu(e, node)}
       onMouseEnter={() => onRowHover(node.oid)}
@@ -109,6 +114,7 @@ const GraphRow = memo(function GraphRow({
       }}
     >
       <div
+        className={muted ? "graph-row-muted" : undefined}
         style={{
           width: branchWidth,
           flexShrink: 0,
@@ -130,6 +136,7 @@ const GraphRow = memo(function GraphRow({
       {/* graph gap — canvas shows through */}
       <div style={{ width: graphWidth, flexShrink: 0, height: "100%" }} />
       <div
+        className={muted ? "graph-row-muted" : undefined}
         style={{
           flex: 1,
           minWidth: 0,
@@ -172,6 +179,7 @@ export function CommitGraph({
   const { viewport, selection, fetchViewport, selectCommit, selectWorkingTree, refresh } =
     useGraphStore();
   const scrollToRow = useGraphStore((s) => s.scrollToRow);
+  const focusCurrentBranch = useGraphStore((s) => s.focusCurrentBranch);
   const { currentRepo, createBranch, checkoutBranch, renameBranch, deleteBranch, checkoutCommit, createTag, revertCommit } =
     useRepoStore();
   const remoteInfo = useGithubStore((s) => s.remoteInfo);
@@ -529,7 +537,7 @@ export function CommitGraph({
     }
   };
 
-  useCommitGraph(canvasRef, viewport, selection, graphWidth, hoveredOid);
+  useCommitGraph(canvasRef, viewport, selection, graphWidth, hoveredOid, focusCurrentBranch);
 
   const offset = viewport?.offset ?? 0;
   const totalHeight = (viewport?.totalCount ?? 0) * ROW_HEIGHT;
@@ -613,6 +621,7 @@ export function CommitGraph({
               rowIndex={offset + i}
               selected={selection.range.has(node.oid)}
               hovered={hoveredOid === node.oid}
+              muted={focusCurrentBranch && !node.onHeadLine}
               onRowHover={handleRowHover}
               branchWidth={branchWidth}
               graphWidth={graphWidth}

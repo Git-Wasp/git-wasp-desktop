@@ -18,6 +18,20 @@ interface Selection {
   range: Set<string>;
 }
 
+// Persisted "focus current branch" view preference. On by default: the graph
+// keeps the checked-out branch and its ancestors coloured and mutes everything
+// else. Persisted to localStorage so it survives reloads.
+const FOCUS_BRANCH_KEY = "graphFocusCurrentBranch";
+
+const loadFocusCurrentBranch = (): boolean => {
+  try {
+    // Default on — only an explicit "false" turns it off.
+    return localStorage.getItem(FOCUS_BRANCH_KEY) !== "false";
+  } catch {
+    return true;
+  }
+};
+
 interface GraphStore {
   viewport: GraphViewport | null;
   selection: Selection;
@@ -34,6 +48,10 @@ interface GraphStore {
   // Cleared by refresh(), since a refresh means the underlying history or
   // working-tree state may have moved.
   nodesByRow: Map<number, GraphNode>;
+  // "Focus current branch" view mode — mutes commits/edges not on HEAD's line
+  // of history. Persisted to localStorage; defaults on.
+  focusCurrentBranch: boolean;
+  setFocusCurrentBranch: (value: boolean) => void;
   fetchViewport: (offset: number, limit: number) => Promise<void>;
   refresh: () => Promise<void>;
   selectCommit: (oid: string, extend: boolean) => void;
@@ -122,6 +140,16 @@ export const useGraphStore = create<GraphStore>((set, get) => {
   lastLimit: null,
   scrollToRow: null,
   nodesByRow: new Map(),
+  focusCurrentBranch: loadFocusCurrentBranch(),
+
+  setFocusCurrentBranch: (value: boolean) => {
+    try {
+      localStorage.setItem(FOCUS_BRANCH_KEY, String(value));
+    } catch {
+      // Ignore storage failures (private mode etc.) — state still updates.
+    }
+    set({ focusCurrentBranch: value });
+  },
 
   fetchViewport: async (offset: number, limit: number) => {
     const { viewport, nodesByRow } = get();

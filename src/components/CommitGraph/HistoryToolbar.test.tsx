@@ -99,6 +99,22 @@ describe("HistoryToolbar", () => {
     expect(revealHead).toHaveBeenCalled();
   });
 
+  it("toggles focus-current-branch mode via the toolbar button", () => {
+    useGraphStore.setState({ focusCurrentBranch: true });
+    render(<HistoryToolbar />);
+    const btn = screen.getByRole("button", { name: /focus current branch/i });
+
+    // Starts on (pressed).
+    expect(btn).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(btn);
+    expect(useGraphStore.getState().focusCurrentBranch).toBe(false);
+    expect(btn).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(btn);
+    expect(useGraphStore.getState().focusCurrentBranch).toBe(true);
+  });
+
   it("disables push and pull when there is no remote", () => {
     useGithubStore.setState({ remoteInfo: null });
     render(<HistoryToolbar />);

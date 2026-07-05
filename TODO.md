@@ -988,6 +988,20 @@ between sections, and add new ideas under the right heading. Items marked
       recent lists (they don't have per-row menus yet) — flag if you want it there too.
 - [ ] When there are uncommitted changes and the user performs an action that would cause those changes to be lost (such as checking out a different branch, pulling the remote again) auto-stash the changes before performing the action.
 - [ ] Add "pin" functionality to sidebar panels that allow "pinning" a branch to the top, pinning a remote branch to the top, or pinning a recent repo to the top. The pinned items should persist between restarts. Pinning should be via a "pin" icon shown on hover - if not already pinned, the icon only shows on hover. If already pinned a solid pin icon is shown when not hovering, and changes to an "unfilled" pin icon on hover. A pinned item can be unpinned by clicking the pin icon again. Pinned items appear at the top.
+- [x] Add a graph view option to "focus" on the current branch. This should be turned on by default and the state of the option persisted between app reloads. When enabled, the colours in the graph should remain for the current checked out branch and all of its ancestors, but other branches (including those ahead of the HEAD) should be muted / greyed out - but still visible and can still be interacted with.
+      — the Rust layout now flags each node/edge with `on_head_line` (HEAD + its
+      ancestors, computed once via a forward pass over the topo-sorted walk in
+      `head_reachable_set`; the working-tree node is on the line, stashes are
+      not; unborn HEAD → everything on-line, nothing muted). The frontend added a
+      persisted `focusCurrentBranch` toggle to `graphStore` (localStorage
+      `graphFocusCurrentBranch`, defaults on) with a `BranchFocusIcon` toolbar
+      button (accent-tinted + `aria-pressed` when active). When on, off-line
+      commits/edges render in `--color-graph-muted` (with dimmed dots/avatars via
+      `--graph-muted-opacity`) on the canvas, and their branch pills + message
+      dim via the `.graph-row-muted` class — all still fully clickable. Tests:
+      backend (ancestors-only, both merge sides, unborn all-on-line); frontend
+      (store toggle persists, toolbar flips state, rows mute/unmute with the
+      flag). Suites green (frontend 539, backend 218).
 
 ## Other issues
 

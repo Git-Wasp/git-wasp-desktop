@@ -362,6 +362,40 @@ export function TargetIcon({ size = 14, title }: IconProps) {
   );
 }
 
+/**
+ * "Focus current branch" toggle: one lane drawn solid with filled nodes (the
+ * focused branch) and a second lane branching off faded (everything else muted).
+ */
+export function BranchFocusIcon({ size = 14, title }: IconProps) {
+  return (
+    <svg
+      data-icon="branch-focus"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      style={{ flexShrink: 0 }}
+    >
+      {title && <title>{title}</title>}
+      {/* Focused lane — solid line with filled nodes. */}
+      <path d="M8 4v16" />
+      <circle cx="8" cy="6" r="2.4" fill="currentColor" stroke="none" />
+      <circle cx="8" cy="18" r="2.4" fill="currentColor" stroke="none" />
+      {/* Off-branch lane — faded, branching away. */}
+      <g opacity="0.4">
+        <path d="M8 9c0 3 8 1 8 5" />
+        <circle cx="16" cy="15" r="2.2" />
+      </g>
+    </svg>
+  );
+}
+
 export function RefreshIcon({ size = 14, title }: IconProps) {
   return (
     <svg

@@ -14,6 +14,11 @@ export interface GraphNode {
   edges: GraphEdge[];
   branchLabels: BranchLabel[];
   isHead: boolean;
+  // True when this commit is HEAD or one of its ancestors — i.e. on the current
+  // branch's line of history. Drives the "focus current branch" view mode, which
+  // mutes everything not on the line. The working-tree node is on the line;
+  // stash nodes are not.
+  onHeadLine: boolean;
   // Present on the synthetic working-tree node (see graph layout).
   isWorkingTree?: boolean;
   changeCount?: number | null;
@@ -27,6 +32,9 @@ export interface GraphEdge {
   dstLane: number;
   colorIndex: number;
   kind: "Straight" | "Merge" | "Branch" | "Stash";
+  // True when this edge is part of the current branch's line of history (see
+  // GraphNode.onHeadLine). Muted in "focus current branch" mode otherwise.
+  onHeadLine: boolean;
 }
 
 export interface BranchLabel {

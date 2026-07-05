@@ -9,9 +9,9 @@ const makeViewport = (): GraphViewport => ({
   totalCount: 3,
   offset: 0,
   nodes: [
-    { oid: "aaa", shortOid: "aaa00000", summary: "first", authorName: "A", authorEmail: "a@a", authorTimestamp: 0, lane: 0, row: 0, colorIndex: 0, parents: [], children: ["bbb"], edges: [], branchLabels: [], isHead: false },
-    { oid: "bbb", shortOid: "bbb00000", summary: "second", authorName: "A", authorEmail: "a@a", authorTimestamp: 0, lane: 0, row: 1, colorIndex: 0, parents: ["aaa"], children: ["ccc"], edges: [], branchLabels: [], isHead: true },
-    { oid: "ccc", shortOid: "ccc00000", summary: "third", authorName: "A", authorEmail: "a@a", authorTimestamp: 0, lane: 0, row: 2, colorIndex: 0, parents: ["bbb"], children: [], edges: [], branchLabels: [], isHead: false },
+    { oid: "aaa", shortOid: "aaa00000", summary: "first", authorName: "A", authorEmail: "a@a", authorTimestamp: 0, lane: 0, row: 0, colorIndex: 0, parents: [], children: ["bbb"], edges: [], branchLabels: [], isHead: false, onHeadLine: true },
+    { oid: "bbb", shortOid: "bbb00000", summary: "second", authorName: "A", authorEmail: "a@a", authorTimestamp: 0, lane: 0, row: 1, colorIndex: 0, parents: ["aaa"], children: ["ccc"], edges: [], branchLabels: [], isHead: true, onHeadLine: true },
+    { oid: "ccc", shortOid: "ccc00000", summary: "third", authorName: "A", authorEmail: "a@a", authorTimestamp: 0, lane: 0, row: 2, colorIndex: 0, parents: ["bbb"], children: [], edges: [], branchLabels: [], isHead: false, onHeadLine: false },
   ],
 });
 
@@ -30,6 +30,7 @@ const makeNode = (row: number, oid: string): import("../../types/graph").GraphNo
   edges: [],
   branchLabels: [],
   isHead: false,
+  onHeadLine: true,
 });
 
 beforeEach(() => {
@@ -262,5 +263,18 @@ describe("graphStore", () => {
     await inFlight;
 
     expect(useGraphStore.getState().viewport).toBeNull();
+  });
+
+  it("setFocusCurrentBranch updates state and persists to localStorage", () => {
+    // Defaults on.
+    expect(useGraphStore.getState().focusCurrentBranch).toBe(true);
+
+    useGraphStore.getState().setFocusCurrentBranch(false);
+    expect(useGraphStore.getState().focusCurrentBranch).toBe(false);
+    expect(localStorage.getItem("graphFocusCurrentBranch")).toBe("false");
+
+    useGraphStore.getState().setFocusCurrentBranch(true);
+    expect(useGraphStore.getState().focusCurrentBranch).toBe(true);
+    expect(localStorage.getItem("graphFocusCurrentBranch")).toBe("true");
   });
 });

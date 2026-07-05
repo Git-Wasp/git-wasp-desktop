@@ -145,6 +145,12 @@
   /* Permanent muted band behind the checked-out (HEAD) commit's row, so the
      current commit is obvious even when another row is selected. */
   --color-graph-head-row-bg: rgba(77, 157, 224, 0.13);
+  /* Greyed lane/dot colour for commits *not* on the current branch's line of
+     history, used by the "focus current branch" view mode. Kept visible (not
+     hidden) so off-branch work can still be read and clicked. */
+  --color-graph-muted: #5b6270;
+  /* Opacity applied to muted branch pills / commit messages in that mode. */
+  --graph-muted-opacity: 0.4;
 }
 
 /* Light theme overrides — surface/text/border plus the colour groups that
@@ -194,6 +200,8 @@
   --color-bg-hover:    #e3e7ec;
   --color-graph-node-bg: rgba(0, 0, 0, 0.04);
   --color-graph-head-row-bg: rgba(13, 110, 253, 0.10);
+  --color-graph-muted: #aab2c0;
+  --graph-muted-opacity: 0.45;
 }
 
 /* === GitHub Dark =========================================================

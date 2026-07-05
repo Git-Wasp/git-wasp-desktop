@@ -27,6 +27,7 @@ const node = (over: Partial<GraphNode>): GraphNode => ({
   edges: [],
   branchLabels: [],
   isHead: false,
+  onHeadLine: true,
   ...over,
 });
 
@@ -170,6 +171,52 @@ describe("CommitGraph checked-out indicators", () => {
     });
     render(<CommitGraph />);
     expect(screen.queryByTestId("head-pulse")).toBeNull();
+  });
+});
+
+describe("CommitGraph focus-current-branch mode", () => {
+  const focusViewport = (): GraphViewport => ({
+    totalCount: 2,
+    offset: 0,
+    nodes: [
+      node({ oid: "a".repeat(40), summary: "on branch", isHead: true, onHeadLine: true, row: 0 }),
+      node({ oid: "b".repeat(40), summary: "off branch", onHeadLine: false, row: 1 }),
+    ],
+  });
+
+  const cellsOf = (container: HTMLElement, oid: string) => {
+    const row = container.querySelector(`[data-oid="${oid}"]`) as HTMLElement;
+    // Branch cell is first child; message cell is the last child.
+    return [row.firstElementChild as HTMLElement, row.lastElementChild as HTMLElement];
+  };
+
+  it("dims off-line commits and leaves on-line commits fully opaque when on", () => {
+    useGraphStore.setState({ viewport: focusViewport(), focusCurrentBranch: true });
+    const { container } = render(<CommitGraph />);
+
+    // The off-line row carries the muted flag + dimming class on its cells.
+    const offRow = container.querySelector(`[data-oid="${"b".repeat(40)}"]`);
+    expect(offRow).toHaveAttribute("data-muted", "true");
+    for (const cell of cellsOf(container, "b".repeat(40))) {
+      expect(cell).toHaveClass("graph-row-muted");
+    }
+    // The on-line (HEAD) row is not muted.
+    const onRow = container.querySelector(`[data-oid="${"a".repeat(40)}"]`);
+    expect(onRow).not.toHaveAttribute("data-muted");
+    for (const cell of cellsOf(container, "a".repeat(40))) {
+      expect(cell).not.toHaveClass("graph-row-muted");
+    }
+  });
+
+  it("does not dim anything when focus mode is off", () => {
+    useGraphStore.setState({ viewport: focusViewport(), focusCurrentBranch: false });
+    const { container } = render(<CommitGraph />);
+
+    const offRow = container.querySelector(`[data-oid="${"b".repeat(40)}"]`);
+    expect(offRow).not.toHaveAttribute("data-muted");
+    for (const cell of cellsOf(container, "b".repeat(40))) {
+      expect(cell).not.toHaveClass("graph-row-muted");
+    }
   });
 });
 

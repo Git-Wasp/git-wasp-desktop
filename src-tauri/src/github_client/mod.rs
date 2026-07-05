@@ -124,7 +124,10 @@ pub async fn start_device_flow(host: &str) -> anyhow::Result<DeviceFlowInit> {
 }
 
 async fn start_device_flow_at(url: &str) -> anyhow::Result<DeviceFlowInit> {
-    info!("starting GitHub device flow: POST {url} (client_id={})", client_id());
+    info!(
+        "starting GitHub device flow: POST {url} (client_id={})",
+        client_id()
+    );
     let client = http_client()?;
     let response = client
         .post(url)
@@ -163,7 +166,10 @@ pub async fn poll_device_flow(
 }
 
 async fn poll_device_flow_at(url: &str, device_code: &str) -> anyhow::Result<DeviceFlowPollResult> {
-    debug!("polling device flow: POST {url} (client_id={})", client_id());
+    debug!(
+        "polling device flow: POST {url} (client_id={})",
+        client_id()
+    );
     let client = http_client()?;
     let response = client
         .post(url)

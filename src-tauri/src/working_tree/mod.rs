@@ -1356,7 +1356,11 @@ mod tests {
         let (dir, repo) = init_repo();
         make_initial_commit(&repo);
         // Minimal PNG signature bytes — enough to exercise the data-URI path.
-        fs::write(dir.path().join("logo.png"), [0x89, b'P', b'N', b'G', 0, 1, 2]).unwrap();
+        fs::write(
+            dir.path().join("logo.png"),
+            [0x89, b'P', b'N', b'G', 0, 1, 2],
+        )
+        .unwrap();
 
         let c = get_stage_file_contents(&repo, "logo.png").unwrap();
         // New (worktree) side is an image; no previous version on the HEAD side.
