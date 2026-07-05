@@ -958,7 +958,7 @@ export function StageFileEditor({
               />
             </div>
           )}
-          <ChangeOverview rows={rows} onSeek={seek} />
+          <ChangeOverview rows={rows} split={viewMode === "split"} onSeek={seek} />
         </div>
       )}
     </div>

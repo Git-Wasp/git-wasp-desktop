@@ -152,6 +152,10 @@ const GraphRow = memo(function GraphRow({
         display: "flex",
         alignItems: "center",
         cursor: "pointer",
+        // Hairline separator between rows (data-column half; the canvas draws the
+        // matching line across the graph column). box-sizing: border-box keeps
+        // the row height fixed, so this can't drift row geometry off the canvas.
+        borderBottom: "1px solid var(--color-graph-row-divider)",
       }}
     >
       {columns.flatMap((col) => {

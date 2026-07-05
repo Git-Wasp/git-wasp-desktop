@@ -1025,9 +1025,23 @@ between sections, and add new ideas under the right heading. Items marked
       backend 224). Not covered: interactive-rebase/merge-with-dirty-tree paths
       (out of scope); pull auto-stash command orchestration is exercised via its
       unit-tested pieces rather than a full remote harness.
-- [ ] Add subtle top/bottom (non-overlapping) borders to "rows" in the graph view for better visibility of individual commits
+- [x] Add subtle top/bottom (non-overlapping) borders to "rows" in the graph view for better visibility of individual commits
+      — a new themeable `--color-graph-row-divider` token (faint white/black,
+      with light-theme overrides). Drawn as a single hairline at each row's
+      bottom edge in two halves so it's continuous but never doubles up between
+      rows: the canvas renderer (`useCommitGraph` pass 1) paints it across the
+      graph column, and `GraphRow` adds a matching `borderBottom` across the data
+      columns (box-sizing keeps row height fixed so canvas/DOM stay aligned).
 - [ ] Add "pin" functionality to sidebar panels that allow "pinning" a branch to the top, pinning a remote branch to the top, or pinning a recent repo to the top. The pinned items should persist between restarts. Pinning should be via a "pin" icon shown on hover - if not already pinned, the icon only shows on hover. If already pinned a solid pin icon is shown when not hovering, and changes to an "unfilled" pin icon on hover. A pinned item can be unpinned by clicking the pin icon again. Pinned items appear at the top. Give more spacing around the existing buttons at the top of this panel too (prune / new branch)
-- [ ] Widen scroll gutter in diff view - it's too narrow and should be wider. It should have 2 "lanes" when in side-by-side view - left shows changes from the left panel (red/green/amber) and right shows changes from the right panel (red/green/amber)
+- [x] Widen scroll gutter in diff view - it's too narrow and should be wider. It should have 2 "lanes" when in side-by-side view - left shows changes from the left panel (red/green/amber) and right shows changes from the right panel (red/green/amber)
+      — `ChangeOverview` widened (11px per lane) and split into two lanes in
+      side-by-side (split) view: removed rows in the left lane, added rows in the
+      right, single combined lane in inline/hunk view. New pure `overviewMarks`
+      helper in `lineDiff.ts` classifies changes — a change block with both a
+      deletion and an addition is a modification (amber `--color-warning`),
+      pure deletions red, pure additions green. Tests: `overviewMarks`
+      (del/add/mod/context) and `ChangeOverview` (two-lane routing, single lane,
+      seek).
 - [x] Add a graph view option to "focus" on the current branch. This should be turned on by default and the state of the option persisted between app reloads. When enabled, the colours in the graph should remain for the current checked out branch and all of its ancestors, but other branches (including those ahead of the HEAD) should be muted / greyed out - but still visible and can still be interacted with.
       — the Rust layout now flags each node/edge with `on_head_line` (HEAD + its
       ancestors, computed once via a forward pass over the topo-sorted walk in

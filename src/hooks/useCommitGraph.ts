@@ -95,6 +95,9 @@ export function useCommitGraph(
     const hoverBg = resolveCssVar("--color-bg-hover") || "rgba(255, 255, 255, 0.06)";
     const mutedColor = resolveCssVar("--color-graph-muted") || "#5b6270";
     const mutedAlpha = parseFloat(resolveCssVar("--graph-muted-opacity")) || 0.4;
+    // Hairline divider between rows (graph-column half; the DOM row draws the
+    // matching border across the data columns) — cues individual commits.
+    const rowDivider = resolveCssVar("--color-graph-row-divider") || "rgba(255, 255, 255, 0.06)";
     // Page background: painted as a "cutout" ring around each dot so crossing
     // lane lines never visibly pierce the marker. Accent: the dashed selection
     // ring. Sans stack: canvas text for the commit-dot initials fallback.
@@ -173,6 +176,12 @@ export function useCommitGraph(
         ctx.fillStyle = nodeColor(node);
         ctx.fillRect(cssW - 2, rowTop, 2, rowHeight);
       }
+
+      // Hairline row divider at the bottom edge (a single line between rows, so
+      // adjacent rows never double it up). Drawn before edges/dots so the lane
+      // lines and markers stay on top.
+      ctx.fillStyle = rowDivider;
+      ctx.fillRect(0, rowTop + rowHeight - 1, cssW, 1);
     });
 
     // Pass 2 — edges, on top of every band so connecting lines stay unbroken

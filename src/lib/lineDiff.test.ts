@@ -12,6 +12,7 @@ import {
   headPaneText,
   hunkLines,
   inlineText,
+  overviewMarks,
   worktreeChangedLines,
   worktreePaneText,
 } from "./lineDiff";
@@ -148,6 +149,42 @@ describe("pane changed-line maps", () => {
     const lineNos = wt.map((l) => l.lineNo).sort((a, b) => a - b);
     // "B" (line 2) and "d" (line 4) are the added lines in the worktree pane.
     expect(lineNos).toEqual([2, 4]);
+  });
+});
+
+describe("overviewMarks", () => {
+  it("marks a pure deletion red in the left lane", () => {
+    // head: a b c   worktree: a c  → "b" removed, no adjacent addition.
+    const rows = diffLines("a\nb\nc\n", "a\nc\n");
+    const marks = overviewMarks(rows);
+    expect(marks).toEqual([
+      { rowIndex: rows.findIndex((r) => r.kind === "removed"), lane: "left", color: "del" },
+    ]);
+  });
+
+  it("marks a pure addition green in the right lane", () => {
+    const rows = diffLines("a\nc\n", "a\nb\nc\n");
+    const marks = overviewMarks(rows);
+    expect(marks).toEqual([
+      { rowIndex: rows.findIndex((r) => r.kind === "added"), lane: "right", color: "add" },
+    ]);
+  });
+
+  it("marks a modification amber on both lanes (removed left, added right)", () => {
+    // "b" -> "B" is a removed row followed by an added row: one change block.
+    const rows = diffLines("a\nb\nc\n", "a\nB\nc\n");
+    const marks = overviewMarks(rows);
+    const removed = rows.findIndex((r) => r.kind === "removed");
+    const added = rows.findIndex((r) => r.kind === "added");
+    expect(marks).toEqual([
+      { rowIndex: removed, lane: "left", color: "mod" },
+      { rowIndex: added, lane: "right", color: "mod" },
+    ]);
+  });
+
+  it("ignores context rows", () => {
+    const rows = diffLines("a\nb\nc\n", "a\nb\nc\n");
+    expect(overviewMarks(rows)).toEqual([]);
   });
 });
 

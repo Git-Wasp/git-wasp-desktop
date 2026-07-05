@@ -98,6 +98,55 @@ export function changedRowIndices(rows: DiffRow[]): number[] {
   return out;
 }
 
+/** Which side-by-side pane a change overview mark belongs to. */
+export type OverviewLane = "left" | "right";
+/** Overview mark colour: pure deletion, pure addition, or a modification. */
+export type OverviewColor = "del" | "add" | "mod";
+
+export interface OverviewMark {
+  /** The diff row this mark sits on (its vertical position = rowIndex / total). */
+  rowIndex: number;
+  lane: OverviewLane;
+  color: OverviewColor;
+}
+
+/**
+ * Classify the diff rows for the change-overview strip. Consecutive non-context
+ * rows form a change block; a block with both removals and additions is a
+ * modification (amber), while a block of only removals (red) or only additions
+ * (green) is a pure delete/add. Removed rows map to the left lane (old side),
+ * added rows to the right lane (new side) — matching the aligned split panes.
+ */
+export function overviewMarks(rows: DiffRow[]): OverviewMark[] {
+  const marks: OverviewMark[] = [];
+  let i = 0;
+  while (i < rows.length) {
+    if (rows[i].kind === "context") {
+      i++;
+      continue;
+    }
+    // Extent of this contiguous change block.
+    let j = i;
+    let hasAdd = false;
+    let hasDel = false;
+    while (j < rows.length && rows[j].kind !== "context") {
+      if (rows[j].kind === "added") hasAdd = true;
+      else hasDel = true;
+      j++;
+    }
+    const modified = hasAdd && hasDel;
+    for (let k = i; k < j; k++) {
+      if (rows[k].kind === "removed") {
+        marks.push({ rowIndex: k, lane: "left", color: modified ? "mod" : "del" });
+      } else {
+        marks.push({ rowIndex: k, lane: "right", color: modified ? "mod" : "add" });
+      }
+    }
+    i = j;
+  }
+  return marks;
+}
+
 /** The HEAD-pane text: context + removed lines. */
 export function headPaneText(rows: DiffRow[]): string {
   return rows

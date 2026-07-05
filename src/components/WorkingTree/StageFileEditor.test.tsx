@@ -251,8 +251,10 @@ describe("StageFileEditor", () => {
     const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
     const overview = container.querySelector('[data-testid="change-overview"]');
     expect(overview).not.toBeNull();
-    // One marker for the single added row.
-    expect(overview!.children.length).toBe(1);
+    // One marker for the single added row (in the right lane of the split view).
+    const marks = overview!.querySelectorAll("[data-overview-mark]");
+    expect(marks.length).toBe(1);
+    expect(marks[0].getAttribute("data-color")).toBe("add");
   });
 
   describe("diff-view options", () => {

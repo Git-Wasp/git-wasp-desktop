@@ -144,6 +144,10 @@
   --graph-line-width: 2.5px;
   /* Semi-opaque highlight behind each commit row in the graph column. */
   --color-graph-node-bg: rgba(255, 255, 255, 0.035);
+  /* Hairline divider between commit rows, so individual commits read clearly.
+     Kept faint; drawn on the canvas (graph column) and as a CSS bottom border
+     on the DOM row (data columns) so the line is continuous across both. */
+  --color-graph-row-divider: rgba(255, 255, 255, 0.06);
   /* Permanent muted band behind the checked-out (HEAD) commit's row, so the
      current commit is obvious even when another row is selected. */
   --color-graph-head-row-bg: rgba(77, 157, 224, 0.13);
@@ -202,6 +206,7 @@
   --color-bg-hover:    #e3e7ec;
   --color-graph-node-bg: rgba(0, 0, 0, 0.04);
   --color-graph-head-row-bg: rgba(13, 110, 253, 0.10);
+  --color-graph-row-divider: rgba(0, 0, 0, 0.07);
   --color-graph-muted: #aab2c0;
   --graph-muted-opacity: 0.45;
 }
@@ -314,6 +319,7 @@
   --color-accent-hover:  var(--color-accent-secondary);
   --color-graph-node-bg: rgba(0, 0, 0, 0.04);
   --color-graph-head-row-bg: rgba(9, 105, 218, 0.09);
+  --color-graph-row-divider: rgba(0, 0, 0, 0.07);
 }
 
 /* === Cobalt2 =============================================================
