@@ -61,6 +61,8 @@ beforeEach(() => {
     selectedOid: null,
     lastOffset: 0,
     lastLimit: 40,
+    graphVariant: "ledger",
+    visibleColumns: { author: true, branch: true, hash: true, date: true },
     fetchViewport: vi.fn(),
     refresh: vi.fn(),
     selectCommit,
@@ -117,7 +119,7 @@ describe("CommitGraph columns", () => {
   });
 
   it("persists a resized graph column width to localStorage", () => {
-    localStorage.removeItem("graphGraphColWidth");
+    localStorage.removeItem("graphCol:graph");
     render(<CommitGraph />);
     const handle = screen.getByRole("separator", { name: "Resize graph column" });
 
@@ -125,7 +127,28 @@ describe("CommitGraph columns", () => {
     act(() => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 140, bubbles: true })));
     act(() => window.dispatchEvent(new MouseEvent("pointerup", { clientX: 140, bubbles: true })));
 
-    expect(localStorage.getItem("graphGraphColWidth")).toBe("196"); // 156 default + 40
+    expect(localStorage.getItem("graphCol:graph")).toBe("196"); // 156 default + 40
+  });
+
+  it("persists a resized data (author) column width to localStorage", () => {
+    localStorage.removeItem("graphCol:author");
+    render(<CommitGraph />);
+    const handle = screen.getByRole("separator", { name: "Resize author column" });
+
+    act(() => handle.dispatchEvent(new MouseEvent("pointerdown", { clientX: 100, bubbles: true })));
+    act(() => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 130, bubbles: true })));
+    act(() => window.dispatchEvent(new MouseEvent("pointerup", { clientX: 130, bubbles: true })));
+
+    expect(localStorage.getItem("graphCol:author")).toBe("210"); // 180 default + 30
+  });
+
+  it("drops a column from the rows when it is toggled off in the store", () => {
+    const { container } = render(<CommitGraph />);
+    expect(container.querySelector('[data-cell="author"]')).not.toBeNull();
+    act(() => useGraphStore.getState().toggleColumn("author"));
+    expect(container.querySelector('[data-cell="author"]')).toBeNull();
+    // The commit column is structural and stays.
+    expect(container.querySelector('[data-cell="commit"]')).not.toBeNull();
   });
 });
 

@@ -1,72 +1,86 @@
-import type { CSSProperties } from "react";
 import type { BranchLabel } from "../../types/graph";
-import type { GraphVariant } from "../../stores/graphStore";
+import type { ColumnVisibility, GraphVariant, OptionalColumn } from "../../stores/graphStore";
 
-// Row height and column widths. Kept here so the canvas graph, the header, and
-// the DOM rows all agree on geometry. The redesign uses a compact 56px ledger
-// row (see _assets/design_handoff_git_graph_view).
+// Row height. Kept here so the canvas graph, the header, and the DOM rows all
+// agree on geometry. The redesign uses a compact 56px ledger row (see
+// _assets/design_handoff_git_graph_view).
 export const ROW_HEIGHT = 56;
 
-// Graph column width (resizable + persisted). ~6 lanes at the 24px pitch; deeper
-// lanes clip (v1). The other data columns keep fixed widths and the commit
-// column flexes to fill, per the handoff.
-export const GRAPH_COL_WIDTH = 156;
-export const AUTHOR_COL_WIDTH = 168;
-export const BRANCH_COL_WIDTH = 236;
-export const HASH_COL_WIDTH = 96;
-export const DATE_COL_WIDTH = 112;
+// Cap the secondary (body) line in the commit cell so a huge body can't blow out
+// layout; it's truncated to one line anyway.
 export const MAX_BODY_CHARS = 120;
 
-export type { GraphVariant } from "../../stores/graphStore";
+export type { GraphVariant, OptionalColumn, ColumnVisibility } from "../../stores/graphStore";
 
-// The six cell kinds. "commit" flexes; everything else is fixed width. "graph"
-// is the canvas gap the DAG paints through.
+// The six cell kinds. "commit" flexes to fill; "graph" is the frozen canvas
+// column; the rest are fixed-width, resizable data columns.
 export type ColumnKind = "graph" | "commit" | "author" | "branch" | "hash" | "date";
+
+export interface ColumnMeta {
+  kind: ColumnKind;
+  header: string;
+  /** Starting width (px) for fixed columns; the flex column ignores it. */
+  defaultWidth: number;
+  /** The column never shrinks below this — the basis for horizontal scroll. */
+  minWidth: number;
+  /** Fixed columns with a persisted, drag-resizable width. */
+  resizable: boolean;
+  /** Optional columns can be hidden from the columns menu. */
+  optional: boolean;
+  /** The commit column grows to fill leftover space. */
+  flex: boolean;
+}
+
+// Per-kind metadata, independent of variant/order.
+export const COLUMN_META: Record<ColumnKind, ColumnMeta> = {
+  graph: { kind: "graph", header: "", defaultWidth: 156, minWidth: 90, resizable: true, optional: false, flex: false },
+  commit: { kind: "commit", header: "Commit", defaultWidth: 320, minWidth: 220, resizable: false, optional: false, flex: true },
+  author: { kind: "author", header: "Author", defaultWidth: 180, minWidth: 120, resizable: true, optional: true, flex: false },
+  branch: { kind: "branch", header: "Branch", defaultWidth: 236, minWidth: 120, resizable: true, optional: true, flex: false },
+  hash: { kind: "hash", header: "Hash", defaultWidth: 104, minWidth: 76, resizable: true, optional: true, flex: false },
+  date: { kind: "date", header: "Date", defaultWidth: 120, minWidth: 92, resizable: true, optional: true, flex: false },
+};
+
+// The optional columns shown in the toolbar's columns menu, in display order.
+export const OPTIONAL_COLUMN_LABELS: { kind: OptionalColumn; label: string }[] = [
+  { kind: "author", label: "Author" },
+  { kind: "branch", label: "Branch" },
+  { kind: "hash", label: "Hash" },
+  { kind: "date", label: "Date" },
+];
 
 export interface GraphColumn {
   id: string;
-  header: string;
   kind: ColumnKind;
-  width: number | "flex";
-  /** Text alignment for the cell's content (defaults to "start"). */
-  align?: "start" | "end";
+  header: string;
+  /** Right-aligned content (hash/date in Ledger Grid). */
+  align: "start" | "end";
 }
+
+// Column order per variant. Ledger Grid keeps the graph on the left and reads
+// left-to-right; Split Rail mirrors it — hash first (log-file style), graph last
+// (anchored to the right edge).
+const LEDGER_ORDER: ColumnKind[] = ["graph", "commit", "author", "branch", "hash", "date"];
+const SPLIT_ORDER: ColumnKind[] = ["hash", "commit", "author", "branch", "date", "graph"];
 
 /**
- * The ordered columns for a layout variant.
- *
- * - Ledger Grid: graph · commit · author · branch · hash · date (graph left).
- * - Split Rail:  hash · commit · author · branch · date · graph (graph right,
- *   hash read like a log file on the far left).
- *
- * The graph column carries the handoff default width; the caller overrides it
- * with the persisted, resizable width.
+ * The ordered, currently-visible columns for a layout variant. The graph and
+ * commit columns are always present; optional columns are filtered by
+ * `visibility`. Hash and date are right-aligned in Ledger Grid only.
  */
-export function columnsForVariant(variant: GraphVariant): GraphColumn[] {
-  if (variant === "split") {
-    return [
-      { id: "hash", header: "Hash", kind: "hash", width: 100 },
-      { id: "commit", header: "Commit", kind: "commit", width: "flex" },
-      { id: "author", header: "Author", kind: "author", width: 160 },
-      { id: "branch", header: "Branch", kind: "branch", width: BRANCH_COL_WIDTH },
-      { id: "date", header: "Date", kind: "date", width: 96 },
-      { id: "graph", header: "", kind: "graph", width: GRAPH_COL_WIDTH },
-    ];
-  }
-  return [
-    { id: "graph", header: "", kind: "graph", width: GRAPH_COL_WIDTH },
-    { id: "commit", header: "Commit", kind: "commit", width: "flex" },
-    { id: "author", header: "Author", kind: "author", width: AUTHOR_COL_WIDTH },
-    { id: "branch", header: "Branch", kind: "branch", width: BRANCH_COL_WIDTH },
-    { id: "hash", header: "Hash", kind: "hash", width: HASH_COL_WIDTH, align: "end" },
-    { id: "date", header: "Date", kind: "date", width: DATE_COL_WIDTH, align: "end" },
-  ];
-}
-
-export function columnStyle(column: GraphColumn): CSSProperties {
-  return column.width === "flex"
-    ? { flex: 1, minWidth: 0 }
-    : { width: column.width, flexShrink: 0 };
+export function columnsForVariant(variant: GraphVariant, visibility: ColumnVisibility): GraphColumn[] {
+  const order = variant === "split" ? SPLIT_ORDER : LEDGER_ORDER;
+  return order
+    .filter((kind) => {
+      const meta = COLUMN_META[kind];
+      return !meta.optional || visibility[kind as OptionalColumn];
+    })
+    .map((kind) => ({
+      id: kind,
+      kind,
+      header: COLUMN_META[kind].header,
+      align: variant === "ledger" && (kind === "hash" || kind === "date") ? "end" : "start",
+    }));
 }
 
 export interface PillHandlers {

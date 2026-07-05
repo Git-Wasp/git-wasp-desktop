@@ -1,7 +1,16 @@
 import { useEffect, useRef } from "react";
+import { CheckIcon } from "../ui/icons";
 
 export type MenuItem =
-  | { label: string; onSelect: () => void; danger?: boolean }
+  | {
+      label: string;
+      onSelect: () => void;
+      danger?: boolean;
+      /** When set, the item renders as a checkbox row (tick when true). */
+      checked?: boolean;
+      /** Keep the menu open after selecting (e.g. toggling several options). */
+      closeOnSelect?: boolean;
+    }
   | { separator: true };
 
 interface ContextMenuProps {
@@ -67,12 +76,17 @@ export function ContextMenu({ x, y, items, onClose, align = "left" }: ContextMen
         ) : (
           <div
             key={item.label}
-            role="menuitem"
+            role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"}
+            aria-checked={item.checked === undefined ? undefined : item.checked}
             onClick={() => {
               item.onSelect();
-              onClose();
+              // Checkbox items default to staying open (toggle several at once).
+              if (item.closeOnSelect ?? item.checked === undefined) onClose();
             }}
             style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--space-2)",
               padding: "var(--space-1) var(--space-2)",
               fontSize: "var(--font-size-sm)",
               borderRadius: "var(--radius-sm)",
@@ -91,6 +105,20 @@ export function ContextMenu({ x, y, items, onClose, align = "left" }: ContextMen
               e.currentTarget.style.background = "transparent";
             }}
           >
+            {item.checked !== undefined && (
+              <span
+                style={{
+                  width: 14,
+                  display: "inline-flex",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                  color: "var(--color-accent-primary)",
+                  visibility: item.checked ? "visible" : "hidden",
+                }}
+              >
+                <CheckIcon />
+              </span>
+            )}
             {item.label}
           </div>
         ),

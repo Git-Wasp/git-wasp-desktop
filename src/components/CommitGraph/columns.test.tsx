@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import "@testing-library/jest-dom";
 import { AuthorCell, BranchCell, DateCell, HashCell, MessageCell } from "./columns";
 import { columnsForVariant } from "./columnModel";
+import type { ColumnVisibility } from "../../stores/graphStore";
 import type { GraphNode } from "../../types/graph";
+
+const ALL_VISIBLE: ColumnVisibility = { author: true, branch: true, hash: true, date: true };
 
 const node = (over: Partial<GraphNode>): GraphNode => ({
   oid: "a".repeat(40),
@@ -27,7 +30,7 @@ const node = (over: Partial<GraphNode>): GraphNode => ({
 
 describe("columnsForVariant", () => {
   it("orders Ledger Grid graph-first with the data columns after", () => {
-    expect(columnsForVariant("ledger").map((c) => c.kind)).toEqual([
+    expect(columnsForVariant("ledger", ALL_VISIBLE).map((c) => c.kind)).toEqual([
       "graph",
       "commit",
       "author",
@@ -38,7 +41,7 @@ describe("columnsForVariant", () => {
   });
 
   it("orders Split Rail hash-first with the graph anchored last (right edge)", () => {
-    expect(columnsForVariant("split").map((c) => c.kind)).toEqual([
+    expect(columnsForVariant("split", ALL_VISIBLE).map((c) => c.kind)).toEqual([
       "hash",
       "commit",
       "author",
@@ -46,6 +49,19 @@ describe("columnsForVariant", () => {
       "date",
       "graph",
     ]);
+  });
+
+  it("hides optional columns that are toggled off, keeping graph and commit", () => {
+    const cols = columnsForVariant("ledger", { author: false, branch: true, hash: false, date: true });
+    expect(cols.map((c) => c.kind)).toEqual(["graph", "commit", "branch", "date"]);
+  });
+
+  it("right-aligns hash and date in Ledger Grid only", () => {
+    const ledger = columnsForVariant("ledger", ALL_VISIBLE);
+    expect(ledger.find((c) => c.kind === "hash")!.align).toBe("end");
+    expect(ledger.find((c) => c.kind === "date")!.align).toBe("end");
+    const split = columnsForVariant("split", ALL_VISIBLE);
+    expect(split.find((c) => c.kind === "hash")!.align).toBe("start");
   });
 });
 

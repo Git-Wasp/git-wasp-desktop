@@ -46,6 +46,29 @@ const loadGraphVariant = (): GraphVariant => {
   }
 };
 
+// The optional (hideable) data columns and their persisted on/off state. The
+// graph and commit columns are structural and always shown, so they aren't
+// listed here. Persisted to localStorage; all default on.
+export type OptionalColumn = "author" | "branch" | "hash" | "date";
+export type ColumnVisibility = Record<OptionalColumn, boolean>;
+const OPTIONAL_COLUMNS: OptionalColumn[] = ["author", "branch", "hash", "date"];
+const COLUMNS_KEY = "graphVisibleColumns";
+
+const loadColumnVisibility = (): ColumnVisibility => {
+  const all = Object.fromEntries(OPTIONAL_COLUMNS.map((c) => [c, true])) as ColumnVisibility;
+  try {
+    const raw = localStorage.getItem(COLUMNS_KEY);
+    if (!raw) return all;
+    const parsed = JSON.parse(raw) as Partial<Record<OptionalColumn, boolean>>;
+    for (const c of OPTIONAL_COLUMNS) {
+      if (typeof parsed[c] === "boolean") all[c] = parsed[c] as boolean;
+    }
+    return all;
+  } catch {
+    return all;
+  }
+};
+
 interface GraphStore {
   viewport: GraphViewport | null;
   selection: Selection;
@@ -69,6 +92,9 @@ interface GraphStore {
   // Graph layout variant (Ledger Grid vs Split Rail). Persisted to localStorage.
   graphVariant: GraphVariant;
   setGraphVariant: (value: GraphVariant) => void;
+  // Which optional data columns are shown. Persisted to localStorage.
+  visibleColumns: ColumnVisibility;
+  toggleColumn: (column: OptionalColumn) => void;
   fetchViewport: (offset: number, limit: number) => Promise<void>;
   refresh: () => Promise<void>;
   selectCommit: (oid: string, extend: boolean) => void;
@@ -176,6 +202,18 @@ export const useGraphStore = create<GraphStore>((set, get) => {
       // Ignore storage failures (private mode etc.) — state still updates.
     }
     set({ graphVariant: value });
+  },
+
+  visibleColumns: loadColumnVisibility(),
+
+  toggleColumn: (column: OptionalColumn) => {
+    const next = { ...get().visibleColumns, [column]: !get().visibleColumns[column] };
+    try {
+      localStorage.setItem(COLUMNS_KEY, JSON.stringify(next));
+    } catch {
+      // Ignore storage failures (private mode etc.) — state still updates.
+    }
+    set({ visibleColumns: next });
   },
 
   fetchViewport: async (offset: number, limit: number) => {

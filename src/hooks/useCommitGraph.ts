@@ -119,7 +119,12 @@ export function useCommitGraph(
       canvas.height = Math.round(cssH * dpr);
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // Paint an opaque page-coloured base rather than clearing to transparent:
+    // the graph column is frozen while the data columns scroll horizontally
+    // beneath it, so the canvas must fully mask whatever slides underneath.
     ctx.clearRect(0, 0, cssW, cssH);
+    ctx.fillStyle = pageBg;
+    ctx.fillRect(0, 0, cssW, cssH);
 
     const laneX = (lane: number) => GRAPH_PAD_LEFT + lane * laneWidth + laneWidth / 2;
 

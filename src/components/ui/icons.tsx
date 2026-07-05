@@ -51,6 +51,30 @@ export function SplitViewIcon({ size = 14, title }: IconProps) {
   );
 }
 
+/** A table split into columns — the show/hide columns menu. */
+export function ColumnsIcon({ size = 14, title }: IconProps) {
+  return (
+    <svg
+      data-icon="columns"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      style={{ flexShrink: 0 }}
+    >
+      {title && <title>{title}</title>}
+      <rect x="3" y="4" width="18" height="16" rx="1.5" />
+      <path d="M9 4v16M15 4v16" />
+    </svg>
+  );
+}
+
 /** Up arrow to a bar — push (send commits up to the remote). */
 export function PushIcon({ size = 14, title }: IconProps) {
   return (

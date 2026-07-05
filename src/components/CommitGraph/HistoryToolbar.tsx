@@ -11,7 +11,8 @@ import { PromptDialog } from "../common/PromptDialog";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { Tooltip } from "../ui/Tooltip";
-import { BranchFocusIcon, BranchIcon, PullIcon, PushIcon, RefreshIcon, SplitViewIcon, TargetIcon } from "../ui/icons";
+import { BranchFocusIcon, BranchIcon, ColumnsIcon, PullIcon, PushIcon, RefreshIcon, SplitViewIcon, TargetIcon } from "../ui/icons";
+import { OPTIONAL_COLUMN_LABELS } from "./columnModel";
 
 const barStyle: React.CSSProperties = {
   display: "flex",
@@ -44,6 +45,8 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
   const setFocusCurrentBranch = useGraphStore((s) => s.setFocusCurrentBranch);
   const graphVariant = useGraphStore((s) => s.graphVariant);
   const setGraphVariant = useGraphStore((s) => s.setGraphVariant);
+  const visibleColumns = useGraphStore((s) => s.visibleColumns);
+  const toggleColumn = useGraphStore((s) => s.toggleColumn);
   const { createBranch, checkoutBranch } = useRepoStore();
   const remoteInfo = useGithubStore((s) => s.remoteInfo);
   const loadMergeStatus = useMergeStore((s) => s.loadStatus);
@@ -56,6 +59,7 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
 
   const pullButtonRef = useRef<HTMLButtonElement>(null);
   const [pullMenu, setPullMenu] = useState<{ x: number; y: number } | null>(null);
+  const [columnsMenu, setColumnsMenu] = useState<{ x: number; y: number } | null>(null);
   const [showNewBranch, setShowNewBranch] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -118,6 +122,20 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
     setPullMenu({ x: rect?.left ?? 0, y: rect?.bottom ?? 0 });
   };
 
+  const openColumnsMenu = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setColumnsMenu({ x: rect.right, y: rect.bottom });
+  };
+
+  // A tick per optional column; toggling one keeps the menu open so several can
+  // be flipped at once. The choice is persisted in the store.
+  const columnItems: MenuItem[] = OPTIONAL_COLUMN_LABELS.map(({ kind, label }) => ({
+    label,
+    checked: visibleColumns[kind],
+    closeOnSelect: false,
+    onSelect: () => toggleColumn(kind),
+  }));
+
   const handleJumpToHead = () => {
     // Let the host leave the uncommitted-changes view so the selected HEAD
     // commit's detail shows, then select + scroll to it.
@@ -159,8 +177,18 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
         New branch
       </Button>
 
-      {/* Right-aligned: layout toggle, focus toggle, check for changes, jump to HEAD. */}
+      {/* Right-aligned: columns, layout toggle, focus toggle, check for changes, jump to HEAD. */}
       <div style={{ marginLeft: "auto", display: "flex", gap: "var(--space-2)" }}>
+        <Tooltip label="Show or hide columns">
+          <IconButton
+            aria-label="Configure columns"
+            aria-haspopup="menu"
+            aria-expanded={columnsMenu !== null}
+            onClick={openColumnsMenu}
+          >
+            <ColumnsIcon />
+          </IconButton>
+        </Tooltip>
         <Tooltip
           label={
             graphVariant === "split"
@@ -211,6 +239,16 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
 
       {pullMenu && (
         <ContextMenu x={pullMenu.x} y={pullMenu.y} items={pullItems} onClose={() => setPullMenu(null)} />
+      )}
+
+      {columnsMenu && (
+        <ContextMenu
+          x={columnsMenu.x}
+          y={columnsMenu.y}
+          align="right"
+          items={columnItems}
+          onClose={() => setColumnsMenu(null)}
+        />
       )}
 
       {showNewBranch && (
