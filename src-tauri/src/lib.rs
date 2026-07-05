@@ -83,6 +83,7 @@ pub fn run() {
             commands::staging::stage_file_content,
             // Discard
             commands::discard::discard_file,
+            commands::discard::delete_file,
             commands::discard::discard_hunk,
             commands::discard::discard_all,
             // Commit

@@ -1058,7 +1058,20 @@ between sections, and add new ideas under the right heading. Items marked
       flag). Suites green (frontend 539, backend 218).
 - [ ] Add an integrated terminal that can be shown by clicking a button above the graph view. Should open automatically in the directory that contains the currently opened git repo.
 - [ ] In diff viewer clicking the + or - to add or remove a line should stage _the selected line(s)_ so the file becomes visible in the "staged" area and clicking on the file from the staged area shows the diff between what's staged and what's in the current commit before this commit lands. Unticking a line from this staged file does the opposite - unstages that line. The changes staged vs unstaged should be tracked so that reselecting an affected file from the unstaged panel (if there are more changes) already shows which lines have been staged and allows them to be unstaged from here too.
-- [ ] When viewing uncommitted changes, files in the top panel have a right-click menu including "discard", "stage", and "delete file". Delete should require a confirmation via modal. The "staged panel" files should also have a right-click menu with options including "unstage" and "delete" with the same caveats.
+- [x] When viewing uncommitted changes, files in the top panel have a right-click menu including "discard", "stage", and "delete file". Delete should require a confirmation via modal. The "staged panel" files should also have a right-click menu with options including "unstage" and "delete" with the same caveats.
+      — `StagingPanel` file rows now open a right-click `ContextMenu` (reusing the
+      shared graph/sidebar menu, right-aligned): Changes rows offer Stage /
+      Discard / Delete file; Staged rows offer Unstage / Delete file. "Delete
+      file" routes through a `ConfirmDialog`; Stage/Unstage/Discard fire
+      immediately (per the spec, only delete needs confirmation). New backend
+      `working_tree::delete_file` + `delete_file` command + store `deleteFile`:
+      removes the file from disk and, for a not-yet-committed file (untracked /
+      staged-new), drops its index entry so it vanishes entirely; a committed
+      file becomes a pending unstaged deletion (restorable via Discard). Path
+      guard rejects anything escaping the repo. Tests: backend (untracked gone,
+      staged-new vanishes, committed→pending deletion, path-escape rejected),
+      frontend (menu items per panel, discard no-confirm, delete confirm
+      required, cancel is a no-op). Suites green (frontend 597, backend 228).
 - [x] Diff view horizontal scroll doesn't work when line wrapping is disabled. Can't scroll horizontally to see full line. May only affected when not full screen - reproducible when app takes up half the horizontal screen
       — the classic `min-width: auto` flex/grid trap: the diff panes had no
       `minWidth: 0`, so wide unwrapped content forced the pane larger than its

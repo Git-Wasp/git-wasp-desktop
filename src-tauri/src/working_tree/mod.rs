@@ -468,6 +468,54 @@ pub fn discard_file(repo: &Repository, path: &str) -> anyhow::Result<WorkingTree
     get_working_tree_status(repo)
 }
 
+/// Delete a file from the working tree. Removes it from disk and, when it isn't
+/// committed in HEAD (an untracked or staged-new file), drops its index entry so
+/// it disappears entirely; a committed file becomes a pending (unstaged)
+/// deletion the user can then stage/commit or discard to restore. Destructive —
+/// the frontend guards this behind a confirmation dialog.
+pub fn delete_file(repo: &Repository, path: &str) -> anyhow::Result<WorkingTreeStatus> {
+    // Reject paths that try to escape the working directory. Status-derived paths
+    // are always safe repo-relative paths, but never trust one blindly with `rm`.
+    let rel = Path::new(path);
+    if rel.is_absolute()
+        || rel
+            .components()
+            .any(|c| c == std::path::Component::ParentDir)
+    {
+        anyhow::bail!("refusing to delete path outside the repository: {path}");
+    }
+
+    let workdir = repo
+        .workdir()
+        .context("bare repository has no working directory")?;
+    let full_path = workdir.join(rel);
+    if full_path.exists() {
+        std::fs::remove_file(&full_path)
+            .with_context(|| format!("failed to delete file: {path}"))?;
+    }
+
+    let in_head = repo
+        .head()
+        .ok()
+        .and_then(|h| h.peel_to_commit().ok())
+        .and_then(|c| c.tree().ok())
+        .map(|t| t.get_path(rel).is_ok())
+        .unwrap_or(false);
+
+    if !in_head {
+        // Not committed: drop any index entry so a staged-new file fully vanishes.
+        let mut index = repo.index().context("failed to open index")?;
+        if index.get_path(rel, 0).is_some() {
+            index
+                .remove_path(rel)
+                .with_context(|| format!("failed to remove {path} from index"))?;
+            index.write().context("failed to write index")?;
+        }
+    }
+
+    get_working_tree_status(repo)
+}
+
 /// Discard every working-tree change: reset tracked files (staged and unstaged)
 /// back to HEAD and remove all untracked files. Destructive — the frontend
 /// guards this behind a confirmation dialog.
@@ -921,6 +969,63 @@ mod tests {
         // Staged modification.
         write_and_stage(&repo, &dir, "f.txt", "c\n");
         assert!(has_stashable_changes(&repo).unwrap());
+    }
+
+    #[test]
+    fn delete_file_removes_an_untracked_file_entirely() {
+        let (dir, repo) = init_repo();
+        make_initial_commit(&repo);
+        fs::write(dir.path().join("junk.txt"), "x\n").unwrap();
+
+        let status = delete_file(&repo, "junk.txt").unwrap();
+
+        assert!(
+            !dir.path().join("junk.txt").exists(),
+            "file should be gone from disk"
+        );
+        assert!(status.untracked.iter().all(|e| e.path != "junk.txt"));
+        assert!(status.unstaged.iter().all(|e| e.path != "junk.txt"));
+        assert!(status.staged.iter().all(|e| e.path != "junk.txt"));
+    }
+
+    #[test]
+    fn delete_file_makes_a_staged_new_file_vanish() {
+        // A brand-new file that was staged (in the index, not HEAD) should fully
+        // disappear — index entry dropped, not left as a staged add + wt delete.
+        let (dir, repo) = init_repo();
+        make_initial_commit(&repo);
+        write_and_stage(&repo, &dir, "added.txt", "new\n");
+
+        let status = delete_file(&repo, "added.txt").unwrap();
+
+        assert!(!dir.path().join("added.txt").exists());
+        assert!(status.staged.iter().all(|e| e.path != "added.txt"));
+        assert!(status.unstaged.iter().all(|e| e.path != "added.txt"));
+        assert!(status.untracked.iter().all(|e| e.path != "added.txt"));
+    }
+
+    #[test]
+    fn delete_file_leaves_a_committed_file_as_a_pending_deletion() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "tracked.txt", "v1\n");
+        make_initial_commit(&repo);
+
+        let status = delete_file(&repo, "tracked.txt").unwrap();
+
+        assert!(!dir.path().join("tracked.txt").exists());
+        // Committed file → shows as an unstaged deletion (index still holds HEAD's
+        // copy), which the user can stage/commit or discard to restore.
+        assert!(
+            status.unstaged.iter().any(|e| e.path == "tracked.txt"),
+            "committed file should become a pending deletion"
+        );
+    }
+
+    #[test]
+    fn delete_file_rejects_paths_escaping_the_repo() {
+        let (_dir, repo) = init_repo();
+        make_initial_commit(&repo);
+        assert!(delete_file(&repo, "../secret.txt").is_err());
     }
 
     #[test]

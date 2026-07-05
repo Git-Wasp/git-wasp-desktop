@@ -25,6 +25,7 @@ interface WorkingTreeStore {
   unstageFile: (path: string) => Promise<void>;
   applyStagedContent: (path: string, content: string) => Promise<void>;
   discardFile: (path: string) => Promise<void>;
+  deleteFile: (path: string) => Promise<void>;
   discardAll: () => Promise<void>;
   createCommit: (message: string) => Promise<void>;
   amendCommitMessage: (message: string) => Promise<void>;
@@ -111,6 +112,17 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
   discardFile: async (path: string) => {
     const status = await invoke<WorkingTreeStatus>("discard_file", { path });
     set({ status, selectedPath: null, stageDiff: null });
+  },
+
+  // Delete a file from the working tree. Only closes the open diff if it was
+  // this file's (deleting some other file shouldn't dismiss the current view).
+  deleteFile: async (path: string) => {
+    const status = await invoke<WorkingTreeStatus>("delete_file", { path });
+    const wasSelected = get().selectedPath === path;
+    set({
+      status,
+      ...(wasSelected ? { selectedPath: null, stageDiff: null } : {}),
+    });
   },
 
   discardAll: async () => {

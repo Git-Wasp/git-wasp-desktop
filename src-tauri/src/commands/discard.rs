@@ -1,6 +1,6 @@
 use crate::repo_manager::AppState;
 use crate::working_tree::{
-    discard_all as wt_discard_all, discard_file as wt_discard_file,
+    delete_file as wt_delete_file, discard_all as wt_discard_all, discard_file as wt_discard_file,
     discard_hunk as wt_discard_hunk, WorkingTreeStatus,
 };
 use tauri::State;
@@ -12,6 +12,17 @@ pub async fn discard_file(
 ) -> Result<WorkingTreeStatus, String> {
     state
         .with_repo(|repo| wt_discard_file(repo, &path))
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_file(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<WorkingTreeStatus, String> {
+    state
+        .with_repo(|repo| wt_delete_file(repo, &path))
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }

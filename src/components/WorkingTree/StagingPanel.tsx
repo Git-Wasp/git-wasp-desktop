@@ -1,28 +1,42 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useWorkingTreeStore } from "../../stores/workingTreeStore";
 import { CommitForm } from "./CommitForm";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
 import { FileStatusIcon } from "../ui/FileStatusIcon";
+import { ContextMenu, type MenuItem } from "../common/ContextMenu";
+import { ConfirmDialog } from "../common/ConfirmDialog";
 import type { StatusEntry } from "../../types/workingTree";
+
+/** An open right-click menu on a file row: its position, the file, and which
+ *  panel it came from (the staged panel offers "Unstage" instead of "Stage"). */
+interface RowMenuState {
+  x: number;
+  y: number;
+  entry: StatusEntry;
+  staged: boolean;
+}
 
 function FileRow({
   entry,
   action,
   actionLabel,
   onSelect,
+  onContextMenu,
   isSelected,
 }: {
   entry: StatusEntry;
   action: () => void;
   actionLabel: string;
   onSelect: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
   isSelected: boolean;
 }) {
   return (
     <div
       data-file-row
       onClick={onSelect}
+      onContextMenu={onContextMenu}
       onMouseEnter={(e) => {
         if (!isSelected) e.currentTarget.style.background = "var(--color-bg-hover)";
       }}
@@ -118,7 +132,35 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
     selectFile,
     stageFile,
     unstageFile,
+    discardFile,
+    deleteFile,
   } = useWorkingTreeStore();
+
+  // Right-click menu + the pending delete awaiting confirmation.
+  const [menu, setMenu] = useState<RowMenuState | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<StatusEntry | null>(null);
+
+  const openMenu = (e: React.MouseEvent, entry: StatusEntry, staged: boolean) => {
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY, entry, staged });
+  };
+
+  const menuItems = (m: RowMenuState): MenuItem[] => {
+    const { entry, staged } = m;
+    const deleteItem: MenuItem = {
+      label: "Delete file",
+      danger: true,
+      onSelect: () => setPendingDelete(entry),
+    };
+    return staged
+      ? [{ label: "Unstage", onSelect: () => unstageFile(entry.path) }, { separator: true }, deleteItem]
+      : [
+          { label: "Stage", onSelect: () => stageFile(entry.path) },
+          { label: "Discard", danger: true, onSelect: () => discardFile(entry.path) },
+          { separator: true },
+          deleteItem,
+        ];
+  };
 
   useEffect(() => {
     loadStatus();
@@ -181,6 +223,7 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
                 actionLabel="Stage"
                 action={() => stageFile(entry.path)}
                 onSelect={() => selectFile(entry.path)}
+                onContextMenu={(e) => openMenu(e, entry, false)}
                 isSelected={selectedPath === entry.path}
               />
             ))
@@ -221,6 +264,7 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
                 actionLabel="Unstage"
                 action={() => unstageFile(entry.path)}
                 onSelect={() => selectFile(entry.path)}
+                onContextMenu={(e) => openMenu(e, entry, true)}
                 isSelected={selectedPath === entry.path}
               />
             ))
@@ -229,6 +273,29 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
       </div>
 
       <CommitForm stagedCount={stagedCount} onCommitted={onCommitted} />
+
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          align="right"
+          items={menuItems(menu)}
+          onClose={() => setMenu(null)}
+        />
+      )}
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Delete file"
+          message={`Delete "${pendingDelete.path}"? This removes the file from your working tree.`}
+          confirmLabel="Delete"
+          onConfirm={() => {
+            deleteFile(pendingDelete.path);
+            setPendingDelete(null);
+          }}
+          onCancel={() => setPendingDelete(null)}
+        />
+      )}
     </div>
   );
 }
