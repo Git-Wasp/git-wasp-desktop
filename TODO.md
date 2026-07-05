@@ -1083,6 +1083,7 @@ between sections, and add new ideas under the right heading. Items marked
       asserts the panes carry `minWidth: 0`. (The App main-panel container above
       already had `minWidth: 0` + `overflow: hidden`, so the width was bounded.)
 - [ ] Improve toast design. Add icons (e.g. info, warning, error) in the right colour, add a "title" as well as the text
+- [ ] Consider a "conventional commits" config option. If enabled, this provides a dropdown for suitable conventional commit prefixes for commit messages (e.g. fix:, ux:, chore:, etc.). Discuss and plan value and implementation before we change any code.
 
 ## Other issues
 
