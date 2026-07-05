@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import "@testing-library/jest-dom";
 import { AuthorCell, BranchCell, DateCell, HashCell, MessageCell } from "./columns";
 import { columnsForVariant } from "./columnModel";
-import type { ColumnVisibility } from "../../stores/graphStore";
+import type { ColumnVisibility, DataColumn } from "../../stores/graphStore";
 import type { GraphNode } from "../../types/graph";
 
 const ALL_VISIBLE: ColumnVisibility = { author: true, branch: true, hash: true, date: true };
+const LEDGER_ORDER: DataColumn[] = ["commit", "author", "branch", "hash", "date"];
+const SPLIT_ORDER: DataColumn[] = ["hash", "commit", "author", "branch", "date"];
 
 const node = (over: Partial<GraphNode>): GraphNode => ({
   oid: "a".repeat(40),
@@ -30,7 +32,7 @@ const node = (over: Partial<GraphNode>): GraphNode => ({
 
 describe("columnsForVariant", () => {
   it("orders Ledger Grid graph-first with the data columns after", () => {
-    expect(columnsForVariant("ledger", ALL_VISIBLE).map((c) => c.kind)).toEqual([
+    expect(columnsForVariant("ledger", ALL_VISIBLE, LEDGER_ORDER).map((c) => c.kind)).toEqual([
       "graph",
       "commit",
       "author",
@@ -41,7 +43,7 @@ describe("columnsForVariant", () => {
   });
 
   it("orders Split Rail hash-first with the graph anchored last (right edge)", () => {
-    expect(columnsForVariant("split", ALL_VISIBLE).map((c) => c.kind)).toEqual([
+    expect(columnsForVariant("split", ALL_VISIBLE, SPLIT_ORDER).map((c) => c.kind)).toEqual([
       "hash",
       "commit",
       "author",
@@ -51,16 +53,28 @@ describe("columnsForVariant", () => {
     ]);
   });
 
+  it("follows a reordered data-column order, keeping the graph pinned", () => {
+    const reordered: DataColumn[] = ["date", "commit", "hash", "author", "branch"];
+    expect(columnsForVariant("ledger", ALL_VISIBLE, reordered).map((c) => c.kind)).toEqual([
+      "graph",
+      "date",
+      "commit",
+      "hash",
+      "author",
+      "branch",
+    ]);
+  });
+
   it("hides optional columns that are toggled off, keeping graph and commit", () => {
-    const cols = columnsForVariant("ledger", { author: false, branch: true, hash: false, date: true });
+    const cols = columnsForVariant("ledger", { author: false, branch: true, hash: false, date: true }, LEDGER_ORDER);
     expect(cols.map((c) => c.kind)).toEqual(["graph", "commit", "branch", "date"]);
   });
 
   it("right-aligns hash and date in Ledger Grid only", () => {
-    const ledger = columnsForVariant("ledger", ALL_VISIBLE);
+    const ledger = columnsForVariant("ledger", ALL_VISIBLE, LEDGER_ORDER);
     expect(ledger.find((c) => c.kind === "hash")!.align).toBe("end");
     expect(ledger.find((c) => c.kind === "date")!.align).toBe("end");
-    const split = columnsForVariant("split", ALL_VISIBLE);
+    const split = columnsForVariant("split", ALL_VISIBLE, SPLIT_ORDER);
     expect(split.find((c) => c.kind === "hash")!.align).toBe("start");
   });
 });

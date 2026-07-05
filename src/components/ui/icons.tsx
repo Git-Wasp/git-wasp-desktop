@@ -51,7 +51,7 @@ export function SplitViewIcon({ size = 14, title }: IconProps) {
   );
 }
 
-/** A table split into columns — the show/hide columns menu. */
+/** A checklist — the show/hide columns menu (pick which columns are shown). */
 export function ColumnsIcon({ size = 14, title }: IconProps) {
   return (
     <svg
@@ -69,8 +69,9 @@ export function ColumnsIcon({ size = 14, title }: IconProps) {
       style={{ flexShrink: 0 }}
     >
       {title && <title>{title}</title>}
-      <rect x="3" y="4" width="18" height="16" rx="1.5" />
-      <path d="M9 4v16M15 4v16" />
+      <path d="M4 6.5l1.8 1.8L9 5" />
+      <path d="M4 16.5l1.8 1.8L9 13" />
+      <path d="M13 7h7M13 17h7" />
     </svg>
   );
 }

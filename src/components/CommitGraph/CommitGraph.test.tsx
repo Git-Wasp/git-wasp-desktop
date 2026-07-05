@@ -63,6 +63,10 @@ beforeEach(() => {
     lastLimit: 40,
     graphVariant: "ledger",
     visibleColumns: { author: true, branch: true, hash: true, date: true },
+    columnOrder: {
+      ledger: ["commit", "author", "branch", "hash", "date"],
+      split: ["hash", "commit", "author", "branch", "date"],
+    },
     fetchViewport: vi.fn(),
     refresh: vi.fn(),
     selectCommit,
@@ -150,6 +154,21 @@ describe("CommitGraph columns", () => {
     // The commit column is structural and stays.
     expect(container.querySelector('[data-cell="commit"]')).not.toBeNull();
   });
+
+  it("reflects a reordered column order in the row's cell order", () => {
+    const { container } = render(<CommitGraph />);
+    const dataCells = () => {
+      const row = container.querySelector(`[data-oid="${"b".repeat(40)}"]`)!;
+      return Array.from(row.querySelectorAll("[data-cell]"))
+        .map((c) => c.getAttribute("data-cell"))
+        .filter((k) => k !== "graph" && k !== "filler");
+    };
+    expect(dataCells()).toEqual(["commit", "author", "branch", "hash", "date"]);
+    act(() =>
+      useGraphStore.getState().setColumnOrder("ledger", ["date", "commit", "author", "branch", "hash"]),
+    );
+    expect(dataCells()).toEqual(["date", "commit", "author", "branch", "hash"]);
+  });
 });
 
 describe("CommitGraph loading skeleton", () => {
@@ -213,9 +232,10 @@ describe("CommitGraph focus-current-branch mode", () => {
 
   const cellsOf = (container: HTMLElement, oid: string) => {
     const row = container.querySelector(`[data-oid="${oid}"]`) as HTMLElement;
-    // The data cells (everything but the graph spacer) carry the dimming class.
+    // The content data cells carry the dimming class (not the graph spacer or
+    // the decorative trailing filler).
     return Array.from(row.querySelectorAll<HTMLElement>("[data-cell]")).filter(
-      (c) => c.getAttribute("data-cell") !== "graph",
+      (c) => !["graph", "filler"].includes(c.getAttribute("data-cell") ?? ""),
     );
   };
 

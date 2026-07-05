@@ -69,6 +69,48 @@ const loadColumnVisibility = (): ColumnVisibility => {
   }
 };
 
+// The reorderable data columns (the graph column is always pinned to its edge
+// and isn't part of the order). Each layout variant keeps its own order — Ledger
+// Grid and Split Rail default to different arrangements — and both persist.
+export type DataColumn = "commit" | OptionalColumn;
+export type ColumnOrder = Record<GraphVariant, DataColumn[]>;
+const DATA_COLUMNS: DataColumn[] = ["commit", "author", "branch", "hash", "date"];
+const DEFAULT_ORDER: ColumnOrder = {
+  ledger: ["commit", "author", "branch", "hash", "date"],
+  split: ["hash", "commit", "author", "branch", "date"],
+};
+const ORDER_KEY = "graphColumnOrder";
+
+// Sanitise a persisted order: keep only known columns (deduped) and append any
+// that are missing, so a stored order always covers every data column.
+const sanitizeOrder = (saved: unknown, fallback: DataColumn[]): DataColumn[] => {
+  const seen = new Set<DataColumn>();
+  const out: DataColumn[] = [];
+  if (Array.isArray(saved)) {
+    for (const k of saved) {
+      if (DATA_COLUMNS.includes(k as DataColumn) && !seen.has(k as DataColumn)) {
+        seen.add(k as DataColumn);
+        out.push(k as DataColumn);
+      }
+    }
+  }
+  for (const k of fallback) if (!seen.has(k)) out.push(k);
+  return out;
+};
+
+const loadColumnOrder = (): ColumnOrder => {
+  try {
+    const raw = localStorage.getItem(ORDER_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Partial<ColumnOrder>) : {};
+    return {
+      ledger: sanitizeOrder(parsed.ledger, DEFAULT_ORDER.ledger),
+      split: sanitizeOrder(parsed.split, DEFAULT_ORDER.split),
+    };
+  } catch {
+    return { ledger: [...DEFAULT_ORDER.ledger], split: [...DEFAULT_ORDER.split] };
+  }
+};
+
 interface GraphStore {
   viewport: GraphViewport | null;
   selection: Selection;
@@ -95,6 +137,9 @@ interface GraphStore {
   // Which optional data columns are shown. Persisted to localStorage.
   visibleColumns: ColumnVisibility;
   toggleColumn: (column: OptionalColumn) => void;
+  // Per-variant data-column order (drag-to-reorder in the header). Persisted.
+  columnOrder: ColumnOrder;
+  setColumnOrder: (variant: GraphVariant, order: DataColumn[]) => void;
   fetchViewport: (offset: number, limit: number) => Promise<void>;
   refresh: () => Promise<void>;
   selectCommit: (oid: string, extend: boolean) => void;
@@ -214,6 +259,18 @@ export const useGraphStore = create<GraphStore>((set, get) => {
       // Ignore storage failures (private mode etc.) — state still updates.
     }
     set({ visibleColumns: next });
+  },
+
+  columnOrder: loadColumnOrder(),
+
+  setColumnOrder: (variant: GraphVariant, order: DataColumn[]) => {
+    const next = { ...get().columnOrder, [variant]: sanitizeOrder(order, DEFAULT_ORDER[variant]) };
+    try {
+      localStorage.setItem(ORDER_KEY, JSON.stringify(next));
+    } catch {
+      // Ignore storage failures (private mode etc.) — state still updates.
+    }
+    set({ columnOrder: next });
   },
 
   fetchViewport: async (offset: number, limit: number) => {

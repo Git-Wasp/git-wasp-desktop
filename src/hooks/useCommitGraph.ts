@@ -135,10 +135,10 @@ export function useCommitGraph(
     // iteration's selection band would then paint over, clipping the top of the
     // line into a selected commit. Separate passes avoid that.
 
-    // Pass 1 — row bands only. The redesign carries the "current commit" cue on
-    // the marker itself (a lane-coloured ring around the HEAD dot, drawn in pass
-    // 3) rather than a right-edge accent line, so the band is all that's needed
-    // here. row 0 here corresponds to viewport.offset in the full graph.
+    // Pass 1 — row bands. The "current commit" cue is carried both by the
+    // lane-coloured ring around the HEAD dot (pass 3) and by an accent border
+    // down the inner (right) edge of the graph background on the checked-out
+    // commit's row, added here. row 0 here corresponds to viewport.offset.
     viewport.nodes.forEach((node, localRow) => {
       const rowTop = localRow * rowHeight;
 
@@ -165,6 +165,13 @@ export function useCommitGraph(
       if (isSelected) {
         ctx.fillStyle = selectedBg;
         ctx.fillRect(0, rowTop, cssW, rowHeight);
+      }
+
+      // Accent border down the inner edge of the graph background, only on the
+      // currently checked-out (HEAD) commit's row — a clear "you are here" edge.
+      if (node.isHead && !node.isWorkingTree) {
+        ctx.fillStyle = nodeColor(node);
+        ctx.fillRect(cssW - 2, rowTop, 2, rowHeight);
       }
     });
 
