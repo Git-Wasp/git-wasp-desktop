@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
+@font-face{font-family:'Stack Sans Headline';src:url('fonts/StackSansHeadline-VariableFont_wght.ttf') format('truetype');font-weight:100 900;font-style:normal;font-display:swap;}
+@font-face{font-family:'Noto Sans';src:url('fonts/NotoSans-VariableFont_wdth_wght.ttf') format('truetype');font-weight:100 900;font-style:normal;font-display:swap;}
+body{margin:0;background:#EBEEF2;font-family:'Noto Sans',system-ui,sans-serif;}
+.dv-turn{padding:40px 44px 60px;}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 6px;}
+.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#181B20;color:#fff;border-radius:4px;text-decoration:none;}
+.dv-tname{font:700 20px/1.2 'Stack Sans Headline',system-ui,sans-serif;color:#181B20;}
+.dv-tsub{font:400 13px/1.5 'Noto Sans',system-ui,sans-serif;color:#6E7887;margin:0 0 24px;max-width:760px;}
+.dv-opts{display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start;}
+.dv-opt{flex:none;display:flex;flex-direction:column;gap:10px;scroll-margin-top:16px;}
+.dv-oid{font:700 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(24,27,32,.08);color:#181B20;border-radius:5px;text-decoration:none;}
+.dv-olabel{display:flex;align-items:baseline;gap:8px;font:600 13px/1.3 'Noto Sans',system-ui,sans-serif;color:#181B20;}
+.dv-odesc{font:400 12px/1.5 'Noto Sans',system-ui,sans-serif;color:#6E7887;max-width:420px;}
+.dv-card{max-width:100%;overflow:hidden;}
+.dv-opt:target .dv-oid{background:#2162D4;color:#fff;}
+.dv-next{margin:28px 0 0;font:12px/1.6 'Noto Sans',system-ui,sans-serif;color:#6E7887;}
+.dv-next a{color:#2162D4;}
+</style>
+</helmet>
+<section class="dv-turn" id="t2">
+<div class="dv-thd"><a class="dv-tid" href="#t2">2</a><span class="dv-tname">Curved connectors + avatar markers + hover/selected states + tags</span></div>
+<p class="dv-tsub">Riffing on <a class="dv-oid" href="#1a">1a</a> and <a class="dv-oid" href="#1c">1c</a> (now the only two concepts — the relaxed "Commit Cards" direction is dropped, everything is compact): branch connectors are smooth S-curves instead of right angles, every commit marker on the line is an avatar circle (initials computed from the author when there's no photo), rows are interactive — hover to preview, click to select — and tags now show up as a small notched, neutral-grey chip next to the branch pill (see the "main" row, tagged <code>v2.4.0</code>) — deliberately un-colored so they read as a point-in-time label rather than competing with the branch color coding.</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="2a">
+<div class="dv-olabel"><a class="dv-oid" href="#2a">2a</a>Ledger Grid — curved + interactive</div>
+<div class="dv-odesc">Same structured columns as <a class="dv-oid" href="#1a">1a</a>. Hover a row to preview it, click to select — selection shows as an inset ring on the row and a dashed accent ring around its avatar marker.</div>
+<div class="dv-card" style="width:1060px;background:#0D1320;border:1px solid #243047;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,.45),0 24px 64px rgba(0,0,0,.3);font-family:'Noto Sans',system-ui,sans-serif;">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #243047;">
+    <div>
+      <div style="font-family:'Stack Sans Headline',system-ui,sans-serif;font-size:15px;font-weight:700;color:#F0F2F5;">Ledger Grid</div>
+      <div style="font-size:12px;color:#5A6370;margin-top:2px;">main · 6 branches · curved graph</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px;">
+      <span style="font-size:11px;color:#5A6370;">Click a commit to select · hover to preview</span>
+      <div style="display:flex;gap:6px;">
+        <span style="font-size:11px;font-weight:600;padding:4px 10px;border-radius:9999px;background:#172035;border:1px solid #2A3A56;color:#F0F2F5;">Dark</span>
+        <span style="font-size:11px;font-weight:600;padding:4px 10px;border-radius:9999px;background:#172035;border:1px solid #2A3A56;color:#F0F2F5;">Compact</span>
+      </div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:156px 1fr 168px 236px 92px 108px;padding:9px 20px;background:#111827;border-bottom:1px solid #1A2840;">
+    <div></div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5A6370;">Commit</div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5A6370;">Author</div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5A6370;">Branch</div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5A6370;">Hash</div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5A6370;text-align:right;">Date</div>
+  </div>
+  <div style="position:relative;">
+    <svg width="156" height="{{ graphA.totalHeight }}" style="position:absolute;top:0;left:20px;overflow:visible;" hint-size="156,728">
+      <sc-for list="{{ graphA.lines }}" as="ln" hint-placeholder-count="6">
+        <line x1="{{ ln.x }}" y1="{{ ln.y1 }}" x2="{{ ln.x }}" y2="{{ ln.y2 }}" stroke="{{ ln.color }}" stroke-width="2.5"></line>
+      </sc-for>
+      <sc-for list="{{ graphA.jogs }}" as="jg" hint-placeholder-count="6">
+        <path d="{{ jg.d }}" stroke="{{ jg.color }}" stroke-width="2.5" fill="none"></path>
+      </sc-for>
+      <sc-for list="{{ graphA.rows }}" as="r" hint-placeholder-count="13">
+        <sc-if value="{{ r.isWorking }}" hint-placeholder-val="{{ false }}">
+          <circle cx="{{ r.dotX }}" cy="{{ r.cy }}" r="10" fill="#0D1320" stroke="{{ r.color }}" stroke-width="2" stroke-dasharray="2,2"></circle>
+        </sc-if>
+        <sc-if value="{{ r.isHead }}" hint-placeholder-val="{{ false }}">
+          <circle cx="{{ r.dotX }}" cy="{{ r.cy }}" r="15" fill="none" stroke="{{ r.color }}" stroke-width="1.5"></circle>
+          <circle cx="{{ r.dotX }}" cy="{{ r.cy }}" r="10" fill="{{ r.color }}" stroke="#0D1320" stroke-width="3"></circle>
+          <text x="{{ r.dotX }}" y="{{ r.cy }}" dy="0.32em" text-anchor="middle" font-family="'Noto Sans',system-ui,sans-serif" font-size="8.5" font-weight="700" fill="#FFFFFF">{{ r.avatarInitials }}</text>
+        </sc-if>
+        <sc-if value="{{ r.isNormal }}" hint-placeholder-val="{{ true }}">
+          <circle cx="{{ r.dotX }}" cy="{{ r.cy }}" r="10" fill="{{ r.color }}" stroke="#0D1320" stroke-width="3"></circle>
+          <text x="{{ r.dotX }}" y="{{ r.cy }}" dy="0.32em" text-anchor="middle" font-family="'Noto Sans',system-ui,sans-serif" font-size="8.5" font-weight="700" fill="#FFFFFF">{{ r.avatarInitials }}</text>
+        </sc-if>
+        <sc-if value="{{ r.showSelectRing }}" hint-placeholder-val="{{ false }}">
+          <circle cx="{{ r.dotX }}" cy="{{ r.cy }}" r="14" fill="none" stroke="{{ r.selectAccent }}" stroke-width="1.75" stroke-dasharray="3,2"></circle>
+        </sc-if>
+      </sc-for>
+    </svg>
+    <sc-for list="{{ graphA.rows }}" as="r" hint-placeholder-count="13">
+      <div onClick="{{ r.onRowClick }}" onMouseEnter="{{ r.onRowEnter }}" onMouseLeave="{{ r.onRowLeave }}" style="display:grid;grid-template-columns:156px 1fr 168px 236px 92px 108px;align-items:center;height:56px;padding:0 20px;border-bottom:1px solid #1A2840;background:{{ r.rowBg }};box-shadow:{{ r.rowShadow }};cursor:pointer;transition:background 150ms cubic-bezier(0.16,1,0.3,1), box-shadow 150ms cubic-bezier(0.16,1,0.3,1);">
+        <div></div>
+        <div style="min-width:0;">
+          <div style="font-size:13.5px;font-weight:600;color:#F0F2F5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.message }}</div>
+          <div style="font-size:11.5px;color:#8C96A8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;">{{ r.secondary }}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+          <sc-if value="{{ r.author }}" hint-placeholder-val="{{ true }}">
+            <div style="width:26px;height:26px;border-radius:9999px;background:{{ r.color }};display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;color:#FFFFFF;flex-shrink:0;">{{ r.avatarInitials }}</div>
+            <div style="min-width:0;">
+              <div style="font-size:12px;color:#F0F2F5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.author }}</div>
+              <div style="font-size:10.5px;color:#5A6370;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.email }}</div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ r.isWorking }}" hint-placeholder-val="{{ false }}">
+            <div style="width:26px;height:26px;border-radius:9999px;border:1.5px dashed #3A4356;flex-shrink:0;"></div>
+            <div style="font-size:12px;color:#5A6370;">—</div>
+          </sc-if>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:9999px;background:{{ r.subtle }};color:{{ r.color }};white-space:nowrap;">{{ r.branch }}</span>
+          <sc-if value="{{ r.isHead }}" hint-placeholder-val="{{ false }}">
+            <span style="font-size:9.5px;font-weight:700;letter-spacing:.04em;padding:2.5px 7px;border-radius:9999px;background:#F88E3A;color:#180C00;">HEAD</span>
+          </sc-if>
+          <sc-if value="{{ r.tag }}" hint-placeholder-val="{{ false }}">
+            <span style="display:inline-flex;align-items:center;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;padding:2.5px 8px 2.5px 11px;border-radius:4px;background:#1B2333;color:#C9D2E0;border:1px solid #334157;clip-path:polygon(8px 0,100% 0,100% 100%,8px 100%,0 50%);white-space:nowrap;">{{ r.tag }}</span>
+          </sc-if>
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8C96A8;">{{ r.hash }}</div>
+        <div style="font-size:12px;color:#8C96A8;text-align:right;">{{ r.date }}</div>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</div>
+
+<div class="dv-opt" id="2b">
+<div class="dv-olabel"><a class="dv-oid" href="#2b">2b</a>Split Rail — curved + interactive</div>
+<div class="dv-odesc">Same reversed reading direction as <a class="dv-oid" href="#1c">1c</a>. Same hover/click behavior, re-themed light.</div>
+<div class="dv-card" style="width:1060px;background:#FAFBFC;border:1px solid #D3D8E0;border-radius:16px;box-shadow:0 4px 16px rgba(15,23,42,.08),0 12px 40px rgba(15,23,42,.08);font-family:'Noto Sans',system-ui,sans-serif;">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #D3D8E0;">
+    <div>
+      <div style="font-family:'Stack Sans Headline',system-ui,sans-serif;font-size:15px;font-weight:700;color:#181B20;">Split Rail</div>
+      <div style="font-size:12px;color:#6E7887;margin-top:2px;">main · 6 branches · curved graph</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px;">
+      <span style="font-size:11px;color:#6E7887;">Click a commit to select · hover to preview</span>
+      <div style="display:flex;gap:6px;">
+        <span style="font-size:11px;font-weight:600;padding:4px 10px;border-radius:9999px;background:#F3F5F7;border:1px solid #D3D8E0;color:#181B20;">Light</span>
+        <span style="font-size:11px;font-weight:600;padding:4px 10px;border-radius:9999px;background:#F3F5F7;border:1px solid #D3D8E0;color:#181B20;">Compact</span>
+      </div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:100px 1fr 160px 236px 92px 156px;padding:9px 20px;background:#F3F5F7;border-bottom:1px solid #D3D8E0;">
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#6E7887;">Hash</div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#6E7887;">Commit</div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#6E7887;">Author</div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#6E7887;">Branch</div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#6E7887;">Date</div>
+    <div></div>
+  </div>
+  <div style="position:relative;">
+    <svg width="156" height="{{ graphC.totalHeight }}" style="position:absolute;top:0;right:20px;overflow:visible;" hint-size="156,728">
+      <sc-for list="{{ graphC.lines }}" as="ln" hint-placeholder-count="6">
+        <line x1="{{ ln.x }}" y1="{{ ln.y1 }}" x2="{{ ln.x }}" y2="{{ ln.y2 }}" stroke="{{ ln.color }}" stroke-width="2.5"></line>
+      </sc-for>
+      <sc-for list="{{ graphC.jogs }}" as="jg" hint-placeholder-count="6">
+        <path d="{{ jg.d }}" stroke="{{ jg.color }}" stroke-width="2.5" fill="none"></path>
+      </sc-for>
+      <sc-for list="{{ graphC.rows }}" as="r" hint-placeholder-count="13">
+        <sc-if value="{{ r.isWorking }}" hint-placeholder-val="{{ false }}">
+          <circle cx="{{ r.dotX }}" cy="{{ r.cy }}" r="10" fill="#FAFBFC" stroke="{{ r.color }}" stroke-width="2" stroke-dasharray="2,2"></circle>
+        </sc-if>
+        <sc-if value="{{ r.isHead }}" hint-placeholder-val="{{ false }}">
+          <circle cx="{{ r.dotX }}" cy="{{ r.cy }}" r="15" fill="none" stroke="{{ r.color }}" stroke-width="1.5"></circle>
+          <circle cx="{{ r.dotX }}" cy="{{ r.cy }}" r="10" fill="{{ r.color }}" stroke="#FAFBFC" stroke-width="3"></circle>
+          <text x="{{ r.dotX }}" y="{{ r.cy }}" dy="0.32em" text-anchor="middle" font-family="'Noto Sans',system-ui,sans-serif" font-size="8.5" font-weight="700" fill="#FFFFFF">{{ r.avatarInitials }}</text>
+        </sc-if>
+        <sc-if value="{{ r.isNormal }}" hint-placeholder-val="{{ true }}">
+          <circle cx="{{ r.dotX }}" cy="{{ r.cy }}" r="10" fill="{{ r.color }}" stroke="#FAFBFC" stroke-width="3"></circle>
+          <text x="{{ r.dotX }}" y="{{ r.cy }}" dy="0.32em" text-anchor="middle" font-family="'Noto Sans',system-ui,sans-serif" font-size="8.5" font-weight="700" fill="#FFFFFF">{{ r.avatarInitials }}</text>
+        </sc-if>
+        <sc-if value="{{ r.showSelectRing }}" hint-placeholder-val="{{ false }}">
+          <circle cx="{{ r.dotX }}" cy="{{ r.cy }}" r="14" fill="none" stroke="{{ r.selectAccent }}" stroke-width="1.75" stroke-dasharray="3,2"></circle>
+        </sc-if>
+      </sc-for>
+    </svg>
+    <sc-for list="{{ graphC.rows }}" as="r" hint-placeholder-count="13">
+      <div onClick="{{ r.onRowClick }}" onMouseEnter="{{ r.onRowEnter }}" onMouseLeave="{{ r.onRowLeave }}" style="display:grid;grid-template-columns:100px 1fr 160px 236px 92px 156px;align-items:center;height:56px;padding:0 20px;border-bottom:1px solid #E9ECF0;background:{{ r.rowBg }};box-shadow:{{ r.rowShadow }};cursor:pointer;transition:background 150ms cubic-bezier(0.16,1,0.3,1), box-shadow 150ms cubic-bezier(0.16,1,0.3,1);">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#6E7887;">{{ r.hash }}</div>
+        <div style="min-width:0;">
+          <div style="font-size:13.5px;font-weight:600;color:#181B20;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.message }}</div>
+          <div style="font-size:11.5px;color:#6E7887;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;">{{ r.secondary }}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+          <sc-if value="{{ r.author }}" hint-placeholder-val="{{ true }}">
+            <div style="width:26px;height:26px;border-radius:9999px;background:{{ r.color }};display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;color:#FFFFFF;flex-shrink:0;">{{ r.avatarInitials }}</div>
+            <div style="min-width:0;">
+              <div style="font-size:12px;color:#181B20;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.author }}</div>
+              <div style="font-size:10.5px;color:#6E7887;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.email }}</div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ r.isWorking }}" hint-placeholder-val="{{ false }}">
+            <div style="width:26px;height:26px;border-radius:9999px;border:1.5px dashed #B4BCC8;flex-shrink:0;"></div>
+            <div style="font-size:12px;color:#6E7887;">—</div>
+          </sc-if>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:9999px;background:{{ r.subtle }};color:{{ r.color }};white-space:nowrap;">{{ r.branch }}</span>
+          <sc-if value="{{ r.isHead }}" hint-placeholder-val="{{ false }}">
+            <span style="font-size:9.5px;font-weight:700;letter-spacing:.04em;padding:2.5px 7px;border-radius:9999px;background:#F5720A;color:#FEF4EA;">HEAD</span>
+          </sc-if>
+          <sc-if value="{{ r.tag }}" hint-placeholder-val="{{ false }}">
+            <span style="display:inline-flex;align-items:center;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;padding:2.5px 8px 2.5px 11px;border-radius:4px;background:#F3F5F7;color:#363B46;border:1px solid #D3D8E0;clip-path:polygon(8px 0,100% 0,100% 100%,8px 100%,0 50%);white-space:nowrap;">{{ r.tag }}</span>
+          </sc-if>
+        </div>
+        <div style="font-size:12px;color:#6E7887;">{{ r.date }}</div>
+        <div></div>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</div>
+
+</div>
+<p class="dv-next">Try next: "make <a class="dv-oid" href="#2a">2a</a> the only concept, add a sidebar" · "show the selected commit's diff/details panel" · "add a tags filter/list panel"</p>
+</section>
+
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">Git Wasp — graph view concepts</span></div>
+<p class="dv-tsub">Two structural takes on the commit-graph pane, deliberately away from GitKraken's dense free-form bezier layout: fixed parallel swim-lanes per branch, orthogonal (right-angle) connectors instead of smooth curves. Same compact density, same 13-commit sample history (6 branches live at once, two merges, a working-changes row, a tagged release, and the current HEAD marked) — only the column layout changes.</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="1a">
+<div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>Ledger Grid</div>
+<div class="dv-odesc">True spreadsheet columns — graph, commit, author, branch, hash and date each get their own aligned column. Compact, dark, built for scanning a lot of history fast. See the curved, interactive version at <a class="dv-oid" href="#2a">2a</a>.</div>
+<div class="dv-card" style="width:960px;background:#0D1320;border:1px solid #243047;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,.45),0 24px 64px rgba(0,0,0,.3);font-family:'Noto Sans',system-ui,sans-serif;">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #243047;">
+    <div>
+      <div style="font-family:'Stack Sans Headline',system-ui,sans-serif;font-size:15px;font-weight:700;color:#F0F2F5;">Ledger Grid</div>
+      <div style="font-size:12px;color:#5A6370;margin-top:2px;">main · 6 branches · orthogonal graph</div>
+    </div>
+    <div style="display:flex;gap:6px;">
+      <span style="font-size:11px;font-weight:600;padding:4px 10px;border-radius:9999px;background:#172035;border:1px solid #2A3A56;color:#F0F2F5;">Dark</span>
+      <span style="font-size:11px;font-weight:600;padding:4px 10px;border-radius:9999px;background:#172035;border:1px solid #2A3A56;color:#F0F2F5;">Compact</span>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:156px 1fr 168px 236px 92px 108px;padding:9px 20px;background:#111827;border-bottom:1px solid #1A2840;">
+    <div></div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5A6370;">Commit</div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5A6370;">Author</div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5A6370;">Branch</div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5A6370;">Hash</div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5A6370;text-align:right;">Date</div>
+  </div>
+  <div style="position:relative;">
+    <svg width="156" height="{{ graphA0.totalHeight }}" style="position:absolute;top:0;left:20px;overflow:visible;" hint-size="156,728">
+      <sc-for list="{{ graphA0.lines }}" as="ln" hint-placeholder-count="6">
+        <line x1="{{ ln.x }}" y1="{{ ln.y1 }}" x2="{{ ln.x }}" y2="{{ ln.y2 }}" stroke="{{ ln.color }}" stroke-width="2.5"></line>
+      </sc-for>
+      <sc-for list="{{ graphA0.jogs }}" as="jg" hint-placeholder-count="6">
+        <line x1="{{ jg.x1 }}" y1="{{ jg.y }}" x2="{{ jg.x2 }}" y2="{{ jg.y }}" stroke="{{ jg.color }}" stroke-width="2.5"></line>
+      </sc-for>
+      <sc-for list="{{ graphA0.rows }}" as="r" hint-placeholder-count="13">
+        <sc-if value="{{ r.isWorking }}" hint-placeholder-val="{{ false }}">
+          <circle cx="{{ r.dotX }}" cy="{{ r.cy }}" r="5.5" fill="#0D1320" stroke="{{ r.color }}" stroke-width="2" stroke-dasharray="2,2"></circle>
+        </sc-if>
+        <sc-if value="{{ r.isHead }}" hint-placeholder-val="{{ false }}">
+          <circle cx="{{ r.dotX }}" cy="{{ r.cy }}" r="9" fill="none" stroke="{{ r.color }}" stroke-width="1.5"></circle>
+          <circle cx="{{ r.dotX }}" cy="{{ r.cy }}" r="5" fill="{{ r.color }}" stroke="#0D1320" stroke-width="3"></circle>
+        </sc-if>
+        <sc-if value="{{ r.isNormal }}" hint-placeholder-val="{{ true }}">
+          <circle cx="{{ r.dotX }}" cy="{{ r.cy }}" r="5" fill="{{ r.color }}" stroke="#0D1320" stroke-width="3"></circle>
+        </sc-if>
+      </sc-for>
+    </svg>
+    <sc-for list="{{ graphA0.rows }}" as="r" hint-placeholder-count="13">
+      <div style="display:grid;grid-template-columns:156px 1fr 168px 236px 92px 108px;align-items:center;height:56px;padding:0 20px;border-bottom:1px solid #1A2840;background:{{ r.rowBg }};">
+        <div></div>
+        <div style="min-width:0;">
+          <div style="font-size:13.5px;font-weight:600;color:#F0F2F5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.message }}</div>
+          <div style="font-size:11.5px;color:#8C96A8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;">{{ r.secondary }}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+          <sc-if value="{{ r.author }}" hint-placeholder-val="{{ true }}">
+            <div style="width:26px;height:26px;border-radius:9999px;background:{{ r.color }};display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;color:#0D1320;flex-shrink:0;">{{ r.avatarInitials }}</div>
+            <div style="min-width:0;">
+              <div style="font-size:12px;color:#F0F2F5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.author }}</div>
+              <div style="font-size:10.5px;color:#5A6370;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.email }}</div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ r.isWorking }}" hint-placeholder-val="{{ false }}">
+            <div style="width:26px;height:26px;border-radius:9999px;border:1.5px dashed #3A4356;flex-shrink:0;"></div>
+            <div style="font-size:12px;color:#5A6370;">—</div>
+          </sc-if>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:9999px;background:{{ r.subtle }};color:{{ r.color }};white-space:nowrap;">{{ r.branch }}</span>
+          <sc-if value="{{ r.isHead }}" hint-placeholder-val="{{ false }}">
+            <span style="font-size:9.5px;font-weight:700;letter-spacing:.04em;padding:2.5px 7px;border-radius:9999px;background:#F88E3A;color:#180C00;">HEAD</span>
+          </sc-if>
+          <sc-if value="{{ r.tag }}" hint-placeholder-val="{{ false }}">
+            <span style="display:inline-flex;align-items:center;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;padding:2.5px 8px 2.5px 11px;border-radius:4px;background:#1B2333;color:#C9D2E0;border:1px solid #334157;clip-path:polygon(8px 0,100% 0,100% 100%,8px 100%,0 50%);white-space:nowrap;">{{ r.tag }}</span>
+          </sc-if>
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8C96A8;">{{ r.hash }}</div>
+        <div style="font-size:12px;color:#8C96A8;text-align:right;">{{ r.date }}</div>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</div>
+
+<div class="dv-opt" id="1c">
+<div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a>Split Rail</div>
+<div class="dv-odesc">Graph flipped to the right edge; hash and date read like a log file on the left. Light theme to show the palette re-themes cleanly, not just a dark-mode trick. See the curved, interactive version at <a class="dv-oid" href="#2b">2b</a>.</div>
+<div class="dv-card" style="width:960px;background:#FAFBFC;border:1px solid #D3D8E0;border-radius:16px;box-shadow:0 4px 16px rgba(15,23,42,.08),0 12px 40px rgba(15,23,42,.08);font-family:'Noto Sans',system-ui,sans-serif;">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #D3D8E0;">
+    <div>
+      <div style="font-family:'Stack Sans Headline',system-ui,sans-serif;font-size:15px;font-weight:700;color:#181B20;">Split Rail</div>
+      <div style="font-size:12px;color:#6E7887;margin-top:2px;">main · 6 branches · orthogonal graph</div>
+    </div>
+    <div style="display:flex;gap:6px;">
+      <span style="font-size:11px;font-weight:600;padding:4px 10px;border-radius:9999px;background:#F3F5F7;border:1px solid #D3D8E0;color:#181B20;">Light</span>
+      <span style="font-size:11px;font-weight:600;padding:4px 10px;border-radius:9999px;background:#F3F5F7;border:1px solid #D3D8E0;color:#181B20;">Compact</span>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:100px 1fr 160px 236px 92px 156px;padding:9px 20px;background:#F3F5F7;border-bottom:1px solid #D3D8E0;">
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#6E7887;">Hash</div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#6E7887;">Commit</div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#6E7887;">Author</div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#6E7887;">Branch</div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#6E7887;">Date</div>
+    <div></div>
+  </div>
+  <div style="position:relative;">
+    <svg width="156" height="{{ graphC0.totalHeight }}" style="position:absolute;top:0;right:20px;overflow:visible;" hint-size="156,728">
+      <sc-for list="{{ graphC0.lines }}" as="ln" hint-placeholder-count="6">
+        <line x1="{{ ln.x }}" y1="{{ ln.y1 }}" x2="{{ ln.x }}" y2="{{ ln.y2 }}" stroke="{{ ln.color }}" stroke-width="2.5"></line>
+      </sc-for>
+      <sc-for list="{{ graphC0.jogs }}" as="jg" hint-placeholder-count="6">
+        <line x1="{{ jg.x1 }}" y1="{{ jg.y }}" x2="{{ jg.x2 }}" y2="{{ jg.y }}" stroke="{{ jg.color }}" stroke-width="2.5"></line>
+      </sc-for>
+      <sc-for list="{{ graphC0.rows }}" as="r" hint-placeholder-count="13">
+        <sc-if value="{{ r.isWorking }}" hint-placeholder-val="{{ false }}">
+          <circle cx="{{ r.dotX }}" cy="{{ r.cy }}" r="5.5" fill="#FAFBFC" stroke="{{ r.color }}" stroke-width="2" stroke-dasharray="2,2"></circle>
+        </sc-if>
+        <sc-if value="{{ r.isHead }}" hint-placeholder-val="{{ false }}">
+          <circle cx="{{ r.dotX }}" cy="{{ r.cy }}" r="9" fill="none" stroke="{{ r.color }}" stroke-width="1.5"></circle>
+          <circle cx="{{ r.dotX }}" cy="{{ r.cy }}" r="5" fill="{{ r.color }}" stroke="#FAFBFC" stroke-width="3"></circle>
+        </sc-if>
+        <sc-if value="{{ r.isNormal }}" hint-placeholder-val="{{ true }}">
+          <circle cx="{{ r.dotX }}" cy="{{ r.cy }}" r="5" fill="{{ r.color }}" stroke="#FAFBFC" stroke-width="3"></circle>
+        </sc-if>
+      </sc-for>
+    </svg>
+    <sc-for list="{{ graphC0.rows }}" as="r" hint-placeholder-count="13">
+      <div style="display:grid;grid-template-columns:100px 1fr 160px 236px 92px 156px;align-items:center;height:56px;padding:0 20px;border-bottom:1px solid #E9ECF0;background:{{ r.rowBg }};">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#6E7887;">{{ r.hash }}</div>
+        <div style="min-width:0;">
+          <div style="font-size:13.5px;font-weight:600;color:#181B20;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.message }}</div>
+          <div style="font-size:11.5px;color:#6E7887;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;">{{ r.secondary }}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+          <sc-if value="{{ r.author }}" hint-placeholder-val="{{ true }}">
+            <div style="width:26px;height:26px;border-radius:9999px;background:{{ r.color }};display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;color:#FAFBFC;flex-shrink:0;">{{ r.avatarInitials }}</div>
+            <div style="min-width:0;">
+              <div style="font-size:12px;color:#181B20;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.author }}</div>
+              <div style="font-size:10.5px;color:#6E7887;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.email }}</div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ r.isWorking }}" hint-placeholder-val="{{ false }}">
+            <div style="width:26px;height:26px;border-radius:9999px;border:1.5px dashed #B4BCC8;flex-shrink:0;"></div>
+            <div style="font-size:12px;color:#6E7887;">—</div>
+          </sc-if>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:9999px;background:{{ r.subtle }};color:{{ r.color }};white-space:nowrap;">{{ r.branch }}</span>
+          <sc-if value="{{ r.isHead }}" hint-placeholder-val="{{ false }}">
+            <span style="font-size:9.5px;font-weight:700;letter-spacing:.04em;padding:2.5px 7px;border-radius:9999px;background:#F5720A;color:#FEF4EA;">HEAD</span>
+          </sc-if>
+          <sc-if value="{{ r.tag }}" hint-placeholder-val="{{ false }}">
+            <span style="display:inline-flex;align-items:center;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;padding:2.5px 8px 2.5px 11px;border-radius:4px;background:#F3F5F7;color:#363B46;border:1px solid #D3D8E0;clip-path:polygon(8px 0,100% 0,100% 100%,8px 100%,0 50%);white-space:nowrap;">{{ r.tag }}</span>
+          </sc-if>
+        </div>
+        <div style="font-size:12px;color:#6E7887;">{{ r.date }}</div>
+        <div></div>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</div>
+
+</div>
+<p class="dv-next">Try next: "show <a class="dv-oid" href="#1c">1c</a> in dark mode too" · "add a branch/tag sidebar around one of these" · "add more tags to the sample history"</p>
+</section>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.laneX = [16, 40, 64, 88, 112, 136];
+
+    // straight-graph bounds (used by 1a / 1b / 1c, the original orthogonal concepts)
+    this.laneBounds = [
+      { topEdge: true, bottomEdge: true },
+      { topEdge: true, bottomEdge: true },
+      { topRow: 6, bottomRow: 11 },
+      { topEdge: true, bottomRow: 10 },
+      { topRow: 3, bottomRow: 9 },
+      { topEdge: true, bottomRow: 12 },
+    ];
+    this.jogDefs = [
+      { row: 3, a: 4, b: 1 },
+      { row: 6, a: 2, b: 0 },
+      { row: 9, a: 1, b: 4 },
+      { row: 10, a: 1, b: 3 },
+      { row: 11, a: 0, b: 2 },
+      { row: 12, a: 0, b: 5 },
+    ];
+
+    // curved-graph bounds (used by 2a / 2b) — the lane being merged away/born
+    // is shifted one row so the curve itself occupies the gap, not a single point
+    this.laneBoundsCurved = [
+      { topEdge: true, bottomEdge: true },
+      { topEdge: true, bottomEdge: true },
+      { topRow: 7, bottomRow: 11 },
+      { topEdge: true, bottomRow: 10 },
+      { topRow: 4, bottomRow: 9 },
+      { topEdge: true, bottomRow: 12 },
+    ];
+    this.jogDefsCurved = [
+      { row: 3, kind: 'merge', target: 1, source: 4 },
+      { row: 6, kind: 'merge', target: 0, source: 2 },
+      { row: 9, kind: 'diverge', parent: 1, child: 4 },
+      { row: 10, kind: 'diverge', parent: 1, child: 3 },
+      { row: 11, kind: 'diverge', parent: 0, child: 2 },
+      { row: 12, kind: 'diverge', parent: 0, child: 5 },
+    ];
+
+    this.darkLanes = [
+      { solid: '#4880E0', subtle: 'rgba(72,128,224,0.16)' },
+      { solid: '#8C96A8', subtle: 'rgba(140,150,168,0.16)' },
+      { solid: '#F59E0B', subtle: 'rgba(245,158,11,0.16)' },
+      { solid: '#F88E3A', subtle: 'rgba(248,142,58,0.16)' },
+      { solid: '#22C55E', subtle: 'rgba(34,197,94,0.16)' },
+      { solid: '#F87171', subtle: 'rgba(248,113,113,0.16)' },
+    ];
+    this.lightLanes = [
+      { solid: '#2162D4', subtle: 'rgba(33,98,212,0.10)' },
+      { solid: '#6E7887', subtle: 'rgba(110,120,135,0.12)' },
+      { solid: '#D97706', subtle: 'rgba(217,119,6,0.12)' },
+      { solid: '#F5720A', subtle: 'rgba(245,114,10,0.12)' },
+      { solid: '#16A34A', subtle: 'rgba(22,163,74,0.12)' },
+      { solid: '#DC2626', subtle: 'rgba(220,38,38,0.12)' },
+    ];
+
+    this.commits = [
+      { laneIdx: 3, hash: '—', branch: 'feature/checkout-redesign', author: null, email: null, avatarInitials: null, message: 'Uncommitted changes', secondary: '3 files staged — checkout-summary.tsx, payment-form.tsx, +1 more', date: 'Now', isWorking: true, isHead: false },
+      { laneIdx: 3, hash: 'a91f3c2', branch: 'feature/checkout-redesign', author: 'Priya Natarajan', email: 'priya@wasp.dev', avatarInitials: 'PN', message: 'Add Apple Pay to checkout confirmation', secondary: 'Uses the shared PaymentSheet component; falls back to the card form on unsupported browsers.', date: '2 hours ago', isWorking: false, isHead: true },
+      { laneIdx: 3, hash: '7c02e88', branch: 'feature/checkout-redesign', author: 'Priya Natarajan', email: 'priya@wasp.dev', avatarInitials: 'PN', message: 'Wire up Apple Pay button to checkout state', secondary: 'Gated behind the applePayAvailable feature flag.', date: '5 hours ago', isWorking: false, isHead: false },
+      { laneIdx: 1, hash: '4d19a06', branch: 'develop', author: 'Owen Marsh', email: 'owen@wasp.dev', avatarInitials: 'OM', message: "Merge branch 'feature/oauth-providers' into develop", secondary: 'Closes #482', date: 'Yesterday', isWorking: false, isHead: false },
+      { laneIdx: 4, hash: 'e330f14', branch: 'feature/oauth-providers', author: 'Owen Marsh', email: 'owen@wasp.dev', avatarInitials: 'OM', message: 'Refactor OAuth token refresh into shared hook', secondary: 'Removes duplicated refresh logic from the Google and GitHub providers.', date: 'Yesterday', isWorking: false, isHead: false },
+      { laneIdx: 5, hash: '9b7a5d0', branch: 'hotfix/payment-retry', author: 'Deja Coleman', email: 'deja@wasp.dev', avatarInitials: 'DC', message: 'Add retry backoff for failed payment webhook', secondary: 'Exponential backoff, capped at 5 attempts.', date: '2 days ago', isWorking: false, isHead: false },
+      { laneIdx: 0, hash: 'f21c8b3', branch: 'main', author: 'Sam Whitfield', email: 'sam@wasp.dev', avatarInitials: 'SW', message: "Merge branch 'release/2.4'", secondary: 'Fast-forward merge — no conflicts.', date: '3 days ago', isWorking: false, isHead: false, tag: 'v2.4.0' },
+      { laneIdx: 2, hash: '0a68e77', branch: 'release/2.4', author: 'Sam Whitfield', email: 'sam@wasp.dev', avatarInitials: 'SW', message: 'Bump release/2.4 changelog and version string', secondary: 'Prepares the build for the Thursday release train.', date: '3 days ago', isWorking: false, isHead: false },
+      { laneIdx: 1, hash: 'c58e112', branch: 'develop', author: 'Ionut Popescu', email: 'ionut@wasp.dev', avatarInitials: 'IP', message: 'Update dependency lockfile', secondary: 'Routine bump, no breaking changes.', date: '4 days ago', isWorking: false, isHead: false },
+      { laneIdx: 4, hash: '15af9c4', branch: 'feature/oauth-providers', author: 'Owen Marsh', email: 'owen@wasp.dev', avatarInitials: 'OM', message: 'Scaffold OAuth provider abstraction', secondary: 'First pass at a provider-agnostic auth interface.', date: '5 days ago', isWorking: false, isHead: false },
+      { laneIdx: 3, hash: '88de201', branch: 'feature/checkout-redesign', author: 'Priya Natarajan', email: 'priya@wasp.dev', avatarInitials: 'PN', message: 'Start checkout redesign spike', secondary: 'Exploring a single-page checkout flow.', date: '6 days ago', isWorking: false, isHead: false },
+      { laneIdx: 2, hash: '3f4a9e6', branch: 'release/2.4', author: 'Sam Whitfield', email: 'sam@wasp.dev', avatarInitials: 'SW', message: 'Cut release/2.4 branch', secondary: 'Freezes scope for the Thursday release train.', date: '1 week ago', isWorking: false, isHead: false },
+      { laneIdx: 5, hash: '6e0d7a1', branch: 'hotfix/payment-retry', author: 'Deja Coleman', email: 'deja@wasp.dev', avatarInitials: 'DC', message: 'Hotfix: payment retries silently failing', secondary: 'Root-caused to a swallowed exception in the webhook handler.', date: '1 week ago', isWorking: false, isHead: false },
+    ];
+
+    this.state = { selectedA: 1, hoveredA: null, selectedC: 1, hoveredC: null };
+  }
+
+  selectA = (i) => { this.setState({ selectedA: i }); };
+  hoverEnterA = (i) => { this.setState({ hoveredA: i }); };
+  hoverLeaveA = () => { this.setState({ hoveredA: null }); };
+  selectC = (i) => { this.setState({ selectedC: i }); };
+  hoverEnterC = (i) => { this.setState({ hoveredC: i }); };
+  hoverLeaveC = () => { this.setState({ hoveredC: null }); };
+
+  centerY(row, rh) {
+    return row * rh + rh / 2;
+  }
+
+  // original orthogonal/right-angle graph — used by 1a, 1b, 1c (turn 1)
+  buildGraphStraight(rh, palette, opts) {
+    const total = this.commits.length * rh;
+    const laneX = this.laneX;
+
+    const lines = this.laneBounds.map((b, i) => ({
+      x: laneX[i],
+      color: palette[i].solid,
+      y1: b.topEdge ? 0 : this.centerY(b.topRow, rh),
+      y2: b.bottomEdge ? total : this.centerY(b.bottomRow, rh),
+    }));
+
+    const jogs = this.jogDefs.map((j) => {
+      const featureIdx = j.a >= 2 ? j.a : j.b;
+      return { y: this.centerY(j.row, rh), x1: laneX[j.a], x2: laneX[j.b], color: palette[featureIdx].solid };
+    });
+
+    const headTint = opts.headTint || 'rgba(248,142,58,0.07)';
+    const rows = this.commits.map((c, i) => {
+      const color = palette[c.laneIdx].solid;
+      const isNormal = !c.isWorking && !c.isHead;
+      return Object.assign({}, c, {
+        cy: this.centerY(i, rh),
+        dotX: laneX[c.laneIdx],
+        color: color,
+        subtle: palette[c.laneIdx].subtle,
+        isNormal: isNormal,
+        rowBg: c.isHead ? headTint : 'transparent',
+        tag: c.tag || null,
+      });
+    });
+
+    return { totalHeight: total, lines: lines, jogs: jogs, rows: rows };
+  }
+
+  // curved graph with avatar-marker dots + hover/selection — used by 2a, 2b (turn 2)
+  buildGraphCurved(rh, palette, opts, interaction) {
+    const total = this.commits.length * rh;
+    const laneX = this.laneX;
+
+    const lines = this.laneBoundsCurved.map((b, i) => ({
+      x: laneX[i],
+      color: palette[i].solid,
+      y1: b.topEdge ? 0 : this.centerY(b.topRow, rh),
+      y2: b.bottomEdge ? total : this.centerY(b.bottomRow, rh),
+    }));
+
+    const jogs = this.jogDefsCurved.map((j) => {
+      const rowY = this.centerY(j.row, rh);
+      const nextIdx = j.row + 1;
+      const nextY = nextIdx < this.commits.length ? this.centerY(nextIdx, rh) : total;
+      let topX, bottomX, featureIdx;
+      if (j.kind === 'diverge') {
+        topX = laneX[j.child]; bottomX = laneX[j.parent]; featureIdx = j.child;
+      } else {
+        topX = laneX[j.target]; bottomX = laneX[j.source]; featureIdx = j.source;
+      }
+      const midY = (rowY + nextY) / 2;
+      return {
+        d: 'M ' + topX + ' ' + rowY + ' C ' + topX + ' ' + midY + ' ' + bottomX + ' ' + midY + ' ' + bottomX + ' ' + nextY,
+        color: palette[featureIdx].solid,
+      };
+    });
+
+    const sel = interaction.selected, hov = interaction.hovered;
+    const rows = this.commits.map((c, i) => {
+      const color = palette[c.laneIdx].solid;
+      const isNormal = !c.isWorking && !c.isHead;
+      const isSelected = i === sel;
+      const isHovered = i === hov;
+      let rowBg = 'transparent';
+      if (isSelected) rowBg = opts.selectedBg;
+      else if (isHovered) rowBg = opts.hoverBg;
+      else if (c.isHead) rowBg = opts.headTint;
+      const rowShadow = isSelected ? ('inset 0 0 0 1.5px ' + opts.selectAccent) : 'none';
+      return Object.assign({}, c, {
+        cy: this.centerY(i, rh),
+        dotX: laneX[c.laneIdx],
+        color: color,
+        subtle: palette[c.laneIdx].subtle,
+        isNormal: isNormal,
+        isSelected: isSelected,
+        isHovered: isHovered,
+        showSelectRing: isSelected && !c.isHead,
+        selectAccent: opts.selectAccent,
+        rowBg: rowBg,
+        rowShadow: rowShadow,
+        tag: c.tag || null,
+        onRowClick: () => interaction.onSelect(i),
+        onRowEnter: () => interaction.onHoverEnter(i),
+        onRowLeave: () => interaction.onHoverLeave(),
+      });
+    });
+
+    return { totalHeight: total, lines: lines, jogs: jogs, rows: rows };
+  }
+
+  renderVals() {
+    return {
+      // turn 1 — original orthogonal concepts (single compact density)
+      graphA0: this.buildGraphStraight(56, this.darkLanes, { headTint: 'rgba(248,142,58,0.07)' }),
+      graphC0: this.buildGraphStraight(56, this.lightLanes, { headTint: 'rgba(245,114,10,0.06)' }),
+      // turn 2 — curved, avatar-marker, interactive concepts
+      graphA: this.buildGraphCurved(56, this.darkLanes,
+        { headTint: 'rgba(248,142,58,0.07)', selectedBg: 'rgba(72,128,224,0.16)', hoverBg: 'rgba(240,242,245,0.05)', selectAccent: '#4880E0' },
+        { selected: this.state.selectedA, hovered: this.state.hoveredA, onSelect: this.selectA, onHoverEnter: this.hoverEnterA, onHoverLeave: this.hoverLeaveA }),
+      graphC: this.buildGraphCurved(56, this.lightLanes,
+        { headTint: 'rgba(245,114,10,0.06)', selectedBg: 'rgba(33,98,212,0.08)', hoverBg: 'rgba(24,27,32,0.03)', selectAccent: '#2162D4' },
+        { selected: this.state.selectedC, hovered: this.state.hoveredC, onSelect: this.selectC, onHoverEnter: this.hoverEnterC, onHoverLeave: this.hoverLeaveC }),
+    };
+  }
+}
+
+</script>
+</body>
+</html>
