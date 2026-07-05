@@ -36,6 +36,9 @@ pub enum PullResult {
     Merged,
     /// A merge was started but produced conflicts; the merge editor takes over.
     Conflicts,
+    /// The pull succeeded, but reapplying the auto-stashed local changes hit a
+    /// conflict. The stash is kept so the user can resolve/apply it manually.
+    StashReapplyConflict,
 }
 
 /// Result of a fetch + fast-forward attempt. `Diverged` is returned without
@@ -288,10 +291,7 @@ pub fn pull_ff(
         .unwrap_or(false);
 
     if is_current_branch {
-        let mut checkout = git2::build::CheckoutBuilder::new();
-        checkout.safe();
-        repo.checkout_tree(upstream_commit.as_object(), Some(&mut checkout))
-            .context("checkout after fast-forward failed")?;
+        crate::working_tree::safe_checkout_tree(repo, upstream_commit.as_object())?;
     }
 
     repo.reference(

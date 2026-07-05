@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import type { AheadBehind, FetchResult, PullResult } from "../types/github";
 import { logOperationError } from "../lib/logger";
+import { withAutoStash } from "../lib/autoStash";
 
 export type PullMode = "ffOnly" | "ffOrMerge";
 
@@ -14,7 +15,9 @@ interface RemoteStore {
 
   loadAheadBehind: () => Promise<void>;
   fetch: (remoteName?: string, prune?: boolean) => Promise<FetchResult>;
-  pull: (mode?: PullMode, remoteName?: string, branch?: string) => Promise<PullResult>;
+  // Resolves to `undefined` when a pull is blocked by uncommitted changes and
+  // the user cancels the auto-stash prompt.
+  pull: (mode?: PullMode, remoteName?: string, branch?: string) => Promise<PullResult | undefined>;
   push: (remoteName?: string, branch?: string) => Promise<void>;
 }
 
@@ -50,11 +53,23 @@ export const useRemoteStore = create<RemoteStore>((set, get) => ({
   pull: async (mode?: PullMode, remoteName?: string, branch?: string) => {
     set({ isPulling: true, lastError: null });
     try {
-      const result = await invoke<PullResult>("pull_branch", {
-        remoteName: remoteName ?? null,
-        branch: branch ?? null,
-        mode: mode ?? null,
-      });
+      // On a dirty tree the pull is auto-stashed (with confirmation) then the
+      // changes are reapplied — "reapply on pull". `undefined` = user cancelled.
+      const result = await withAutoStash(
+        (autoStash) =>
+          invoke<PullResult>("pull_branch", {
+            remoteName: remoteName ?? null,
+            branch: branch ?? null,
+            mode: mode ?? null,
+            autoStash,
+          }),
+        {
+          title: "Uncommitted changes",
+          message:
+            "You have uncommitted changes that would be lost by pulling. Stash them, pull, then reapply them?",
+          confirmLabel: "Stash & pull",
+        },
+      );
       await get().loadAheadBehind();
       return result;
     } catch (e) {

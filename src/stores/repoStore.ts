@@ -4,6 +4,25 @@ import type { BranchInfo, PrunableBranch, RepoEntry, RepoInfo } from "../types/r
 import { useGraphStore, GRAPH_INITIAL_LIMIT } from "./graphStore";
 import { useMergeStore } from "./mergeStore";
 import { useWorkingTreeStore } from "./workingTreeStore";
+import { useToastStore } from "./toastStore";
+import { withAutoStash } from "../lib/autoStash";
+import type { AutoStashPrompt } from "./autoStashStore";
+
+// The confirmation shown when a checkout is blocked by uncommitted changes.
+// "Park on switch": the changes are stashed and left in the stash panel.
+function stashPrompt(action: string): AutoStashPrompt {
+  return {
+    title: "Uncommitted changes",
+    message: `You have uncommitted changes that would be lost by ${action}. Stash them first and continue? Your changes will be saved to the stash panel.`,
+    confirmLabel: "Stash & continue",
+  };
+}
+
+function notifyParked(target: string): void {
+  useToastStore
+    .getState()
+    .info(`Stashed your changes before switching to ${target} — find them in the stash panel.`);
+}
 
 interface RepoStore {
   currentRepo: RepoInfo | null;
@@ -116,9 +135,12 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     },
 
     checkoutBranch: async (name: string) => {
-      const repo = await invoke<RepoInfo>("checkout_branch", {
-        branchName: name,
-      });
+      const repo = await withAutoStash(
+        (autoStash) => invoke<RepoInfo>("checkout_branch", { branchName: name, autoStash }),
+        stashPrompt(`switching to "${name}"`),
+        () => notifyParked(name),
+      );
+      if (!repo) return; // user cancelled the auto-stash
       set({ currentRepo: repo });
       await get().loadBranches();
     },
@@ -126,14 +148,24 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     // Check out a remote-tracking branch (e.g. "origin/feature"): the backend
     // creates a local tracking branch of the same short name and switches to it.
     checkoutRemoteBranch: async (remoteRef: string) => {
-      const repo = await invoke<RepoInfo>("checkout_remote_branch", { remoteRef });
+      const repo = await withAutoStash(
+        (autoStash) => invoke<RepoInfo>("checkout_remote_branch", { remoteRef, autoStash }),
+        stashPrompt(`switching to "${remoteRef}"`),
+        () => notifyParked(remoteRef),
+      );
+      if (!repo) return;
       set({ currentRepo: repo });
       await get().loadBranches();
     },
 
     // Check out an arbitrary commit (detaches HEAD).
     checkoutCommit: async (oid: string) => {
-      const repo = await invoke<RepoInfo>("checkout_commit", { oid });
+      const repo = await withAutoStash(
+        (autoStash) => invoke<RepoInfo>("checkout_commit", { oid, autoStash }),
+        stashPrompt(`checking out ${oid.slice(0, 7)}`),
+        () => notifyParked(oid.slice(0, 7)),
+      );
+      if (!repo) return;
       set({ currentRepo: repo });
       await get().loadBranches();
     },

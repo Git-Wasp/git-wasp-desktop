@@ -14,6 +14,7 @@ import { SettingsView } from "./components/Settings/SettingsView";
 import { WelcomeView } from "./components/Welcome/WelcomeView";
 import { SplashScreen } from "./components/Splash/SplashScreen";
 import { ToastContainer } from "./components/ui/Toast";
+import { AutoStashDialog } from "./components/common/AutoStashDialog";
 import { ResizeHandle } from "./components/common/ResizeHandle";
 import { usePersistedWidth } from "./lib/usePersistedWidth";
 import { usePersistedBoolean } from "./lib/usePersistedBoolean";
@@ -321,6 +322,7 @@ export default function App() {
       </div>
       </div>
       {showMergeCommitDialog && <MergeCommitDialog />}
+      <AutoStashDialog />
       <ToastContainer />
     </div>
   );

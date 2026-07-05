@@ -46,13 +46,24 @@ fn checkout_local_branch(repo: &Repository, branch_name: &str) -> anyhow::Result
         .context("could not resolve branch to commit")?;
     let head_ref = branch.get().name().unwrap().to_string();
     log::debug!(target: "git", "checkout: target={} head_ref={head_ref}", obj.id());
-    let mut checkout = git2::build::CheckoutBuilder::new();
-    checkout.safe();
-    repo.checkout_tree(&obj, Some(&mut checkout))
-        .context("can't switch — you have uncommitted changes that would be overwritten. Commit or stash them first.")?;
+    crate::working_tree::safe_checkout_tree(repo, &obj)?;
     repo.set_head(&head_ref).context("could not update HEAD")?;
     log_worktree_state(repo, "checkout: post");
     Ok(())
+}
+
+/// Park tracked, uncommitted changes in a stash before a destructive action.
+/// A no-op (returns `false`) when there's nothing stashable. The stash is left
+/// in place — the caller decides whether to reapply it (pull) or leave it for
+/// the user to restore manually (checkout).
+fn stash_working_changes(repo: &mut Repository, label: &str) -> anyhow::Result<bool> {
+    if crate::working_tree::has_stashable_changes(repo)? {
+        crate::stash::stash_save(repo, Some(label))?;
+        log::info!(target: "git", "auto-stash: parked changes ({label})");
+        Ok(true)
+    } else {
+        Ok(false)
+    }
 }
 
 /// A single open repository tab, carrying its own in-progress operation so a
@@ -328,9 +339,20 @@ impl RepoManager {
         })
     }
 
-    pub fn checkout_branch(&self, branch_name: &str) -> anyhow::Result<RepoInfo> {
-        log::info!(target: "git", "checkout: branch={branch_name}");
-        self.with_repo(|repo| checkout_local_branch(repo, branch_name))??;
+    /// Check out a local branch. When `auto_stash` is set, tracked uncommitted
+    /// changes are parked in a stash first (left in place — "park on switch") so
+    /// the checkout can't be blocked by them.
+    pub fn checkout_branch(&self, branch_name: &str, auto_stash: bool) -> anyhow::Result<RepoInfo> {
+        log::info!(target: "git", "checkout: branch={branch_name} auto_stash={auto_stash}");
+        self.with_repo_mut(|repo| -> anyhow::Result<()> {
+            if auto_stash {
+                stash_working_changes(
+                    repo,
+                    &format!("Auto-stash before checkout of {branch_name}"),
+                )?;
+            }
+            checkout_local_branch(repo, branch_name)
+        })??;
         log::info!(target: "git", "checkout: branch={branch_name} ok");
         self.get_current()?
             .ok_or_else(|| anyhow::anyhow!("no repo after checkout"))
@@ -339,9 +361,17 @@ impl RepoManager {
     /// Check out a remote-tracking branch (e.g. `origin/feature`) by creating a
     /// local branch of the same short name that tracks it, then checking that
     /// out. If a matching local branch already exists, just switches to it.
-    pub fn checkout_remote_branch(&self, remote_ref: &str) -> anyhow::Result<RepoInfo> {
-        log::info!(target: "git", "checkout remote: {remote_ref}");
-        self.with_repo(|repo| -> anyhow::Result<()> {
+    /// `auto_stash` parks tracked changes first (left in place), as above.
+    pub fn checkout_remote_branch(
+        &self,
+        remote_ref: &str,
+        auto_stash: bool,
+    ) -> anyhow::Result<RepoInfo> {
+        log::info!(target: "git", "checkout remote: {remote_ref} auto_stash={auto_stash}");
+        self.with_repo_mut(|repo| -> anyhow::Result<()> {
+            if auto_stash {
+                stash_working_changes(repo, &format!("Auto-stash before checkout of {remote_ref}"))?;
+            }
             // Strip the remote name ("origin/feature/x" -> "feature/x").
             let local_name = remote_ref.split_once('/').map(|(_, rest)| rest).unwrap_or(remote_ref);
 
@@ -371,17 +401,19 @@ impl RepoManager {
     /// Check out an arbitrary commit, detaching HEAD. Updates the working tree to
     /// the commit's tree first (baseline = old HEAD, so files are written), then
     /// detaches HEAD — same ordering lesson as the fast-forward fix.
-    pub fn checkout_commit(&self, oid_str: &str) -> anyhow::Result<RepoInfo> {
-        log::info!(target: "git", "checkout commit (detached): {oid_str}");
-        self.with_repo(|repo| -> anyhow::Result<()> {
+    pub fn checkout_commit(&self, oid_str: &str, auto_stash: bool) -> anyhow::Result<RepoInfo> {
+        log::info!(target: "git", "checkout commit (detached): {oid_str} auto_stash={auto_stash}");
+        self.with_repo_mut(|repo| -> anyhow::Result<()> {
             let oid = git2::Oid::from_str(oid_str).context("invalid commit oid")?;
-            let commit = repo.find_commit(oid).context("commit not found")?;
             log_worktree_state(repo, "checkout: pre");
-            let mut checkout = git2::build::CheckoutBuilder::new();
-            checkout.safe();
-            repo.checkout_tree(commit.as_object(), Some(&mut checkout))
-                .context("can't switch — you have uncommitted changes that would be overwritten. Commit or stash them first.")?;
-            repo.set_head_detached(oid).context("could not detach HEAD")?;
+            // Stash before taking the (immutable) commit borrow used for checkout.
+            if auto_stash {
+                stash_working_changes(repo, &format!("Auto-stash before checkout of {oid_str}"))?;
+            }
+            let commit = repo.find_commit(oid).context("commit not found")?;
+            crate::working_tree::safe_checkout_tree(repo, commit.as_object())?;
+            repo.set_head_detached(oid)
+                .context("could not detach HEAD")?;
             log_worktree_state(repo, "checkout: post");
             Ok(())
         })??;
@@ -674,16 +706,20 @@ impl AppState {
         self.manager.refresh_graph_working_tree_status()
     }
 
-    pub fn checkout_branch(&self, branch_name: &str) -> anyhow::Result<RepoInfo> {
-        self.manager.checkout_branch(branch_name)
+    pub fn checkout_branch(&self, branch_name: &str, auto_stash: bool) -> anyhow::Result<RepoInfo> {
+        self.manager.checkout_branch(branch_name, auto_stash)
     }
 
-    pub fn checkout_remote_branch(&self, remote_ref: &str) -> anyhow::Result<RepoInfo> {
-        self.manager.checkout_remote_branch(remote_ref)
+    pub fn checkout_remote_branch(
+        &self,
+        remote_ref: &str,
+        auto_stash: bool,
+    ) -> anyhow::Result<RepoInfo> {
+        self.manager.checkout_remote_branch(remote_ref, auto_stash)
     }
 
-    pub fn checkout_commit(&self, oid: &str) -> anyhow::Result<RepoInfo> {
-        self.manager.checkout_commit(oid)
+    pub fn checkout_commit(&self, oid: &str, auto_stash: bool) -> anyhow::Result<RepoInfo> {
+        self.manager.checkout_commit(oid, auto_stash)
     }
 
     pub fn create_tag(&self, name: &str, oid: &str, message: Option<&str>) -> anyhow::Result<()> {
@@ -1037,7 +1073,9 @@ mod tests {
 
         let manager = RepoManager::new();
         manager.open(dir.path().to_str().unwrap()).unwrap();
-        manager.checkout_remote_branch("origin/feature").unwrap();
+        manager
+            .checkout_remote_branch("origin/feature", false)
+            .unwrap();
 
         manager
             .with_repo(|r| {
@@ -1056,7 +1094,9 @@ mod tests {
         let (dir, _repo) = make_git_repo_with_commit();
         let manager = RepoManager::new();
         manager.open(dir.path().to_str().unwrap()).unwrap();
-        assert!(manager.checkout_remote_branch("origin/nope").is_err());
+        assert!(manager
+            .checkout_remote_branch("origin/nope", false)
+            .is_err());
     }
 
     #[test]
@@ -1075,7 +1115,7 @@ mod tests {
 
         let manager = RepoManager::new();
         manager.open(dir.path().to_str().unwrap()).unwrap();
-        manager.checkout_commit(&first.to_string()).unwrap();
+        manager.checkout_commit(&first.to_string(), false).unwrap();
 
         manager
             .with_repo(|r| {
@@ -1124,7 +1164,7 @@ mod tests {
 
         let manager = RepoManager::new();
         manager.open(dir.path().to_str().unwrap()).unwrap();
-        let result = manager.checkout_commit(&c1.to_string());
+        let result = manager.checkout_commit(&c1.to_string(), false);
 
         assert!(
             result.is_err(),
@@ -1135,6 +1175,96 @@ mod tests {
             "local edit\n",
             "the uncommitted edit must be preserved",
         );
+    }
+
+    #[test]
+    fn blocked_checkout_reports_the_auto_stash_sentinel() {
+        // A checkout refused purely because stashable local changes would be lost
+        // surfaces the sentinel, so the frontend can offer to auto-stash.
+        let (dir, repo) = make_conflicting_branch_repo();
+        drop(repo);
+        let manager = RepoManager::new();
+        manager.open(dir.path().to_str().unwrap()).unwrap();
+
+        let err = match manager.checkout_branch("target", false) {
+            Ok(_) => panic!("checkout should have been refused"),
+            Err(e) => e,
+        };
+        assert_eq!(err.to_string(), crate::working_tree::AUTO_STASH_SENTINEL);
+    }
+
+    #[test]
+    fn auto_stash_checkout_parks_changes_and_switches() {
+        // With auto_stash, the conflicting local edit is stashed (left in the
+        // stash list — "park on switch") and the checkout completes.
+        let (dir, repo) = make_conflicting_branch_repo();
+        let path = dir.path().join("f.txt");
+        drop(repo);
+        let manager = RepoManager::new();
+        manager.open(dir.path().to_str().unwrap()).unwrap();
+
+        manager.checkout_branch("target", true).unwrap();
+
+        // The working tree now holds target's version, not the local edit...
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "a\n");
+        // ...and the edit is preserved in exactly one stash entry.
+        let stashes = manager
+            .with_repo_mut(|repo| crate::stash::stash_list(repo))
+            .unwrap()
+            .unwrap();
+        assert_eq!(stashes.len(), 1);
+        assert!(stashes[0].message.contains("Auto-stash before checkout"));
+    }
+
+    #[test]
+    fn auto_stash_checkout_is_a_no_op_stash_when_tree_is_clean() {
+        // auto_stash set but nothing to stash: switch normally, create no stash.
+        let (dir, repo) = make_conflicting_branch_repo();
+        drop(repo);
+        let manager = RepoManager::new();
+        manager.open(dir.path().to_str().unwrap()).unwrap();
+        // Discard the working-tree edit so the tree is clean before switching.
+        manager
+            .with_repo(crate::working_tree::discard_all)
+            .unwrap()
+            .unwrap();
+
+        manager.checkout_branch("target", true).unwrap();
+
+        let stashes = manager
+            .with_repo_mut(|repo| crate::stash::stash_list(repo))
+            .unwrap()
+            .unwrap();
+        assert!(stashes.is_empty(), "clean tree must not create a stash");
+    }
+
+    /// Repo with `main`/`master` at f.txt="b" (HEAD), a `target` branch at
+    /// f.txt="a", and an uncommitted edit to f.txt that conflicts with `target`
+    /// — so a plain checkout of `target` is refused.
+    fn make_conflicting_branch_repo() -> (TempDir, Repository) {
+        let (dir, repo) = make_git_repo_with_commit();
+        let path = dir.path().join("f.txt");
+        let sig = Signature::now("Test", "test@test.com").unwrap();
+
+        let commit_f = |content: &str, msg: &str| -> git2::Oid {
+            std::fs::write(&path, content).unwrap();
+            let mut idx = repo.index().unwrap();
+            idx.add_path(std::path::Path::new("f.txt")).unwrap();
+            idx.write().unwrap();
+            let tree = repo.find_tree(idx.write_tree().unwrap()).unwrap();
+            let parent = repo.head().unwrap().peel_to_commit().unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &[&parent])
+                .unwrap()
+        };
+
+        let c1 = commit_f("a\n", "c1");
+        commit_f("b\n", "c2");
+        // Branch `target` at c1 (f.txt="a").
+        repo.branch("target", &repo.find_commit(c1).unwrap(), false)
+            .unwrap();
+        // Uncommitted local edit conflicting with target's "a".
+        std::fs::write(&path, "local edit\n").unwrap();
+        (dir, repo)
     }
 
     #[test]

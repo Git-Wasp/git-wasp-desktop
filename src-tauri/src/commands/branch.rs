@@ -26,26 +26,34 @@ pub async fn list_branches(state: State<'_, AppState>) -> Result<Vec<BranchInfo>
 #[tauri::command]
 pub async fn checkout_branch(
     branch_name: String,
+    auto_stash: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<RepoInfo, String> {
     state
-        .checkout_branch(&branch_name)
+        .checkout_branch(&branch_name, auto_stash.unwrap_or(false))
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn checkout_remote_branch(
     remote_ref: String,
+    auto_stash: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<RepoInfo, String> {
     state
-        .checkout_remote_branch(&remote_ref)
+        .checkout_remote_branch(&remote_ref, auto_stash.unwrap_or(false))
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn checkout_commit(oid: String, state: State<'_, AppState>) -> Result<RepoInfo, String> {
-    state.checkout_commit(&oid).map_err(|e| e.to_string())
+pub async fn checkout_commit(
+    oid: String,
+    auto_stash: Option<bool>,
+    state: State<'_, AppState>,
+) -> Result<RepoInfo, String> {
+    state
+        .checkout_commit(&oid, auto_stash.unwrap_or(false))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

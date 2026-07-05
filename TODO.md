@@ -1004,8 +1004,30 @@ between sections, and add new ideas under the right heading. Items marked
       last), `repoStore.removeRecent`, and a Sidebar menu-wiring test. Suites green
       (frontend 525, backend 214). Not extended to the NavBar RepoPicker / WelcomeView
       recent lists (they don't have per-row menus yet) — flag if you want it there too.
-- [ ] When there are uncommitted changes and the user performs an action that would cause those changes to be lost (such as checking out a different branch, pulling the remote again) auto-stash the changes before performing the action.
-- [ ] Add "pin" functionality to sidebar panels that allow "pinning" a branch to the top, pinning a remote branch to the top, or pinning a recent repo to the top. The pinned items should persist between restarts. Pinning should be via a "pin" icon shown on hover - if not already pinned, the icon only shows on hover. If already pinned a solid pin icon is shown when not hovering, and changes to an "unfilled" pin icon on hover. A pinned item can be unpinned by clicking the pin icon again. Pinned items appear at the top.
+- [x] When there are uncommitted changes and the user performs an action that would cause those changes to be lost (such as checking out a different branch, pulling the remote again) auto-stash the changes before performing the action.
+      — UX decisions: **confirm first** (only prompt when the action would
+      actually lose changes) and **reapply on pull, park on switch**. Backend:
+      `working_tree::safe_checkout_tree` performs the safe checkout and, when it's
+      refused *only* because stashable tracked changes would be lost, returns the
+      `AUTO_STASH_SENTINEL` error (gated on `has_stashable_changes`, so untracked-
+      only conflicts keep their real message). Shared by `checkout_local_branch`,
+      `checkout_commit`, and `pull_ff`. The checkout commands + `pull_branch` gained
+      an `auto_stash` flag: checkout stashes and leaves it in the panel; pull
+      stashes → pulls → pops (reapply), and on a pop conflict keeps the stash and
+      returns the new `PullResult::StashReapplyConflict`. Frontend: `lib/autoStash.ts`
+      (`withAutoStash` runs op → on sentinel prompts via `autoStashStore` → retries
+      with `autoStash: true`; `undefined` = user cancelled), a single app-level
+      `AutoStashDialog`, wired through `repoStore` checkout methods and
+      `remoteStore.pull`. Tests: backend (sentinel on blocked checkout, park-on-
+      switch stash, clean-tree no-op, `has_stashable_changes` staged/unstaged/
+      untracked) and frontend (`withAutoStash` confirm/cancel/rethrow, store
+      replace-pending, repoStore retry/cancel). Suites green (frontend 584,
+      backend 224). Not covered: interactive-rebase/merge-with-dirty-tree paths
+      (out of scope); pull auto-stash command orchestration is exercised via its
+      unit-tested pieces rather than a full remote harness.
+- [ ] Add subtle top/bottom (non-overlapping) borders to "rows" in the graph view for better visibility of individual commits
+- [ ] Add "pin" functionality to sidebar panels that allow "pinning" a branch to the top, pinning a remote branch to the top, or pinning a recent repo to the top. The pinned items should persist between restarts. Pinning should be via a "pin" icon shown on hover - if not already pinned, the icon only shows on hover. If already pinned a solid pin icon is shown when not hovering, and changes to an "unfilled" pin icon on hover. A pinned item can be unpinned by clicking the pin icon again. Pinned items appear at the top. Give more spacing around the existing buttons at the top of this panel too (prune / new branch)
+- [ ] Widen scroll gutter in diff view - it's too narrow and should be wider. It should have 2 "lanes" when in side-by-side view - left shows changes from the left panel (red/green/amber) and right shows changes from the right panel (red/green/amber)
 - [x] Add a graph view option to "focus" on the current branch. This should be turned on by default and the state of the option persisted between app reloads. When enabled, the colours in the graph should remain for the current checked out branch and all of its ancestors, but other branches (including those ahead of the HEAD) should be muted / greyed out - but still visible and can still be interacted with.
       — the Rust layout now flags each node/edge with `on_head_line` (HEAD + its
       ancestors, computed once via a forward pass over the topo-sorted walk in
@@ -1021,6 +1043,10 @@ between sections, and add new ideas under the right heading. Items marked
       (store toggle persists, toolbar flips state, rows mute/unmute with the
       flag). Suites green (frontend 539, backend 218).
 - [ ] Add an integrated terminal that can be shown by clicking a button above the graph view. Should open automatically in the directory that contains the currently opened git repo.
+- [ ] In diff viewer clicking the + or - to add or remove a line should stage _the selected line(s)_ so the file becomes visible in the "staged" area and clicking on the file from the staged area shows the diff between what's staged and what's in the current commit before this commit lands. Unticking a line from this staged file does the opposite - unstages that line. The changes staged vs unstaged should be tracked so that reselecting an affected file from the unstaged panel (if there are more changes) already shows which lines have been staged and allows them to be unstaged from here too.
+- [ ] When viewing uncommitted changes, files in the top panel have a right-click menu including "discard", "stage", and "delete file". Delete should require a confirmation via modal. The "staged panel" files should also have a right-click menu with options including "unstage" and "delete" with the same caveats.
+- [ ] Diff view horizontal scroll doesn't work when line wrapping is disabled. Can't scroll horizontally to see full line. May only affected when not full screen - reproducible when app takes up half the horizontal screen
+- [ ] Improve toast design. Add icons (e.g. info, warning, error) in the right colour, add a "title" as well as the text
 
 ## Other issues
 
@@ -1075,6 +1101,7 @@ between sections, and add new ideas under the right heading. Items marked
 
 ## Pre-release
 
+- [ ] Fix all rust formatting/clippy
 - [ ] Architectural review of entire backend
 - [ ] Architectural review of entire frontend
 - [ ] Removal of unnecessary implementation detail tests (did we take TDD too far?)

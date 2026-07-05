@@ -103,11 +103,20 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
     setPullMenu(null);
     try {
       const result = await pull(mode);
+      // `undefined` means the pull was blocked by uncommitted changes and the
+      // user cancelled the auto-stash prompt — nothing happened, stay quiet.
+      if (!result) return;
       // A conflicting merge leaves an in-progress operation; load it so the
       // app swaps in the merge editor.
       if (result.status === "conflicts") {
         await loadMergeStatus();
         toastWarning("Pull stopped on conflicts — resolve them to continue");
+      } else if (result.status === "stashReapplyConflict") {
+        // Pull succeeded, but reapplying the auto-stashed changes conflicted;
+        // the stash is kept for the user to resolve manually.
+        toastWarning(
+          "Pulled, but your stashed changes conflict with the update — reapply them from the stash panel.",
+        );
       } else {
         toastSuccess(PULL_MESSAGE[result.status] ?? "Pulled changes");
       }

@@ -60,6 +60,7 @@ describe("remoteStore", () => {
       remoteName: "origin",
       branch: "main",
       mode: "ffOrMerge",
+      autoStash: false,
     });
     expect(result).toEqual({ status: "fastForwarded" });
     expect(useRemoteStore.getState().isPulling).toBe(false);

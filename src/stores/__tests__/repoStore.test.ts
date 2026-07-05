@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useRepoStore } from "../repoStore";
 import { useGraphStore } from "../graphStore";
+import { useAutoStashStore } from "../autoStashStore";
+import { AUTO_STASH_SENTINEL } from "../../lib/autoStash";
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -13,6 +15,7 @@ beforeEach(() => {
   // so one test's cached (possibly empty) viewport can't mask another's
   // get_graph_viewport call.
   useGraphStore.setState({ viewport: null, lastOffset: null, lastLimit: null, nodesByRow: new Map() });
+  useAutoStashStore.setState({ pending: null });
 });
 
 const emptyGraphViewport = { nodes: [], totalCount: 0, offset: 0 };
@@ -69,7 +72,10 @@ describe("repoStore", () => {
 
     await useRepoStore.getState().checkoutBranch("feature");
 
-    expect(mockInvoke).toHaveBeenCalledWith("checkout_branch", { branchName: "feature" });
+    expect(mockInvoke).toHaveBeenCalledWith("checkout_branch", {
+      branchName: "feature",
+      autoStash: false,
+    });
     expect(useRepoStore.getState().currentRepo).toEqual(updatedRepo);
   });
 
@@ -82,8 +88,53 @@ describe("repoStore", () => {
 
     expect(mockInvoke).toHaveBeenCalledWith("checkout_remote_branch", {
       remoteRef: "origin/release",
+      autoStash: false,
     });
     expect(useRepoStore.getState().currentRepo).toEqual(updatedRepo);
+  });
+
+  it("checkoutBranch offers auto-stash on the sentinel and retries with autoStash on confirm", async () => {
+    const updatedRepo = { name: "r", path: "/p", headBranch: "feature" };
+    mockInvoke.mockRejectedValueOnce(AUTO_STASH_SENTINEL); // first attempt blocked
+    mockInvoke.mockResolvedValueOnce(updatedRepo); // retry with autoStash
+    mockInvoke.mockResolvedValueOnce([]); // list_branches (loadBranches)
+
+    const promise = useRepoStore.getState().checkoutBranch("feature");
+    // The prompt opens; approve it.
+    await vi.waitFor(() => expect(useAutoStashStore.getState().pending).not.toBeNull());
+    useAutoStashStore.getState().respond(true);
+    await promise;
+
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, "checkout_branch", {
+      branchName: "feature",
+      autoStash: false,
+    });
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "checkout_branch", {
+      branchName: "feature",
+      autoStash: true,
+    });
+    expect(useRepoStore.getState().currentRepo).toEqual(updatedRepo);
+  });
+
+  it("checkoutBranch aborts quietly (no retry, no error) when the prompt is cancelled", async () => {
+    mockInvoke.mockRejectedValueOnce(AUTO_STASH_SENTINEL);
+
+    const promise = useRepoStore.getState().checkoutBranch("feature");
+    await vi.waitFor(() => expect(useAutoStashStore.getState().pending).not.toBeNull());
+    useAutoStashStore.getState().respond(false);
+    await expect(promise).resolves.toBeUndefined();
+
+    expect(mockInvoke).toHaveBeenCalledTimes(1); // no retry
+    expect(useRepoStore.getState().currentRepo).toBeNull();
+  });
+
+  it("checkoutBranch rethrows a non-sentinel error without prompting", async () => {
+    mockInvoke.mockRejectedValueOnce("some other git failure");
+
+    await expect(useRepoStore.getState().checkoutBranch("feature")).rejects.toBe(
+      "some other git failure",
+    );
+    expect(useAutoStashStore.getState().pending).toBeNull();
   });
 
   it("openRepo records the tab list and active path", async () => {

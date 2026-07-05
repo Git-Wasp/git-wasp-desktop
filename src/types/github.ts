@@ -45,7 +45,8 @@ export type PullResult =
   | { status: "fastForwarded" }
   | { status: "alreadyUpToDate" }
   | { status: "merged" }
-  | { status: "conflicts" };
+  | { status: "conflicts" }
+  | { status: "stashReapplyConflict" };
 
 export interface AheadBehind {
   branch: string;

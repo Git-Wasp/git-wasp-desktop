@@ -114,9 +114,11 @@ pub async fn pull_branch(
     remote_name: Option<String>,
     branch: Option<String>,
     mode: Option<String>,
+    auto_stash: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<PullResult, String> {
     let remote = remote_name.as_deref().unwrap_or("origin");
+    let auto_stash = auto_stash.unwrap_or(false);
 
     let (host, head_branch) = state
         .with_repo(|repo| {
@@ -139,19 +141,43 @@ pub async fn pull_branch(
         .as_deref()
         .and_then(|h| state.credentials.load(h).ok().flatten());
 
+    // Auto-stash: park tracked local changes before the pull so a dirty tree
+    // can't block the fast-forward, then reapply them afterwards ("reapply on
+    // pull"). No-op when there's nothing stashable.
+    let stashed = if auto_stash {
+        state
+            .with_repo_mut(|repo| -> anyhow::Result<bool> {
+                if crate::working_tree::has_stashable_changes(repo)? {
+                    crate::stash::stash_save(repo, Some("Auto-stash before pull"))?;
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            })
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?
+    } else {
+        false
+    };
+
     let outcome = state
         .with_repo(|repo| remote_ops::pull_ff(repo, remote, &branch_name, token.as_deref()))
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
 
-    match outcome {
-        PullFfOutcome::AlreadyUpToDate => Ok(PullResult::AlreadyUpToDate),
-        PullFfOutcome::FastForwarded => Ok(PullResult::FastForwarded),
+    let result = match outcome {
+        PullFfOutcome::AlreadyUpToDate => PullResult::AlreadyUpToDate,
+        PullFfOutcome::FastForwarded => PullResult::FastForwarded,
         PullFfOutcome::Diverged { remote_branch } => {
             // ffOnly (default) refuses a divergent pull; ffOrMerge reconciles by
             // merging the upstream through the OperationRunner, so any conflicts
             // surface in the existing merge editor.
             if mode.as_deref().unwrap_or("ffOnly") != "ffOrMerge" {
+                // Nothing was pulled — undo the auto-stash so the working tree is
+                // exactly as the user left it before returning the refusal.
+                if stashed {
+                    let _ = state.with_repo_mut(|repo| crate::stash::stash_pop(repo, 0));
+                }
                 return Err(
                     "cannot fast-forward: local branch has diverged from upstream".to_string(),
                 );
@@ -164,12 +190,28 @@ pub async fn pull_branch(
                     state
                         .merge_complete(&format!("Merge remote-tracking branch '{remote_branch}'"))
                         .map_err(|e| e.to_string())?;
-                    Ok(PullResult::Merged)
+                    PullResult::Merged
                 }
-                MergeOutcome::Conflicts { .. } => Ok(PullResult::Conflicts),
+                // The merge editor now owns the working tree; leave the stash in
+                // the panel for the user to apply once the merge is resolved.
+                MergeOutcome::Conflicts { .. } => return Ok(PullResult::Conflicts),
             }
         }
+    };
+
+    // Reapply the auto-stash onto the freshly-pulled tree. A pop conflict keeps
+    // the stash (libgit2 only drops it on a clean apply) and is reported so the
+    // user can resolve it — the pull itself still succeeded.
+    if stashed {
+        let popped = state
+            .with_repo_mut(|repo| crate::stash::stash_pop(repo, 0))
+            .map_err(|e| e.to_string())?;
+        if popped.is_err() {
+            return Ok(PullResult::StashReapplyConflict);
+        }
     }
+
+    Ok(result)
 }
 
 #[tauri::command]

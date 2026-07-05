@@ -1,7 +1,60 @@
 use anyhow::Context;
-use git2::{Repository, StatusOptions};
+use git2::{Object, Repository, Status, StatusOptions};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+
+/// Sentinel error message returned when a checkout (or fast-forward) is refused
+/// purely because tracked, uncommitted changes would be lost — and those changes
+/// are stashable. The command layer surfaces it verbatim so the frontend can
+/// recognise it (see `AUTO_STASH_SENTINEL` in `src/lib/autoStash.ts`) and offer
+/// to stash-and-retry rather than showing a raw error. Only produced when the
+/// working tree actually has something to stash, so the retry can succeed.
+pub const AUTO_STASH_SENTINEL: &str = "AUTO_STASH_REQUIRED";
+
+/// Whether the working tree has tracked changes that `git stash` would capture —
+/// staged or unstaged modifications, deletions, renames, or type changes.
+/// Untracked and ignored files are excluded (a plain stash leaves them, and
+/// checkout doesn't clobber untracked files), so this answers "is there work an
+/// auto-stash could park?".
+pub fn has_stashable_changes(repo: &Repository) -> anyhow::Result<bool> {
+    let mut opts = StatusOptions::new();
+    opts.include_untracked(false).include_ignored(false);
+    let statuses = repo
+        .statuses(Some(&mut opts))
+        .context("failed to get repository status")?;
+    let tracked = Status::INDEX_NEW
+        | Status::INDEX_MODIFIED
+        | Status::INDEX_DELETED
+        | Status::INDEX_RENAMED
+        | Status::INDEX_TYPECHANGE
+        | Status::WT_MODIFIED
+        | Status::WT_DELETED
+        | Status::WT_RENAMED
+        | Status::WT_TYPECHANGE;
+    Ok(statuses.iter().any(|e| e.status().intersects(tracked)))
+}
+
+/// A "safe" checkout of `target`'s tree (libgit2 refuses to overwrite local
+/// changes). When it's refused *because* tracked changes would be lost, and
+/// those changes are stashable, this returns the `AUTO_STASH_SENTINEL` error so
+/// the caller/frontend can offer an auto-stash. Every other failure — including
+/// a conflict with only untracked files, which a stash wouldn't resolve — keeps
+/// the original, actionable message.
+pub fn safe_checkout_tree(repo: &Repository, target: &Object) -> anyhow::Result<()> {
+    let mut checkout = git2::build::CheckoutBuilder::new();
+    checkout.safe();
+    repo.checkout_tree(target, Some(&mut checkout)).map_err(|e| {
+        let would_overwrite =
+            e.code() == git2::ErrorCode::Conflict || e.class() == git2::ErrorClass::Checkout;
+        if would_overwrite && has_stashable_changes(repo).unwrap_or(false) {
+            anyhow::anyhow!(AUTO_STASH_SENTINEL)
+        } else {
+            anyhow::Error::new(e).context(
+                "can't switch — you have uncommitted changes that would be overwritten. Commit or stash them first.",
+            )
+        }
+    })
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -838,6 +891,36 @@ mod tests {
         assert!(status.staged.is_empty());
         assert!(status.unstaged.is_empty());
         assert!(status.untracked.is_empty());
+    }
+
+    #[test]
+    fn has_stashable_changes_false_on_clean_tree() {
+        let (_dir, repo) = init_repo();
+        make_initial_commit(&repo);
+        assert!(!has_stashable_changes(&repo).unwrap());
+    }
+
+    #[test]
+    fn has_stashable_changes_false_for_untracked_only() {
+        // An untracked file is not something a plain stash captures (and checkout
+        // won't clobber it), so it must not trigger an auto-stash.
+        let (dir, repo) = init_repo();
+        make_initial_commit(&repo);
+        fs::write(dir.path().join("new.txt"), "hi\n").unwrap();
+        assert!(!has_stashable_changes(&repo).unwrap());
+    }
+
+    #[test]
+    fn has_stashable_changes_true_for_staged_and_unstaged() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "f.txt", "a\n");
+        make_initial_commit(&repo);
+        // Unstaged modification.
+        fs::write(dir.path().join("f.txt"), "b\n").unwrap();
+        assert!(has_stashable_changes(&repo).unwrap());
+        // Staged modification.
+        write_and_stage(&repo, &dir, "f.txt", "c\n");
+        assert!(has_stashable_changes(&repo).unwrap());
     }
 
     #[test]
