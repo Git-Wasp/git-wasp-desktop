@@ -253,7 +253,6 @@ export function CommitGraph({
 
   const visibleColumns = useGraphStore((s) => s.visibleColumns);
   const columnOrder = useGraphStore((s) => s.columnOrder);
-  const setColumnOrder = useGraphStore((s) => s.setColumnOrder);
   // The ordered, visible columns for the active layout variant (Ledger Grid vs
   // Split Rail). Stable per input so memoized rows don't churn on every render.
   const columns = useMemo(
@@ -667,22 +666,73 @@ export function CommitGraph({
 
   const dataColumns = columns.filter((c) => c.kind !== "graph");
 
-  // Drag-to-reorder the data columns from their headers. `dragCol` is the column
-  // being dragged; `dropCol` is the header it's hovering (a "drop before" target).
+  // Drag-to-reorder the data columns from their headers. Pointer-based (like the
+  // branch-pill drag) rather than the HTML5 drag API, which Tauri's webview
+  // intercepts for OS file drops. `dragCol` is the column being dragged;
+  // `dropCol` is the header it's hovering (a "drop before" target).
   const [dragCol, setDragCol] = useState<ColumnKind | null>(null);
   const [dropCol, setDropCol] = useState<ColumnKind | null>(null);
+  const dragCandidate = useRef<{ kind: ColumnKind; startX: number; startY: number } | null>(null);
+  const draggingRef = useRef(false);
+  const dropRef = useRef<ColumnKind | null>(null);
 
-  const reorderColumns = (from: ColumnKind, to: ColumnKind) => {
-    if (from === to) return;
-    const arr = [...columnOrder[graphVariant]];
-    const fromIdx = arr.indexOf(from as DataColumn);
-    if (fromIdx < 0) return;
-    arr.splice(fromIdx, 1);
-    const toIdx = arr.indexOf(to as DataColumn);
-    if (toIdx < 0) return;
-    arr.splice(toIdx, 0, from as DataColumn); // drop before the target
-    setColumnOrder(graphVariant, arr);
+  const onHeaderPointerDown = (e: React.PointerEvent, kind: ColumnKind) => {
+    dragCandidate.current = { kind, startX: e.clientX, startY: e.clientY };
   };
+  const onHeaderPointerEnter = (kind: ColumnKind) => {
+    if (!draggingRef.current || dragCandidate.current?.kind === kind) return;
+    dropRef.current = kind;
+    setDropCol(kind);
+  };
+  const onHeaderPointerLeave = (kind: ColumnKind) => {
+    if (draggingRef.current && dropRef.current === kind) {
+      dropRef.current = null;
+      setDropCol(null);
+    }
+  };
+
+  // Window-level pointer move/up drive the drag once the press passes a small
+  // threshold. Stable listeners (empty deps) reading refs + the store, so an
+  // in-flight drag survives re-renders (mirrors useGraphDragDrop).
+  useEffect(() => {
+    const move = (e: PointerEvent) => {
+      const c = dragCandidate.current;
+      if (!c || draggingRef.current) return;
+      if (Math.hypot(e.clientX - c.startX, e.clientY - c.startY) <= 4) return;
+      draggingRef.current = true;
+      setDragCol(c.kind);
+      document.body.classList.add("dragging-column");
+      window.getSelection?.()?.removeAllRanges();
+    };
+    const up = () => {
+      const c = dragCandidate.current;
+      if (c && draggingRef.current && dropRef.current && dropRef.current !== c.kind) {
+        const st = useGraphStore.getState();
+        const variant = st.graphVariant;
+        const arr = [...st.columnOrder[variant]];
+        const fromIdx = arr.indexOf(c.kind as DataColumn);
+        const toIdx = arr.indexOf(dropRef.current as DataColumn);
+        if (fromIdx >= 0 && toIdx >= 0) {
+          arr.splice(fromIdx, 1);
+          arr.splice(arr.indexOf(dropRef.current as DataColumn), 0, c.kind as DataColumn);
+          st.setColumnOrder(variant, arr);
+        }
+      }
+      dragCandidate.current = null;
+      draggingRef.current = false;
+      dropRef.current = null;
+      document.body.classList.remove("dragging-column");
+      setDragCol(null);
+      setDropCol(null);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.classList.remove("dragging-column");
+    };
+  }, []);
 
   // A frozen graph-column header cell (empty label) carrying the graph resize
   // grip on its inner edge (right in Ledger Grid, left in Split Rail).
@@ -720,19 +770,8 @@ export function CommitGraph({
                 <div
                   key={col.id}
                   data-header={col.kind}
-                  onDragOver={(e) => {
-                    if (!dragCol) return;
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = "move";
-                    if (dropCol !== col.kind) setDropCol(col.kind);
-                  }}
-                  onDragLeave={() => setDropCol((d) => (d === col.kind ? null : d))}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    if (dragCol) reorderColumns(dragCol, col.kind);
-                    setDragCol(null);
-                    setDropCol(null);
-                  }}
+                  onPointerEnter={() => onHeaderPointerEnter(col.kind)}
+                  onPointerLeave={() => onHeaderPointerLeave(col.kind)}
                   style={{
                     ...cellFlex(col, widths),
                     position: "relative",
@@ -747,16 +786,7 @@ export function CommitGraph({
                   {/* Only the label is the drag handle, so dragging the right-edge
                       grip resizes instead of starting a reorder. */}
                   <span
-                    draggable
-                    onDragStart={(e) => {
-                      setDragCol(col.kind);
-                      e.dataTransfer.effectAllowed = "move";
-                      e.dataTransfer.setData("text/plain", col.kind);
-                    }}
-                    onDragEnd={() => {
-                      setDragCol(null);
-                      setDropCol(null);
-                    }}
+                    onPointerDown={(e) => onHeaderPointerDown(e, col.kind)}
                     style={{ ...headerCellStyle, cursor: "grab" }}
                   >
                     {col.header}

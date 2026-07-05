@@ -1024,6 +1024,7 @@ between sections, and add new ideas under the right heading. Items marked
 
 ## Other issues
 
+- [ ] "Split rail" view keeps the graph pinned to the left instead of "repinning" it to the right
 - [x] When reopening app and "state" is restoring (e.g. when a large repo was previously opened and is now being re-opened) then:
   - [x] app remains in the default theme until loading has completed, then switches to previously-selected preferred theme
         main app window is "blank" and appears to have stalled

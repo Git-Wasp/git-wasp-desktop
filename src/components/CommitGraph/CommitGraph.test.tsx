@@ -169,6 +169,30 @@ describe("CommitGraph columns", () => {
     );
     expect(dataCells()).toEqual(["date", "commit", "author", "branch", "hash"]);
   });
+
+  it("reorders columns by dragging a header label (pointer drag)", () => {
+    const { container } = render(<CommitGraph />);
+    // Window pointer events carry coordinates via MouseEvent (jsdom drops them
+    // from PointerEvent) — matches the branch-pill drag tests.
+    const fireWindow = (type: string, clientX: number, clientY: number) =>
+      act(() => {
+        window.dispatchEvent(new MouseEvent(type, { clientX, clientY, bubbles: true }));
+      });
+
+    // Drag the Date header label onto the Commit header → Date moves before Commit.
+    act(() => fireEvent.pointerDown(screen.getByText("Date"), { clientX: 400, clientY: 10 }));
+    fireWindow("pointermove", 440, 10); // past the drag threshold
+    act(() => fireEvent.pointerEnter(container.querySelector('[data-header="commit"]')!));
+    fireWindow("pointerup", 440, 10);
+
+    expect(useGraphStore.getState().columnOrder.ledger).toEqual([
+      "date",
+      "commit",
+      "author",
+      "branch",
+      "hash",
+    ]);
+  });
 });
 
 describe("CommitGraph loading skeleton", () => {

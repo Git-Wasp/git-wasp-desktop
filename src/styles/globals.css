@@ -285,9 +285,11 @@ body,
   color: var(--color-accent-primary);
 }
 
-/* While dragging a branch pill in the graph, suppress text selection so the
-   pointer move doesn't highlight commit messages and other text under the drag. */
-body.dragging-branch-pill {
+/* While dragging a branch pill or reordering a column header in the graph,
+   suppress text selection so the pointer move doesn't highlight commit messages
+   and other text under the drag. */
+body.dragging-branch-pill,
+body.dragging-column {
   user-select: none;
   -webkit-user-select: none;
   cursor: grabbing;
