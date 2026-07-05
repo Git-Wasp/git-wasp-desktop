@@ -383,10 +383,13 @@ function ReadOnlyStagePane({
   return (
     <div
       data-testid={testId}
-      style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}
+      // `minWidth: 0` lets this pane shrink below its content width inside the
+      // split grid / row flex, so CodeMirror's `.cm-scroller` scrolls long lines
+      // horizontally instead of the pane overflowing (only visible with wrap off).
+      style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, minWidth: 0 }}
     >
       {label !== undefined && <div style={paneLabelStyle}>{label}</div>}
-      <div ref={containerRef} style={{ flex: 1, minHeight: 0, overflow: "hidden" }} />
+      <div ref={containerRef} style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: "hidden" }} />
     </div>
   );
 }
@@ -886,6 +889,9 @@ export function StageFileEditor({
                 gridTemplateColumns: "1fr 1fr",
                 flex: 1,
                 minHeight: 0,
+                // Allow the grid to shrink below its content width (long, unwrapped
+                // lines) within the row flex so the panes scroll rather than overflow.
+                minWidth: 0,
                 gap: "1px",
                 background: "var(--color-border-subtle)",
               }}
@@ -923,7 +929,7 @@ export function StageFileEditor({
             </div>
           ) : viewMode === "inline" ? (
             /* Unified inline diff: one editor with old/new number columns */
-            <div style={{ flex: 1, minHeight: 0 }}>
+            <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
               <ReadOnlyStagePane
                 testId="inline-pane"
                 content={inlineText}
@@ -941,7 +947,7 @@ export function StageFileEditor({
             </div>
           ) : (
             /* Hunk diff: changed regions only, each under an `@@ … @@` header */
-            <div style={{ flex: 1, minHeight: 0 }}>
+            <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
               <ReadOnlyStagePane
                 testId="hunk-pane"
                 content={hunkTextValue}

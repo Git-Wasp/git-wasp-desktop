@@ -1059,7 +1059,16 @@ between sections, and add new ideas under the right heading. Items marked
 - [ ] Add an integrated terminal that can be shown by clicking a button above the graph view. Should open automatically in the directory that contains the currently opened git repo.
 - [ ] In diff viewer clicking the + or - to add or remove a line should stage _the selected line(s)_ so the file becomes visible in the "staged" area and clicking on the file from the staged area shows the diff between what's staged and what's in the current commit before this commit lands. Unticking a line from this staged file does the opposite - unstages that line. The changes staged vs unstaged should be tracked so that reselecting an affected file from the unstaged panel (if there are more changes) already shows which lines have been staged and allows them to be unstaged from here too.
 - [ ] When viewing uncommitted changes, files in the top panel have a right-click menu including "discard", "stage", and "delete file". Delete should require a confirmation via modal. The "staged panel" files should also have a right-click menu with options including "unstage" and "delete" with the same caveats.
-- [ ] Diff view horizontal scroll doesn't work when line wrapping is disabled. Can't scroll horizontally to see full line. May only affected when not full screen - reproducible when app takes up half the horizontal screen
+- [x] Diff view horizontal scroll doesn't work when line wrapping is disabled. Can't scroll horizontally to see full line. May only affected when not full screen - reproducible when app takes up half the horizontal screen
+      — the classic `min-width: auto` flex/grid trap: the diff panes had no
+      `minWidth: 0`, so wide unwrapped content forced the pane larger than its
+      track instead of letting CodeMirror's `.cm-scroller` (overflow:auto) scroll
+      — only visible once the window was narrow enough that the track had to
+      shrink below content width (hence "half screen"). Added `minWidth: 0` down
+      the chain in `StageFileEditor`: the split grid, the inline/hunk wrappers,
+      each `ReadOnlyStagePane` container, and its CodeMirror host. Regression test
+      asserts the panes carry `minWidth: 0`. (The App main-panel container above
+      already had `minWidth: 0` + `overflow: hidden`, so the width was bounded.)
 - [ ] Improve toast design. Add icons (e.g. info, warning, error) in the right colour, add a "title" as well as the text
 
 ## Other issues

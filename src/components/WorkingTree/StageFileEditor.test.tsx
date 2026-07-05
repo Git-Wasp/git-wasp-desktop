@@ -48,6 +48,18 @@ describe("StageFileEditor", () => {
     expect(pane(container, "worktree-pane")).toBeInTheDocument();
   });
 
+  it("gives the panes minWidth:0 so long unwrapped lines scroll instead of overflowing", () => {
+    // Regression guard: without minWidth:0 a split/grid pane won't shrink below
+    // its content, so CodeMirror's scroller can't scroll horizontally (the pane
+    // overflows the panel instead). See TODO "Diff view horizontal scroll".
+    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+    const head = pane(container, "head-pane");
+    expect(head.style.minWidth).toBe("0");
+    // The CodeMirror host (the pane's last child) must also be able to shrink.
+    const cmHost = head.lastElementChild as HTMLElement;
+    expect(cmHost.style.minWidth).toBe("0");
+  });
+
   it("no longer renders the bottom staged-result pane", () => {
     const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
 
