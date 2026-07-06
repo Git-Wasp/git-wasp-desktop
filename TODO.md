@@ -1094,6 +1094,7 @@ between sections, and add new ideas under the right heading. Items marked
       already had `minWidth: 0` + `overflow: hidden`, so the width was bounded.)
 - [ ] Improve toast design. Add icons (e.g. info, warning, error) in the right colour, add a "title" as well as the text
 - [ ] Consider a "conventional commits" config option. If enabled, this provides a dropdown for suitable conventional commit prefixes for commit messages (e.g. fix:, ux:, chore:, etc.). Discuss and plan value and implementation before we change any code.
+- [ ] Git graph branch ordering - when there are many branches, the current checked out branch should appear first (left-most) so it is clearly visible. We also have some colored lines still appearing when in "focus" mode, even though the lines are for branches or commits that are not ancestors of the current checked out HEAD.
 
 ## Other issues
 
@@ -1114,15 +1115,20 @@ between sections, and add new ideas under the right heading. Items marked
         a full-height spacer drives the scrollbar). Backend layout is cached and
         only re-walks the full history when refs/HEAD actually move — scrolling
         just slices cached nodes. So the graph isn't the main cost.
-      • **Sidebar Local/Remote branch lists are NOT virtualised** — every ref is
-        a DOM row inside a fixed-max-height scroll area (`CollapsibleSection`). A
-        monorepo with thousands of refs materialises thousands of rows though
-        ~10–15 are visible. **Top candidate for windowing.**
+      • [x] **Sidebar Local/Remote branch lists now virtualised.** Pulled in
+        `react-window` v2 (React 19-compatible) behind a small `VirtualList`
+        wrapper (so the lib stays swappable). `CollapsibleSection` now accepts a
+        render-function child that receives its resizable height cap; the branch
+        lists render a `react-window` `List` sized to `min(count × 32px, cap)` —
+        short lists stay compact, long ones cap and window (only the visible slice
+        + overscan mount). Row height fixed at 32px (fits the 24px ⋮ menu button).
+        Tests: `VirtualList` (compact vs capped height; renders a slice not all
+        1000 rows); existing Sidebar tests still green.
       • Working-tree `status` is scanned twice per refresh
         (`get_working_tree_status` + `changed_file_count`), on every 8s poll +
         focus + watcher event; on a big working tree `git status` dominates.
         Candidates: de-dupe to one scan, and/or lean more on the watcher so the
-        poll can skip the scan when nothing changed.
+        poll can skip the scan when nothing changed. **(still open)**
 - [x] Branch-selector dropdown appears *behind* the graph — z-index/stacking bug.
       The NavBar carries `.elevation-below` (`position: relative; z-index: 2`),
       which creates a stacking context; the dropdown panel's `z-index: 200` was

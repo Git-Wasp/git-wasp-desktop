@@ -16,12 +16,19 @@ import { RemoteActions } from "./RemoteActions";
 import { CloneDialog } from "../GitHub/CloneDialog";
 import { PruneBranchesDialog } from "./PruneBranchesDialog";
 import { PromptDialog } from "../common/PromptDialog";
+import { VirtualList } from "../ui/VirtualList";
+
+// Fixed row height for the virtualised branch lists — sized to fit the ⋮ menu
+// button (24px, `control-height-sm`) plus the row's vertical padding (2×4px).
+const BRANCH_ROW_HEIGHT = 32;
 
 const branchRowStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
   padding: "var(--space-1) var(--space-3)",
   gap: "var(--space-1)",
+  height: "100%",
+  boxSizing: "border-box",
 };
 
 const branchIconStyle: CSSProperties = {
@@ -120,6 +127,95 @@ export function Sidebar({ width = 220 }: { width?: number }) {
   // rest in their existing order.
   const localBranches = [...locals.filter((b) => b.isHead), ...locals.filter((b) => !b.isHead)];
   const remoteBranches = branches.filter((b) => b.isRemote);
+
+  // Row renderers for the virtualised branch lists (see VirtualList). One row per
+  // branch; the list only mounts the visible slice, so this is called for those.
+  const renderLocalBranch = (b: (typeof localBranches)[number]) => {
+    const ab = aheadBehind.find((x) => x.branch === b.name);
+    const showAheadBehind = ab && (ab.ahead > 0 || ab.behind > 0);
+    return (
+      <div className="sidebar-row" style={branchRowStyle}>
+        <span style={branchIconStyle} title="Local branch">
+          <LaptopIcon />
+        </span>
+        <div
+          onClick={() => revealCommit(b.oid)}
+          title={`Show ${b.name} in the commit graph`}
+          style={{
+            flex: 1,
+            fontSize: "var(--font-size-sm)",
+            fontFamily: "var(--font-family-mono)",
+            color: b.isHead ? "var(--color-accent-primary)" : "var(--color-text-secondary)",
+            cursor: "pointer",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            background: b.isHead ? "var(--color-bg-elevated)" : "transparent",
+            borderRadius: "var(--radius-sm)",
+            padding: "1px var(--space-2)",
+          }}
+        >
+          {b.isHead ? "▸ " : ""}
+          {b.name}
+        </div>
+        {showAheadBehind && (
+          <span
+            style={{
+              fontSize: "var(--font-size-xs)",
+              color: "var(--color-text-muted)",
+              fontFamily: "var(--font-family-mono)",
+              flexShrink: 0,
+            }}
+          >
+            {ab.ahead > 0 && `↑${ab.ahead}`}
+            {ab.ahead > 0 && ab.behind > 0 && " "}
+            {ab.behind > 0 && `↓${ab.behind}`}
+          </span>
+        )}
+        <RowMenu
+          label={`${b.name} actions`}
+          items={[
+            ...(b.isHead
+              ? []
+              : [{ label: "Checkout branch", onSelect: () => handleCheckoutBranch(b.name) }]),
+            { label: "Push branch", onSelect: () => handlePushBranch(b.name) },
+            { label: "Create tag…", onSelect: () => setTagBranch({ name: b.name, oid: b.oid }) },
+            ...(b.isHead || operationStatus.kind === "merge"
+              ? []
+              : [{ label: "Merge into current branch", onSelect: () => handleMergeBranch(b.name) }]),
+            ...(b.isHead
+              ? []
+              : [{ label: "Delete branch", destructive: true, onSelect: () => handleDeleteBranch(b.name) }]),
+          ]}
+        />
+      </div>
+    );
+  };
+
+  const renderRemoteBranch = (b: (typeof remoteBranches)[number]) => (
+    <div className="sidebar-row" style={branchRowStyle}>
+      <span style={branchIconStyle} title="Remote branch">
+        <GitHubIcon />
+      </span>
+      <div
+        onClick={() => revealCommit(b.oid)}
+        title={`Show ${b.name} in the commit graph`}
+        style={{
+          flex: 1,
+          fontSize: "var(--font-size-sm)",
+          fontFamily: "var(--font-family-mono)",
+          color: "var(--color-text-secondary)",
+          cursor: "pointer",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          padding: "1px var(--space-2)",
+        }}
+      >
+        {b.name}
+      </div>
+    </div>
+  );
 
   return (
     <div
@@ -237,103 +333,35 @@ export function Sidebar({ width = 220 }: { width?: number }) {
           )}
 
           <CollapsibleSection id="branches-local" title="Local" resizable defaultHeight={180}>
-            {localBranches.length === 0 ? (
-              <div style={branchEmptyHintStyle}>No local branches</div>
-            ) : (
-              localBranches.map((b) => (
-                <div key={b.name} className="sidebar-row" style={branchRowStyle}>
-                  <span style={branchIconStyle} title="Local branch">
-                    <LaptopIcon />
-                  </span>
-                  <div
-                    onClick={() => revealCommit(b.oid)}
-                    title={`Show ${b.name} in the commit graph`}
-                    style={{
-                      flex: 1,
-                      fontSize: "var(--font-size-sm)",
-                      fontFamily: "var(--font-family-mono)",
-                      color: b.isHead
-                        ? "var(--color-accent-primary)"
-                        : "var(--color-text-secondary)",
-                      cursor: "pointer",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                      background: b.isHead ? "var(--color-bg-elevated)" : "transparent",
-                      borderRadius: "var(--radius-sm)",
-                      padding: "1px var(--space-2)",
-                    }}
-                  >
-                    {b.isHead ? "▸ " : ""}{b.name}
-                  </div>
-                  {(() => {
-                    const ab = aheadBehind.find((x) => x.branch === b.name);
-                    if (!ab || (ab.ahead === 0 && ab.behind === 0)) return null;
-                    return (
-                      <span
-                        style={{
-                          fontSize: "var(--font-size-xs)",
-                          color: "var(--color-text-muted)",
-                          fontFamily: "var(--font-family-mono)",
-                          flexShrink: 0,
-                        }}
-                      >
-                        {ab.ahead > 0 && `↑${ab.ahead}`}
-                        {ab.ahead > 0 && ab.behind > 0 && " "}
-                        {ab.behind > 0 && `↓${ab.behind}`}
-                      </span>
-                    );
-                  })()}
-                  <RowMenu
-                    label={`${b.name} actions`}
-                    items={[
-                      ...(b.isHead
-                        ? []
-                        : [{ label: "Checkout branch", onSelect: () => handleCheckoutBranch(b.name) }]),
-                      { label: "Push branch", onSelect: () => handlePushBranch(b.name) },
-                      { label: "Create tag…", onSelect: () => setTagBranch({ name: b.name, oid: b.oid }) },
-                      ...(b.isHead || operationStatus.kind === "merge"
-                        ? []
-                        : [{ label: "Merge into current branch", onSelect: () => handleMergeBranch(b.name) }]),
-                      ...(b.isHead
-                        ? []
-                        : [{ label: "Delete branch", destructive: true, onSelect: () => handleDeleteBranch(b.name) }]),
-                    ]}
-                  />
-                </div>
-              ))
-            )}
+            {(maxBodyHeight) =>
+              localBranches.length === 0 ? (
+                <div style={branchEmptyHintStyle}>No local branches</div>
+              ) : (
+                <VirtualList
+                  ariaLabel="Local branches"
+                  items={localBranches}
+                  rowHeight={BRANCH_ROW_HEIGHT}
+                  maxHeight={maxBodyHeight}
+                  render={renderLocalBranch}
+                />
+              )
+            }
           </CollapsibleSection>
 
           <CollapsibleSection id="branches-remote" title="Remote" resizable defaultHeight={140}>
-            {remoteBranches.length === 0 ? (
-              <div style={branchEmptyHintStyle}>No remote branches</div>
-            ) : (
-              remoteBranches.map((b) => (
-                <div key={b.name} className="sidebar-row" style={branchRowStyle}>
-                  <span style={branchIconStyle} title="Remote branch">
-                    <GitHubIcon />
-                  </span>
-                  <div
-                    onClick={() => revealCommit(b.oid)}
-                    title={`Show ${b.name} in the commit graph`}
-                    style={{
-                      flex: 1,
-                      fontSize: "var(--font-size-sm)",
-                      fontFamily: "var(--font-family-mono)",
-                      color: "var(--color-text-secondary)",
-                      cursor: "pointer",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                      padding: "1px var(--space-2)",
-                    }}
-                  >
-                    {b.name}
-                  </div>
-                </div>
-              ))
-            )}
+            {(maxBodyHeight) =>
+              remoteBranches.length === 0 ? (
+                <div style={branchEmptyHintStyle}>No remote branches</div>
+              ) : (
+                <VirtualList
+                  ariaLabel="Remote branches"
+                  items={remoteBranches}
+                  rowHeight={BRANCH_ROW_HEIGHT}
+                  maxHeight={maxBodyHeight}
+                  render={renderRemoteBranch}
+                />
+              )
+            }
           </CollapsibleSection>
         </CollapsibleSection>
       )}

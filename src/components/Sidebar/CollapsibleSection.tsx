@@ -59,7 +59,11 @@ export function CollapsibleSection({
   id: string;
   title: string;
   action?: ReactNode;
-  children: ReactNode;
+  /** Static content, or a render function receiving the section's current
+   *  (resizable) body-height cap — used by virtualised lists that own their own
+   *  scroll and need to size themselves to that cap instead of the section's
+   *  `max-height` + `overflow` wrapper. */
+  children: ReactNode | ((maxBodyHeight: number) => ReactNode);
   bodyStyle?: CSSProperties;
   resizable?: boolean;
   defaultHeight?: number;
@@ -105,11 +109,16 @@ export function CollapsibleSection({
         </button>
         {action}
       </div>
-      {!collapsed && (
-        <div style={resizable ? { ...bodyStyle, maxHeight: height, overflowY: "auto" } : bodyStyle}>
-          {children}
-        </div>
-      )}
+      {!collapsed &&
+        (typeof children === "function" ? (
+          // The child owns its own (virtualised) scroll; hand it the resizable
+          // cap and skip the max-height/overflow wrapper so scroll isn't doubled.
+          <div style={bodyStyle}>{children(height)}</div>
+        ) : (
+          <div style={resizable ? { ...bodyStyle, maxHeight: height, overflowY: "auto" } : bodyStyle}>
+            {children}
+          </div>
+        ))}
       {showResizer && (
         <ResizeHandle
           orientation="horizontal"
