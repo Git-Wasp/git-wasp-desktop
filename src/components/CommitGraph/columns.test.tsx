@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { AuthorCell, BranchCell, DateCell, HashCell, MessageCell } from "./columns";
 import { columnsForVariant } from "./columnModel";
@@ -183,6 +183,56 @@ describe("BranchCell", () => {
       />,
     );
     expect(container.querySelector("[data-head-badge]")).toBeNull();
+  });
+});
+
+describe("BranchCell multiple tags", () => {
+  const threeTags = node({
+    branchLabels: [
+      { name: "v2.0.0", isRemote: false, isTag: true },
+      { name: "v2.0", isRemote: false, isTag: true },
+      { name: "latest", isRemote: false, isTag: true },
+    ],
+  });
+
+  it("collapses several tags into one chip: first name + bracketed total count", () => {
+    const { container } = render(<BranchCell node={threeTags} />);
+    // A single chip, showing the first tag name and the count of all tags.
+    const chips = container.querySelectorAll("[data-tag]");
+    expect(chips).toHaveLength(1);
+    expect(chips[0].getAttribute("data-tag")).toBe("v2.0.0");
+    expect(chips[0].getAttribute("data-tag-count")).toBe("3");
+    expect(chips[0]).toHaveTextContent("v2.0.0");
+    expect(chips[0]).toHaveTextContent("(3)");
+    // The other tag names are NOT revealed inline (only on hover, over the graph).
+    expect(screen.queryByText("latest")).toBeNull();
+  });
+
+  it("reveals every tag in a vertical list on hover", () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(<BranchCell node={threeTags} />);
+      const chip = container.querySelector("[data-tag]")!.parentElement!;
+      fireEvent.mouseEnter(chip);
+      act(() => vi.advanceTimersByTime(400));
+
+      const tip = screen.getByRole("tooltip");
+      expect(tip).toHaveTextContent("v2.0.0");
+      expect(tip).toHaveTextContent("v2.0");
+      expect(tip).toHaveTextContent("latest");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still renders a single tag as a plain chip (no count)", () => {
+    const { container } = render(
+      <BranchCell node={node({ branchLabels: [{ name: "v1.0", isRemote: false, isTag: true }] })} />,
+    );
+    const chips = container.querySelectorAll("[data-tag]");
+    expect(chips).toHaveLength(1);
+    expect(chips[0].getAttribute("data-tag-count")).toBeNull();
+    expect(chips[0]).not.toHaveTextContent("(1)");
   });
 });
 

@@ -98,33 +98,73 @@ function HeadBadge() {
 // A tag is a point-in-time label, not a lane, so it's kept out of the branch
 // colour coding: a neutral, notched monospace chip (matching the hash cell's
 // type) sitting next to the branch pill.
+const tagChipStyle: React.CSSProperties = {
+  flexShrink: 0,
+  fontFamily: "var(--font-family-mono)",
+  fontSize: "10px",
+  fontWeight: "var(--font-weight-semibold)",
+  padding: "2.5px 8px 2.5px 11px",
+  borderRadius: "4px",
+  clipPath: "polygon(8px 0, 100% 0, 100% 100%, 8px 100%, 0 50%)",
+  background: "var(--color-bg-elevated)",
+  color: "var(--color-text-secondary)",
+  border: "1px solid var(--color-border-default)",
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "var(--space-1)",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
 function TagChip({ label, onRemote }: { label: BranchLabel; onRemote?: boolean }) {
   return (
     <Tooltip label={`${label.name} (tag, ${onRemote ? "on remote" : "local only"})`}>
-      <span
-        data-tag={label.name}
-        style={{
-          flexShrink: 0,
-          fontFamily: "var(--font-family-mono)",
-          fontSize: "10px",
-          fontWeight: "var(--font-weight-semibold)",
-          padding: "2.5px 8px 2.5px 11px",
-          borderRadius: "4px",
-          clipPath: "polygon(8px 0, 100% 0, 100% 100%, 8px 100%, 0 50%)",
-          background: "var(--color-bg-elevated)",
-          color: "var(--color-text-secondary)",
-          border: "1px solid var(--color-border-default)",
-          display: "inline-flex",
-          alignItems: "center",
-          gap: "var(--space-1)",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
+      <span data-tag={label.name} style={tagChipStyle}>
         <TagIcon />
         {onRemote && <GitHubIcon />}
         {label.name}
+      </span>
+    </Tooltip>
+  );
+}
+
+// A vertical list of every tag on the commit, shown in the multi-tag chip's
+// hover tooltip (over the graph — the tooltip portals to document.body). Each
+// row keeps the tag icon + name (+ remote marker) so the collapsed group stays
+// legible without expanding inline.
+function TagList({ tags, isTagOnRemote }: { tags: BranchLabel[]; isTagOnRemote?: (name: string) => boolean }) {
+  return (
+    <span style={{ display: "flex", flexDirection: "column", gap: "3px", textAlign: "left" }}>
+      {tags.map((tag) => (
+        <span key={tag.name} style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-1)", whiteSpace: "nowrap" }}>
+          <TagIcon />
+          {(isTagOnRemote?.(tag.name) ?? false) && <GitHubIcon />}
+          {tag.name}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+// When several tags sit on one commit their chips overlap and clutter the row,
+// so collapse them: one chip showing the first tag's name plus a bracketed total
+// count, and a hover tooltip listing them all vertically over the graph.
+function MultiTagChip({
+  tags,
+  isTagOnRemote,
+}: {
+  tags: BranchLabel[];
+  isTagOnRemote?: (name: string) => boolean;
+}) {
+  const first = tags[0];
+  return (
+    <Tooltip label={<TagList tags={tags} isTagOnRemote={isTagOnRemote} />}>
+      <span data-tag={first.name} data-tag-count={tags.length} style={tagChipStyle}>
+        <TagIcon />
+        {(isTagOnRemote?.(first.name) ?? false) && <GitHubIcon />}
+        {first.name}
+        <span style={{ opacity: 0.7 }}>({tags.length})</span>
       </span>
     </Tooltip>
   );
@@ -159,9 +199,14 @@ export function BranchCell({
         />
       ))}
       {showHead && <HeadBadge />}
-      {tags.map((label) => (
-        <TagChip key={label.name} label={label} onRemote={isTagOnRemote?.(label.name) ?? false} />
-      ))}
+      {/* One tag → a plain chip; several → a collapsed chip (first name + count)
+          whose hover reveals the full list over the graph, so overlapping tags
+          don't clutter the row. */}
+      {tags.length === 1 ? (
+        <TagChip label={tags[0]} onRemote={isTagOnRemote?.(tags[0].name) ?? false} />
+      ) : tags.length > 1 ? (
+        <MultiTagChip tags={tags} isTagOnRemote={isTagOnRemote} />
+      ) : null}
     </div>
   );
 }

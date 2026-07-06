@@ -57,6 +57,16 @@ between sections, and add new ideas under the right heading. Items marked
       element like ContextMenu, hides on pointer-down so it doesn't linger during
       a drag). Applied to the branch/tag pills showing the full ref name (handy
       since pills truncate), replacing the plain native `title`.
+- [x] Collapse multiple tags on one commit — several tags on a commit overlapped
+      and cluttered the branch cell. Now a single tag on a commit renders as
+      before; multiple render as one collapsed `MultiTagChip` showing the tag
+      icon, the first tag's name, and a bracketed total count (e.g. `v2.0.0 (3)`).
+      Hovering shows every tag in a vertical `TagList` — rendered through the
+      existing `Tooltip` (portals to `document.body`, `position: fixed`,
+      `z-index: 250`) so it floats *over* the graph rather than expanding inline.
+      `Tooltip`'s `label` was widened from `string` to `ReactNode` to carry the
+      list. Tests: collapsed chip shows first name + count and hides the rest
+      inline; hover reveals all names; a single tag stays a plain chip.
 - [x] Indicator/icon show currently checked out branch clearly — two cues:
       (1) the checked-out branch's pill in the graph is marked distinctly — a
       check icon (replacing the laptop marker), bold text, and a crisp white

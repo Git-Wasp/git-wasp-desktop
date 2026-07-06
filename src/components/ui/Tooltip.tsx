@@ -22,7 +22,9 @@ export function Tooltip({
   delay = 350,
   children,
 }: {
-  label: string;
+  /** Bubble contents. A string renders on one line; pass a node for richer
+   *  content (e.g. a vertical list) — such content manages its own layout. */
+  label: React.ReactNode;
   delay?: number;
   children: React.ReactNode;
 }) {
