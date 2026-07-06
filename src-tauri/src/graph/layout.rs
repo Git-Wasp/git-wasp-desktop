@@ -24,8 +24,8 @@ pub(crate) fn diag_log(line: &str) {
 /// rather than rescanned on every slice — `repo.statuses()` walks the whole
 /// working directory and can cost well over a second on a large tree, which
 /// made every scroll tick pay for a full status scan. It's refreshed
-/// explicitly via [`refresh_working_tree_status`], which the frontend calls
-/// off the `notify`-driven file-watcher event rather than on every fetch.
+/// explicitly via [`set_change_count`], which the frontend's combined
+/// working-tree refresh feeds from a status scan it already did.
 pub struct GraphCache {
     key: CacheKey,
     /// All commits, newest-first; `row` equals the index. No working-tree node.
@@ -225,7 +225,7 @@ pub fn compute_layout(
 /// command uses, so repeated scroll fetches are cheap.
 ///
 /// The working-tree dirty-file count is cached alongside the layout rather
-/// than rescanned here — see [`refresh_working_tree_status`].
+/// than rescanned here — see [`set_change_count`].
 pub fn compute_layout_cached(
     repo: &Repository,
     cache: &mut Option<GraphCache>,
@@ -256,15 +256,16 @@ pub fn compute_layout_cached(
     ))
 }
 
-/// Re-scans the working tree and updates the cached dirty-file count, without
-/// rebuilding the (expensive) full history layout. A no-op when there's no
-/// cache yet — the next [`compute_layout_cached`] call will populate one with
-/// a fresh scan anyway. Call this when the file watcher reports a working-tree
-/// change, before re-fetching the viewport, so the scan happens once per
-/// change rather than once per scroll tick.
-pub fn refresh_working_tree_status(repo: &Repository, cache: &mut Option<GraphCache>) {
+/// Update the cached dirty-file count from an *already-computed* count, without
+/// rebuilding the (expensive) full history layout or re-scanning the working
+/// tree. A no-op when there's no cache yet — the next [`compute_layout_cached`]
+/// call will populate one with a fresh scan anyway. The caller passes the count
+/// derived from a status scan it already did (see
+/// `WorkingTreeStatus::distinct_change_count`), so a working-tree change costs
+/// one scan total rather than one for the status list plus one for this count.
+pub fn set_change_count(cache: &mut Option<GraphCache>, count: u32) {
     if let Some(c) = cache {
-        c.change_count = changed_file_count(repo);
+        c.change_count = count;
     }
 }
 
@@ -1425,7 +1426,7 @@ mod tests {
     }
 
     #[test]
-    fn refresh_working_tree_status_updates_cached_count_without_rebuilding_layout() {
+    fn set_change_count_updates_cached_count_without_rebuilding_layout() {
         let (dir, repo) = init_repo();
         let c1 = repo.find_commit(make_commit(&repo, "c1", &[])).unwrap();
         make_commit(&repo, "c2", &[&c1]);
@@ -1433,8 +1434,10 @@ mod tests {
         let mut cache = None;
         compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
 
+        // A working-tree change: the caller derives the count from its own status
+        // scan and pushes it in (here via `changed_file_count`), no layout rebuild.
         std::fs::write(dir.path().join("new.txt"), "hi").unwrap();
-        refresh_working_tree_status(&repo, &mut cache);
+        set_change_count(&mut cache, changed_file_count(&repo));
 
         let dirty = compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
         assert_eq!(dirty.total_count, 3);
@@ -1443,12 +1446,9 @@ mod tests {
     }
 
     #[test]
-    fn refresh_working_tree_status_is_a_no_op_without_a_cache() {
-        let (_dir, repo) = init_repo();
-        make_commit(&repo, "c1", &[]);
-
+    fn set_change_count_is_a_no_op_without_a_cache() {
         let mut cache = None;
-        refresh_working_tree_status(&repo, &mut cache); // must not panic
+        set_change_count(&mut cache, 1); // must not panic
         assert!(cache.is_none());
     }
 

@@ -193,11 +193,10 @@ export const useRepoStore = create<RepoStore>((set, get) => {
 
     revertCommit: async (oid: string, autoCommit: boolean) => {
       const result = await invoke<string | null>("revert_commit", { oid, autoCommit });
-      // A revert either adds a commit or leaves unstaged changes — refresh the
-      // graph and the working-tree status so both are reflected immediately.
-      await invoke("refresh_graph_working_tree_status").catch(() => {});
-      await useGraphStore.getState().refresh();
-      await useWorkingTreeStore.getState().loadStatus();
+      // A revert either adds a commit or leaves unstaged changes — one combined
+      // refresh updates the working-tree status, the graph's dirty count, and the
+      // viewport (a single status scan rather than two).
+      await useWorkingTreeStore.getState().refreshAll();
       return result;
     },
 

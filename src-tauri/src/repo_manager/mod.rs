@@ -333,10 +333,17 @@ impl RepoManager {
     /// count, without rebuilding the full layout. Called when the file
     /// watcher reports a change, so the (expensive) scan happens once per
     /// change rather than once per scroll-driven viewport fetch.
-    pub fn refresh_graph_working_tree_status(&self) -> anyhow::Result<()> {
+    /// Scan the working tree once, updating the graph cache's dirty-file count
+    /// from that same scan and returning the detailed status. Replaces the old
+    /// pair of calls (`get_working_tree_status` + a separate count scan), halving
+    /// the `repo.statuses()` work the poll/watcher/focus refresh does — the hot
+    /// path on a large monorepo where `git status` dominates.
+    pub fn refresh_working_tree(&self) -> anyhow::Result<crate::working_tree::WorkingTreeStatus> {
         self.with_repo_graph_cache(|repo, cache| {
-            crate::graph::refresh_working_tree_status(repo, cache);
-        })
+            let status = crate::working_tree::get_working_tree_status(repo)?;
+            crate::graph::set_change_count(cache, status.distinct_change_count());
+            Ok(status)
+        })?
     }
 
     /// Check out a local branch. When `auto_stash` is set, tracked uncommitted
@@ -702,8 +709,8 @@ impl AppState {
         self.manager.with_repo_graph_cache(f)
     }
 
-    pub fn refresh_graph_working_tree_status(&self) -> anyhow::Result<()> {
-        self.manager.refresh_graph_working_tree_status()
+    pub fn refresh_working_tree(&self) -> anyhow::Result<crate::working_tree::WorkingTreeStatus> {
+        self.manager.refresh_working_tree()
     }
 
     pub fn checkout_branch(&self, branch_name: &str, auto_stash: bool) -> anyhow::Result<RepoInfo> {

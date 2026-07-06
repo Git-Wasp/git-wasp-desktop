@@ -144,19 +144,23 @@ describe("workingTreeStore", () => {
     expect(useWorkingTreeStore.getState().stageDiff).toBeNull();
   });
 
-  it("refreshAll re-syncs status, the graph's cached working-tree count, then the viewport in order", async () => {
+  it("refreshAll does one combined working-tree scan, then re-fetches the viewport", async () => {
+    const status = { staged: [], unstaged: [], untracked: [] };
     mockInvoke.mockImplementation((cmd) =>
       cmd === "get_graph_viewport"
         ? Promise.resolve({ nodes: [], totalCount: 0, offset: 0 })
-        : Promise.resolve(undefined),
+        : Promise.resolve(cmd === "refresh_working_tree" ? status : undefined),
     );
     useGraphStore.setState({ lastOffset: 0, lastLimit: 50, nodesByRow: new Map() });
 
     await useWorkingTreeStore.getState().refreshAll();
 
-    expect(mockInvoke).toHaveBeenNthCalledWith(1, "get_working_tree_status");
-    expect(mockInvoke).toHaveBeenNthCalledWith(2, "refresh_graph_working_tree_status");
-    expect(mockInvoke).toHaveBeenNthCalledWith(3, "get_graph_viewport", { offset: 0, limit: 50 });
+    // A single scan (status + graph dirty-count in one), then the viewport — no
+    // separate count-refresh call (that was a second `git status`).
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, "refresh_working_tree");
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "get_graph_viewport", { offset: 0, limit: 50 });
+    expect(mockInvoke).not.toHaveBeenCalledWith("refresh_graph_working_tree_status");
+    expect(useWorkingTreeStore.getState().status).toEqual(status);
   });
 
   it("startWatching refreshes the graph's cached working-tree status before re-fetching the viewport, debounced", async () => {
@@ -180,9 +184,9 @@ describe("workingTreeStore", () => {
 
     await vi.advanceTimersByTimeAsync(300);
 
-    expect(mockInvoke).toHaveBeenNthCalledWith(1, "get_working_tree_status");
-    expect(mockInvoke).toHaveBeenNthCalledWith(2, "refresh_graph_working_tree_status");
-    expect(mockInvoke).toHaveBeenNthCalledWith(3, "get_graph_viewport", { offset: 0, limit: 50 });
+    // The debounced refresh does the combined single scan, then the viewport.
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, "refresh_working_tree");
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "get_graph_viewport", { offset: 0, limit: 50 });
 
     vi.useRealTimers();
   });

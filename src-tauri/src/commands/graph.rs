@@ -45,14 +45,14 @@ pub fn find_commit_row(oid: String, state: State<'_, AppState>) -> Result<Option
         .map_err(|e| e.to_string())
 }
 
-/// Re-scans the working tree and updates the graph cache's dirty-file count
-/// without rebuilding the full layout. Called by the frontend off the
-/// debounced `working-tree-changed` event, before re-fetching the viewport —
-/// see [`crate::graph::refresh_working_tree_status`] for why this is split
-/// out from the per-scroll viewport fetch.
+/// Scan the working tree once, returning the detailed status *and* updating the
+/// graph cache's dirty-file count from that same scan. The frontend's combined
+/// refresh (poll / focus / file-watcher) calls this instead of a separate status
+/// fetch plus count-refresh, so a working-tree change costs one `repo.statuses()`
+/// scan rather than two — the dominant cost on a large monorepo.
 #[tauri::command]
-pub fn refresh_graph_working_tree_status(state: State<'_, AppState>) -> Result<(), String> {
-    state
-        .refresh_graph_working_tree_status()
-        .map_err(|e| e.to_string())
+pub fn refresh_working_tree(
+    state: State<'_, AppState>,
+) -> Result<crate::working_tree::WorkingTreeStatus, String> {
+    state.refresh_working_tree().map_err(|e| e.to_string())
 }

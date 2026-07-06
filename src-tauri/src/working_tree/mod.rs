@@ -64,6 +64,26 @@ pub struct WorkingTreeStatus {
     pub untracked: Vec<StatusEntry>,
 }
 
+impl WorkingTreeStatus {
+    /// Number of distinct changed files — the figure shown on the graph's
+    /// working-tree node ("N uncommitted changes"). A file that is both staged
+    /// and has unstaged edits appears in two lists but counts once, so this
+    /// unions paths rather than summing lengths. Lets the graph's dirty count be
+    /// derived from an existing status scan instead of a second `repo.statuses()`.
+    pub fn distinct_change_count(&self) -> u32 {
+        let mut paths = std::collections::HashSet::new();
+        for e in self
+            .staged
+            .iter()
+            .chain(&self.unstaged)
+            .chain(&self.untracked)
+        {
+            paths.insert(e.path.as_str());
+        }
+        paths.len() as u32
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatusEntry {
@@ -1071,6 +1091,34 @@ mod tests {
         let status = get_working_tree_status(&repo).unwrap();
         assert!(status.staged.iter().any(|e| e.path == "file.txt"));
         assert!(status.unstaged.iter().any(|e| e.path == "file.txt"));
+    }
+
+    #[test]
+    fn distinct_change_count_counts_a_staged_and_unstaged_file_once() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "file.txt", "original");
+        make_initial_commit(&repo);
+        // file.txt is both staged and unstaged (in two lists); an untracked file
+        // adds a second distinct path.
+        write_and_stage(&repo, &dir, "file.txt", "staged change");
+        fs::write(dir.path().join("file.txt"), "unstaged change").unwrap();
+        fs::write(dir.path().join("new.txt"), "hi").unwrap();
+
+        let status = get_working_tree_status(&repo).unwrap();
+        // Two distinct files despite three status-list entries (file.txt ×2 + new.txt).
+        assert_eq!(status.distinct_change_count(), 2);
+    }
+
+    #[test]
+    fn distinct_change_count_is_zero_on_a_clean_tree() {
+        let (_dir, repo) = init_repo();
+        make_initial_commit(&repo);
+        assert_eq!(
+            get_working_tree_status(&repo)
+                .unwrap()
+                .distinct_change_count(),
+            0
+        );
     }
 
     #[test]

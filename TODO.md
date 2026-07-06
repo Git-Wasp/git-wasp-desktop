@@ -1124,11 +1124,25 @@ between sections, and add new ideas under the right heading. Items marked
         + overscan mount). Row height fixed at 32px (fits the 24px ⋮ menu button).
         Tests: `VirtualList` (compact vs capped height; renders a slice not all
         1000 rows); existing Sidebar tests still green.
-      • Working-tree `status` is scanned twice per refresh
-        (`get_working_tree_status` + `changed_file_count`), on every 8s poll +
-        focus + watcher event; on a big working tree `git status` dominates.
-        Candidates: de-dupe to one scan, and/or lean more on the watcher so the
-        poll can skip the scan when nothing changed. **(still open)**
+      • [x] **De-duped the double working-tree `status` scan.** Each combined
+        refresh (poll / focus / file-watcher / revert) used to run two full
+        `repo.statuses()` scans — `get_working_tree_status` (detailed lists) plus
+        `changed_file_count` (graph dirty count). New `refresh_working_tree`
+        command scans once: it returns the detailed status *and* updates the graph
+        cache's dirty count from that same scan, via
+        `WorkingTreeStatus::distinct_change_count()` (unions paths, so a file both
+        staged and modified counts once — matches the old `statuses().len()`, and
+        now the untracked count matches the staging panel too). Frontend
+        `refreshAll` and `revertCommit` call the one command; the old
+        `refresh_graph_working_tree_status` command + `graph::refresh_working_tree_status`
+        were replaced by `graph::set_change_count(cache, count)`. Halves the
+        dominant `git status` cost on a large monorepo. Tests: backend
+        (`distinct_change_count` dedup + clean tree; `set_change_count` updates
+        the cached count with no rebuild); frontend (refreshAll/watcher do one
+        `refresh_working_tree` then the viewport, no second scan). Suites green
+        (backend 230, frontend 606).
+      • [ ] Remaining idea: lean harder on the watcher so the 8s poll can skip
+        the scan entirely when nothing changed (still open).
 - [x] Branch-selector dropdown appears *behind* the graph — z-index/stacking bug.
       The NavBar carries `.elevation-below` (`position: relative; z-index: 2`),
       which creates a stacking context; the dropdown panel's `z-index: 200` was

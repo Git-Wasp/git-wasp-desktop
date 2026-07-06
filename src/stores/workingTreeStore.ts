@@ -64,12 +64,13 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
 
   // Re-sync everything that reflects the working tree: the staging list, the
   // graph's cached dirty-file count, and the graph viewport. Used by the file
-  // watcher, the manual "Refresh" button, and the background poll. The order
-  // matters — the backend's cached working-tree count must be refreshed before
-  // the viewport is re-fetched (the viewport no longer rescans on every call).
+  // watcher, the manual "Refresh" button, and the background poll. A single
+  // `refresh_working_tree` scan yields both the detailed status and the graph's
+  // dirty count (one `git status` instead of two), then the viewport re-fetch
+  // slices the cache with the freshly-updated count.
   refreshAll: async () => {
-    await get().loadStatus();
-    await invoke("refresh_graph_working_tree_status");
+    const status = await invoke<WorkingTreeStatus>("refresh_working_tree");
+    set({ status });
     await useGraphStore.getState().refresh();
   },
 
