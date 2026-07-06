@@ -51,6 +51,19 @@ describe("Dropdown", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it("renders the panel in a document.body portal with fixed positioning", () => {
+    // Regression: the panel must escape the NavBar's `.elevation-below` stacking
+    // context, or the graph canvas (position:sticky, z-index:3) paints over it.
+    // Portaling to body with position:fixed is what lifts it clear.
+    const { container } = render(<Example />);
+    fireEvent.click(screen.getByRole("button", { name: "Picker" }));
+
+    const menu = screen.getByRole("menu");
+    expect(container.contains(menu)).toBe(false); // portaled out of the component
+    expect(document.body.contains(menu)).toBe(true);
+    expect(menu).toHaveStyle({ position: "fixed" });
+  });
+
   it("reflects open state via aria-expanded", () => {
     render(<Example />);
     const trigger = screen.getByRole("button", { name: "Picker" });

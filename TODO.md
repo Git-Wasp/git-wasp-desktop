@@ -1097,6 +1097,18 @@ between sections, and add new ideas under the right heading. Items marked
 
 ## Other issues
 
+- [x] Branch-selector dropdown appears *behind* the graph — z-index/stacking bug.
+      The NavBar carries `.elevation-below` (`position: relative; z-index: 2`),
+      which creates a stacking context; the dropdown panel's `z-index: 200` was
+      trapped inside it, while the graph canvas (`position: sticky; z-index: 3`)
+      resolves against the *root* context — so `3 > 2` and the canvas painted over
+      the whole NavBar subtree, dropdown included. Fixed by portaling the
+      `Dropdown` panel to `document.body` with `position: fixed`, measured from the
+      trigger's rect (like `Tooltip`/`ContextMenu`), so it escapes the NavBar
+      stacking context entirely. Handles left/right align + `fullWidth` (matches
+      trigger width), recomputes on scroll/resize, and the outside-click check now
+      also consults the portaled panel (via `panelRef`) so item clicks still work.
+      Regression test asserts the panel is portaled to body with `position: fixed`.
 - [x] "Split rail" view keeps the graph pinned to the left instead of "repinning" it to the right
       — the frozen graph overlay used `position: sticky` with `right: 0`, but sticky
       only pulls a box back when it would scroll *out* of view; it does not

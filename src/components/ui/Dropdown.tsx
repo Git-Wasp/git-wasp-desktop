@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 
 /** A small caret that flips when the dropdown is open. */
 function Caret({ open }: { open: boolean }) {
@@ -26,11 +34,24 @@ function Caret({ open }: { open: boolean }) {
   );
 }
 
-const panelStyle = (align: "left" | "right", minWidth: number): CSSProperties => ({
-  position: "absolute",
-  top: "100%",
-  [align]: 0,
-  marginTop: 2,
+// Viewport-relative placement of the portaled panel, measured from the trigger.
+interface PanelPos {
+  top: number;
+  left?: number;
+  right?: number;
+  width?: number;
+}
+
+// The panel is rendered in a portal to document.body with `position: fixed`, so
+// it escapes the NavBar's stacking context (the NavBar's `.elevation-below`
+// z-index would otherwise trap it *below* the graph canvas). Positioned from the
+// trigger's rect — like Tooltip/ContextMenu — so nothing can clip or paint over it.
+const panelStyle = (pos: PanelPos, minWidth: number): CSSProperties => ({
+  position: "fixed",
+  top: pos.top,
+  left: pos.left,
+  right: pos.right,
+  width: pos.width,
   minWidth,
   maxHeight: 360,
   overflowY: "auto",
@@ -73,7 +94,9 @@ export function Dropdown({
   children: (close: () => void) => ReactNode;
 }) {
   const [open, rawSetOpen] = useState(false);
+  const [pos, setPos] = useState<PanelPos | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const setOpen = (next: boolean | ((v: boolean) => boolean)) => {
     rawSetOpen((prev) => {
@@ -83,10 +106,40 @@ export function Dropdown({
     });
   };
 
+  // Measure the trigger and place the fixed panel just beneath it, aligned to the
+  // requested edge (and matched to the trigger width when `fullWidth`). Recomputed
+  // on layout, and on scroll/resize while open so the panel tracks the trigger.
+  useLayoutEffect(() => {
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    const measure = () => {
+      const rect = ref.current?.getBoundingClientRect();
+      if (!rect) return;
+      const top = rect.bottom + 2;
+      if (fullWidth) setPos({ top, left: rect.left, width: rect.width });
+      else if (align === "right") setPos({ top, right: window.innerWidth - rect.right });
+      else setPos({ top, left: rect.left });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    // Capture-phase scroll so it updates even when an inner container scrolls.
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
+  }, [open, align, fullWidth]);
+
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      // The panel lives in a portal outside `ref`, so check it too — otherwise a
+      // click on a menu item would read as "outside" and close before it fires.
+      if (ref.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
@@ -145,11 +198,14 @@ export function Dropdown({
         {trigger}
         <Caret open={open} />
       </button>
-      {open && (
-        <div role="menu" style={panelStyle(align, panelMinWidth)}>
-          {children(() => setOpen(false))}
-        </div>
-      )}
+      {open &&
+        pos &&
+        createPortal(
+          <div ref={panelRef} role="menu" style={panelStyle(pos, panelMinWidth)}>
+            {children(() => setOpen(false))}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
