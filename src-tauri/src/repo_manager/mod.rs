@@ -1031,6 +1031,14 @@ mod tests {
     fn make_git_repo_with_commit() -> (TempDir, Repository) {
         let dir = TempDir::new().unwrap();
         let repo = Repository::init(dir.path()).unwrap();
+        // Set identity in the *repo* config so operations that resolve it via
+        // `repo.signature()` (e.g. auto-stash's `stash_save`) work without a
+        // global ~/.gitconfig — keeps these tests hermetic.
+        {
+            let mut config = repo.config().unwrap();
+            config.set_str("user.name", "Test").unwrap();
+            config.set_str("user.email", "test@test.com").unwrap();
+        }
         {
             let sig = Signature::now("Test", "test@test.com").unwrap();
             let tree_id = {
