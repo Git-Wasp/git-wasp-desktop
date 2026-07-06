@@ -41,6 +41,11 @@ interface RepoStore {
    *  repository on disk is untouched. */
   removeRecent: (path: string) => Promise<void>;
   loadBranches: () => Promise<void>;
+  /** Re-read HEAD from the backend and, if the checked-out branch changed
+   *  (e.g. an external `git checkout` in a terminal), update `currentRepo` and
+   *  reload the branch list so the "current branch" marker stays accurate. A
+   *  no-op when HEAD is unchanged, so it's cheap to call on focus / on a poll. */
+  syncHead: () => Promise<void>;
   checkoutBranch: (name: string) => Promise<void>;
   checkoutRemoteBranch: (remoteRef: string) => Promise<void>;
   checkoutCommit: (oid: string) => Promise<void>;
@@ -87,6 +92,17 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     loadCurrentRepo: async () => {
       const repo = await invoke<RepoInfo | null>("get_current_repo");
       set({ currentRepo: repo, activeRepoPath: repo?.path ?? null });
+    },
+
+    syncHead: async () => {
+      const repo = await invoke<RepoInfo | null>("get_current_repo");
+      if (!repo) return;
+      const cur = get().currentRepo;
+      // HEAD unchanged (same repo + same checked-out branch): nothing to do, so
+      // we don't churn `currentRepo`'s identity or re-fetch the branch list.
+      if (cur && cur.path === repo.path && cur.headBranch === repo.headBranch) return;
+      set({ currentRepo: repo });
+      await get().loadBranches();
     },
 
     loadOpenRepos: async () => {

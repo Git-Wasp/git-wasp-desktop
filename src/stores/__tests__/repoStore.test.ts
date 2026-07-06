@@ -48,6 +48,32 @@ describe("repoStore", () => {
     expect(useRepoStore.getState().currentRepo).toBeNull();
   });
 
+  it("syncHead updates currentRepo and reloads branches when HEAD changed externally", async () => {
+    useRepoStore.setState({ currentRepo: { name: "r", path: "/p", headBranch: "develop" } });
+    const branches = [{ name: "feature", isHead: true }];
+    mockByCommand({
+      get_current_repo: { name: "r", path: "/p", headBranch: "feature" },
+      list_branches: branches,
+    });
+
+    await useRepoStore.getState().syncHead();
+
+    expect(useRepoStore.getState().currentRepo?.headBranch).toBe("feature");
+    expect(useRepoStore.getState().branches).toEqual(branches);
+  });
+
+  it("syncHead is a no-op when HEAD is unchanged (no branch reload)", async () => {
+    const current = { name: "r", path: "/p", headBranch: "develop" };
+    useRepoStore.setState({ currentRepo: current });
+    mockByCommand({ get_current_repo: { ...current } });
+
+    await useRepoStore.getState().syncHead();
+
+    // Same branch → currentRepo identity preserved and list_branches not called.
+    expect(useRepoStore.getState().currentRepo).toBe(current);
+    expect(mockInvoke).not.toHaveBeenCalledWith("list_branches");
+  });
+
   it("loadRecentRepos populates recentRepos", async () => {
     const repos = [{ path: "/a", name: "a", pinned: false, lastOpened: 0 }];
     mockInvoke.mockResolvedValueOnce(repos);

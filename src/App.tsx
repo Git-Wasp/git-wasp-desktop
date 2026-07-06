@@ -177,7 +177,12 @@ export default function App() {
       if (running || document.hidden) return;
       running = true;
       try {
-        await useWorkingTreeStore.getState().refreshAll();
+        // Pick up external changes: the working tree/graph, plus HEAD (an
+        // external `git checkout` must move the "current branch" marker).
+        await Promise.all([
+          useWorkingTreeStore.getState().refreshAll(),
+          useRepoStore.getState().syncHead(),
+        ]);
       } catch {
         // Best-effort: a transient failure must not break the poll.
       } finally {
@@ -186,6 +191,20 @@ export default function App() {
     };
     const id = setInterval(tick, 8000);
     return () => clearInterval(id);
+  }, [repoPath]);
+
+  // Re-sync as soon as the window regains focus, so changes made in a terminal
+  // while the app was in the background (e.g. `git checkout` on another branch)
+  // are reflected immediately rather than on the next poll tick.
+  useEffect(() => {
+    if (!repoPath) return;
+    const onFocus = () => {
+      void useRepoStore.getState().syncHead();
+      void useWorkingTreeStore.getState().refreshAll();
+      void useRemoteStore.getState().loadAheadBehind().catch(() => {});
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, [repoPath]);
 
   if (!booted) {

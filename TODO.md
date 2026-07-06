@@ -1097,6 +1097,32 @@ between sections, and add new ideas under the right heading. Items marked
 
 ## Other issues
 
+- [x] Current-branch marker goes stale after an external `git checkout` (in a
+      terminal) until a full reload — affects both the graph's checked-out pill
+      and the NavBar branch-selector trigger (both read `currentRepo.headBranch`).
+      The 8s poll + file watcher only refreshed the working tree/graph, never
+      HEAD or the branch list, and there was no focus listener. Added
+      `repoStore.syncHead()` — re-reads `get_current_repo`; if the checked-out
+      branch changed it updates `currentRepo` and reloads branches (no-op when
+      unchanged, so it's cheap and doesn't churn state). Wired to a new
+      window-`focus` listener (immediate on refocus) and folded into the 8s poll.
+      Tests: syncHead updates on change + is a no-op (no `list_branches`) when
+      unchanged.
+- [ ] Perf on large monorepos — findings from profiling the render paths:
+      • Commit graph **is** already virtualised (windowed slice via
+        `get_graph_viewport` offset/limit + buffer; canvas draws only the slice;
+        a full-height spacer drives the scrollbar). Backend layout is cached and
+        only re-walks the full history when refs/HEAD actually move — scrolling
+        just slices cached nodes. So the graph isn't the main cost.
+      • **Sidebar Local/Remote branch lists are NOT virtualised** — every ref is
+        a DOM row inside a fixed-max-height scroll area (`CollapsibleSection`). A
+        monorepo with thousands of refs materialises thousands of rows though
+        ~10–15 are visible. **Top candidate for windowing.**
+      • Working-tree `status` is scanned twice per refresh
+        (`get_working_tree_status` + `changed_file_count`), on every 8s poll +
+        focus + watcher event; on a big working tree `git status` dominates.
+        Candidates: de-dupe to one scan, and/or lean more on the watcher so the
+        poll can skip the scan when nothing changed.
 - [x] Branch-selector dropdown appears *behind* the graph — z-index/stacking bug.
       The NavBar carries `.elevation-below` (`position: relative; z-index: 2`),
       which creates a stacking context; the dropdown panel's `z-index: 200` was
