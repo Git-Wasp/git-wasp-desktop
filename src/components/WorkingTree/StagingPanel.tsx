@@ -127,6 +127,7 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
   const {
     status,
     selectedPath,
+    stageMode,
     loadStatus,
     startWatching,
     selectFile,
@@ -222,9 +223,9 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
                 entry={entry}
                 actionLabel="Stage"
                 action={() => stageFile(entry.path)}
-                onSelect={() => selectFile(entry.path)}
+                onSelect={() => selectFile(entry.path, "unstaged")}
                 onContextMenu={(e) => openMenu(e, entry, false)}
-                isSelected={selectedPath === entry.path}
+                isSelected={selectedPath === entry.path && stageMode === "unstaged"}
               />
             ))
           )}
@@ -263,9 +264,9 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
                 entry={entry}
                 actionLabel="Unstage"
                 action={() => unstageFile(entry.path)}
-                onSelect={() => selectFile(entry.path)}
+                onSelect={() => selectFile(entry.path, "staged")}
                 onContextMenu={(e) => openMenu(e, entry, true)}
-                isSelected={selectedPath === entry.path}
+                isSelected={selectedPath === entry.path && stageMode === "staged"}
               />
             ))
           )}

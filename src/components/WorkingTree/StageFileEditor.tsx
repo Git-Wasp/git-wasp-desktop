@@ -70,8 +70,13 @@ function loadBool(storageKey: string, fallback: boolean): boolean {
 interface StageFileEditorProps {
   path: string;
   contents: StageFileContents;
-  /** Persist the staged result buffer (line-level staging). */
-  onStage: (path: string, content: string) => void;
+  /** Which panel opened the file: "unstaged" (Changes — clicking `+` stages the
+   *  line) or "staged" (Staged — clicking `−` unstages it). Omitted in read-only
+   *  mode, which has no staging affordances. */
+  stageMode?: "staged" | "unstaged";
+  /** Write the file's new index blob — the mechanism behind an immediate
+   *  per-line stage/unstage. The editor composes the blob for the toggled line. */
+  onApplyIndex?: (path: string, content: string) => void;
   /** Stage a binary / deleted file wholesale (line-level staging N/A). */
   onStageWholeFile?: (path: string) => void;
   onDiscardFile?: (path: string) => void;
@@ -397,7 +402,8 @@ function ReadOnlyStagePane({
 export function StageFileEditor({
   path,
   contents,
-  onStage,
+  stageMode,
+  onApplyIndex,
   onStageWholeFile,
   onDiscardFile,
   onClose,
@@ -586,9 +592,16 @@ export function StageFileEditor({
     [hunkTextValue, hunkDecorationEntries],
   );
 
-  // Row indices whose change is staged. Seeded to "everything staged", so the
-  // panes open with every change marked "−" (Stage commits the whole file).
-  const [stagedRows, setStagedRows] = useState<Set<number>>(() => new Set(changedRowIndices(rows)));
+  // Row indices whose change reads as staged, driving the gutter symbols (`−`
+  // staged / `+` not). The two panels show a single git-native direction, so the
+  // whole view is one state: the unstaged (Changes) view opens with nothing
+  // staged (all `+`), the staged view with everything staged (all `−`). A toggle
+  // applies to the index immediately and the refetched diff re-seeds this.
+  const seedStaged = useCallback(
+    () => (stageMode === "unstaged" ? new Set<number>() : new Set(changedRowIndices(rows))),
+    [stageMode, rows],
+  );
+  const [stagedRows, setStagedRows] = useState<Set<number>>(seedStaged);
   const stagedRowsRef = useRef(stagedRows);
   const headViewRef = useRef<EditorView | null>(null);
   const worktreeViewRef = useRef<EditorView | null>(null);
@@ -602,20 +615,34 @@ export function StageFileEditor({
 
   const toggleRow = useCallback(
     (rowIndex: number) => {
+      // Live per-line staging: recompose this file's index blob and write it
+      // immediately. Unstaged view (index → worktree) stages just this line;
+      // staged view (HEAD → index) unstages it (keep every other staged line).
+      if (stageMode && onApplyIndex) {
+        let indexSelection: Set<number>;
+        if (stageMode === "unstaged") {
+          indexSelection = new Set([rowIndex]);
+        } else {
+          indexSelection = new Set(changedRowIndices(rows));
+          indexSelection.delete(rowIndex);
+        }
+        onApplyIndex(path, composeStagedText(rows, indexSelection));
+        return;
+      }
       const next = new Set(stagedRowsRef.current);
       if (next.has(rowIndex)) next.delete(rowIndex);
       else next.add(rowIndex);
       applyStaged(next);
     },
-    [applyStaged],
+    [stageMode, onApplyIndex, rows, path, applyStaged],
   );
 
-  // Reset the staged set whenever the file (its diff) changes.
+  // Re-seed the staged set whenever the file (its diff) or mode changes.
   useEffect(() => {
-    const initial = new Set(changedRowIndices(rows));
+    const initial = seedStaged();
     stagedRowsRef.current = initial;
     setStagedRows(initial);
-  }, [rows]);
+  }, [seedStaged]);
 
   // Keep the two top panes vertically (and horizontally) in sync as you scroll.
   const syncingRef = useRef(false);
@@ -718,10 +745,11 @@ export function StageFileEditor({
     [hunkChangedLineNos, hunkLineToRow, stagedRows],
   );
 
-  // The staged result is composed directly from the line selection (no separate
-  // result buffer): every change staged ⇒ the working tree; none ⇒ HEAD.
-  const handleStage = () => onStage(path, composeStagedText(rows, stagedRows));
-  const handleReset = () => applyStaged(new Set(changedRowIndices(rows)));
+  // File-level convenience: stage every remaining line (compose = working-tree
+  // side) or unstage every line (compose = HEAD side), applied to the index now.
+  const handleStageAll = () =>
+    onApplyIndex?.(path, composeStagedText(rows, new Set(changedRowIndices(rows))));
+  const handleUnstageAll = () => onApplyIndex?.(path, composeStagedText(rows, new Set()));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
@@ -788,15 +816,15 @@ export function StageFileEditor({
                   <WhitespaceIcon />
                 </IconButton>
               </Tooltip>
-              {!readOnly && (
-                <>
-                  <Button size="sm" type="button" onClick={handleReset}>
-                    Reset
-                  </Button>
-                  <Button variant="primary" size="sm" type="button" onClick={handleStage}>
-                    Stage
-                  </Button>
-                </>
+              {!readOnly && stageMode === "unstaged" && (
+                <Button variant="primary" size="sm" type="button" onClick={handleStageAll}>
+                  Stage all
+                </Button>
+              )}
+              {!readOnly && stageMode === "staged" && (
+                <Button size="sm" type="button" onClick={handleUnstageAll}>
+                  Unstage all
+                </Button>
               )}
             </>
           )}

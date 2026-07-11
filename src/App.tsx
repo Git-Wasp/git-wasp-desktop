@@ -50,11 +50,12 @@ export default function App() {
   const { initTheme } = useThemeStore();
   const {
     selectedPath: wtSelectedPath,
+    stageMode: wtStageMode,
     stageDiff: wtStageDiff,
     clearSelectedFile,
     discardFile,
     stageFile,
-    applyStagedContent,
+    applyIndexContent,
   } = useWorkingTreeStore();
   const [view, setView] = useState<View>("history");
   // In the history view, the right panel shows commit details or the
@@ -326,10 +327,13 @@ export default function App() {
                   <StageFileEditor
                     path={wtSelectedPath}
                     contents={wtStageDiff}
-                    onStage={applyStagedContent}
+                    stageMode={wtStageMode ?? "unstaged"}
+                    onApplyIndex={applyIndexContent}
                     onStageWholeFile={stageFile}
                     onDiscardFile={discardFile}
                     onClose={clearSelectedFile}
+                    leftLabel={wtStageMode === "staged" ? "HEAD" : "Staged"}
+                    rightLabel={wtStageMode === "staged" ? "Staged" : "Working tree"}
                   />
                 ) : showingCommitFileDiff && commitFilePath && commitFileContents ? (
                   <StageFileEditor
@@ -338,7 +342,6 @@ export default function App() {
                     contents={commitFileContents}
                     leftLabel="Parent"
                     rightLabel="This commit"
-                    onStage={() => {}}
                     onClose={clearCommitFile}
                   />
                 ) : (

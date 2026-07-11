@@ -56,10 +56,11 @@ pub async fn unstage_hunk(
 #[tauri::command]
 pub async fn get_stage_file_contents(
     path: String,
+    staged: bool,
     state: State<'_, AppState>,
 ) -> Result<StageFileContents, String> {
     state
-        .with_repo(|repo| wt_get_stage_file_contents(repo, &path))
+        .with_repo(|repo| wt_get_stage_file_contents(repo, &path, staged))
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }

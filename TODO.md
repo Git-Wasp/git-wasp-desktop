@@ -1067,7 +1067,33 @@ between sections, and add new ideas under the right heading. Items marked
       (store toggle persists, toolbar flips state, rows mute/unmute with the
       flag). Suites green (frontend 539, backend 218).
 - [ ] Add an integrated terminal that can be shown by clicking a button above the graph view. Should open automatically in the directory that contains the currently opened git repo.
-- [ ] In diff viewer clicking the + or - to add or remove a line should stage _the selected line(s)_ so the file becomes visible in the "staged" area and clicking on the file from the staged area shows the diff between what's staged and what's in the current commit before this commit lands. Unticking a line from this staged file does the opposite - unstages that line. The changes staged vs unstaged should be tracked so that reselecting an affected file from the unstaged panel (if there are more changes) already shows which lines have been staged and allows them to be unstaged from here too.
+- [x] In diff viewer clicking the + or - to add or remove a line should stage _the selected line(s)_ so the file becomes visible in the "staged" area and clicking on the file from the staged area shows the diff between what's staged and what's in the current commit before this commit lands. Unticking a line from this staged file does the opposite - unstages that line. The changes staged vs unstaged should be tracked so that reselecting an affected file from the unstaged panel (if there are more changes) already shows which lines have been staged and allows them to be unstaged from here too.
+      — implemented the **git-native split** model (immediate + index-backed;
+      chosen over a unified tri-state overlay for correctness — the real index is
+      the source of truth, so a line staged-to-X-but-edited-to-Y can't be
+      misrepresented). Each panel opens the file in its own direction:
+      **Changes** → `index → working tree` (clicking `+` stages that line now);
+      **Staged** → `HEAD → index` (clicking `−` unstages it now). Files move
+      between panels live; state is real (survives reopen) because it *is* the
+      index. A partially-staged file shows in both panels, scoped by `stageMode`
+      so only the matching row highlights.
+      Mechanism reuses the existing compose primitive rather than fragile partial
+      patches: a click recomposes the file's index blob from the current diff
+      (`composeStagedText`) and writes it via `stage_file_content`, then re-fetches
+      the same file's diff so the toggled line moves out of view.
+      Backend: `get_stage_file_contents(path, staged)` now returns the git-native
+      pair per direction (new `read_head_blob`/`read_index_blob` helpers). Store:
+      `selectFile(path, mode)` + `stageMode` + `applyIndexContent` (replaces the
+      deferred `applyStagedContent`). Editor: per-line toggles apply immediately;
+      "Stage all"/"Unstage all" replace the old Stage/Reset buttons; labels adapt
+      per mode. Tests: backend (staged/unstaged split with a partially-staged
+      file; staged view of a newly-staged file), store (mode-aware selectFile +
+      applyIndexContent reload), editor (per-line stage/unstage in split/inline/
+      hunk, Stage-all/Unstage-all). Suites green (frontend 622, backend 234).
+      NOTE (deferred): requirement 4's literal "overlay the already-staged lines
+      *within the unstaged view*" is only partially met — staged lines appear in
+      the **Staged** panel, not overlaid on the Changes view. A true unified
+      tri-state editor is a larger, riskier follow-up (see the option we discussed).
 - [x] When viewing uncommitted changes, files in the top panel have a right-click menu including "discard", "stage", and "delete file". Delete should require a confirmation via modal. The "staged panel" files should also have a right-click menu with options including "unstage" and "delete" with the same caveats.
       — `StagingPanel` file rows now open a right-click `ContextMenu` (reusing the
       shared graph/sidebar menu, right-aligned): Changes rows offer Stage /

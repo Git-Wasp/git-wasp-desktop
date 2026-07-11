@@ -4,7 +4,7 @@ import "@testing-library/jest-dom";
 import { StageFileEditor } from "./StageFileEditor";
 import type { StageFileContents } from "../../types/workingTree";
 
-// A pure insertion: working tree adds line "b" between "a" and "c".
+// A pure insertion: the right (working-tree / index) side adds line "b".
 const inserted: StageFileContents = {
   headContent: "a\nc\n",
   worktreeContent: "a\nb\nc\n",
@@ -12,7 +12,7 @@ const inserted: StageFileContents = {
   worktreeExists: true,
 };
 
-// A pure deletion: working tree removes line "b".
+// A pure deletion: the right side removes line "b".
 const removed: StageFileContents = {
   headContent: "a\nb\nc\n",
   worktreeContent: "a\nc\n",
@@ -38,9 +38,26 @@ function pane(container: HTMLElement, testId: string): HTMLElement {
   return el;
 }
 
+// Convenience: the working-tree editor is always opened in a mode. "unstaged"
+// (Changes panel) is the common case unless a test overrides it.
+function renderEditor(
+  contents: StageFileContents,
+  props: Partial<React.ComponentProps<typeof StageFileEditor>> = {},
+) {
+  return render(
+    <StageFileEditor
+      path="f.txt"
+      contents={contents}
+      stageMode="unstaged"
+      onApplyIndex={vi.fn()}
+      {...props}
+    />,
+  );
+}
+
 describe("StageFileEditor", () => {
   it("renders the HEAD and Working Tree panes side by side", () => {
-    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+    const { container } = renderEditor(inserted);
 
     expect(screen.getByText("HEAD")).toBeInTheDocument();
     expect(screen.getByText("Working Tree")).toBeInTheDocument();
@@ -49,107 +66,114 @@ describe("StageFileEditor", () => {
   });
 
   it("gives the panes minWidth:0 so long unwrapped lines scroll instead of overflowing", () => {
-    // Regression guard: without minWidth:0 a split/grid pane won't shrink below
-    // its content, so CodeMirror's scroller can't scroll horizontally (the pane
-    // overflows the panel instead). See TODO "Diff view horizontal scroll".
-    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+    const { container } = renderEditor(inserted);
     const head = pane(container, "head-pane");
     expect(head.style.minWidth).toBe("0");
-    // The CodeMirror host (the pane's last child) must also be able to shrink.
     const cmHost = head.lastElementChild as HTMLElement;
     expect(cmHost.style.minWidth).toBe("0");
   });
 
   it("no longer renders the bottom staged-result pane", () => {
-    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+    const { container } = renderEditor(inserted);
 
     expect(screen.queryByText("Staged result")).not.toBeInTheDocument();
     expect(container.querySelector('[data-testid="result-pane"]')).toBeNull();
   });
 
-  it("shows a single '−' toggle (staged by default) on the inserted line", async () => {
-    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+  it("shows a '+' (stage) toggle per change in the unstaged view", async () => {
+    const { container } = renderEditor(inserted);
 
     await waitFor(() => {
       const buttons = container.querySelectorAll<HTMLButtonElement>(".cm-stage-toggle");
-      // One change ⇒ one toggle (on the working-tree pane, where the text lives).
+      expect(buttons.length).toBe(1);
+      expect(buttons[0].textContent).toBe("+");
+    });
+  });
+
+  it("shows a '−' (unstage) toggle per change in the staged view", async () => {
+    const { container } = renderEditor(inserted, { stageMode: "staged" });
+
+    await waitFor(() => {
+      const buttons = container.querySelectorAll<HTMLButtonElement>(".cm-stage-toggle");
       expect(buttons.length).toBe(1);
       expect(buttons[0].textContent).toBe("−");
     });
   });
 
   it("shows an addition solid-green on the right and hatched on the HEAD side", async () => {
-    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+    const { container } = renderEditor(inserted);
 
     await waitFor(() => {
-      // The real added text reads solid green on the working-tree side.
       expect(pane(container, "worktree-pane").querySelector(".cm-diff-add-line")).not.toBeNull();
-      // The added "b" has no HEAD line, so the HEAD pane shows a neutral hatch
-      // gap (not a solid green fill).
       expect(pane(container, "head-pane").querySelector(".cm-diff-placeholder-line")).not.toBeNull();
       expect(pane(container, "head-pane").querySelector(".cm-diff-add-line")).toBeNull();
     });
   });
 
   it("shows a removal solid-red on the HEAD side and hatched on the right", async () => {
-    const { container } = render(<StageFileEditor path="f.txt" contents={removed} onStage={vi.fn()} />);
+    const { container } = renderEditor(removed);
 
     await waitFor(() => {
-      // The real removed text reads solid red on the HEAD side.
       expect(pane(container, "head-pane").querySelector(".cm-diff-del-line")).not.toBeNull();
-      // The removed "b" has no working-tree line, so that pane shows a hatch gap.
       expect(pane(container, "worktree-pane").querySelector(".cm-diff-placeholder-line")).not.toBeNull();
       expect(pane(container, "worktree-pane").querySelector(".cm-diff-del-line")).toBeNull();
     });
   });
 
-  it("stages the whole file by default", async () => {
-    const onStage = vi.fn();
-    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={onStage} />);
-
-    await waitFor(() => expect(container.querySelector(".cm-stage-toggle")).not.toBeNull());
-    fireEvent.click(screen.getByRole("button", { name: "Stage" }));
-
-    expect(onStage).toHaveBeenCalledTimes(1);
-    expect(onStage.mock.calls[0]).toEqual(["f.txt", "a\nb\nc\n"]);
-  });
-
-  it("stages HEAD content once the only change is unstaged", async () => {
-    const onStage = vi.fn();
-    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={onStage} />);
+  it("stages a line immediately when its '+' is clicked (unstaged view)", async () => {
+    const onApplyIndex = vi.fn();
+    const { container } = renderEditor(inserted, { onApplyIndex });
 
     const toggle = await waitFor(() => {
-      const button = container.querySelector<HTMLButtonElement>(".cm-stage-toggle");
-      expect(button).not.toBeNull();
-      return button!;
+      const b = container.querySelector<HTMLButtonElement>(".cm-stage-toggle");
+      expect(b).not.toBeNull();
+      return b!;
     });
     fireEvent.click(toggle);
 
-    await waitFor(() => {
-      expect(container.querySelector<HTMLButtonElement>(".cm-stage-toggle")?.textContent).toBe("+");
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Stage" }));
-
-    expect(onStage.mock.calls[0]).toEqual(["f.txt", "a\nc\n"]);
+    // Staging the added "b" writes the working-tree content into the index.
+    expect(onApplyIndex).toHaveBeenCalledTimes(1);
+    expect(onApplyIndex.mock.calls[0]).toEqual(["f.txt", "a\nb\nc\n"]);
   });
 
-  it("resets the selection back to everything staged", async () => {
-    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+  it("unstages a line immediately when its '−' is clicked (staged view)", async () => {
+    const onApplyIndex = vi.fn();
+    const { container } = renderEditor(inserted, { stageMode: "staged", onApplyIndex });
 
-    const toggle = await waitFor(() => container.querySelector<HTMLButtonElement>(".cm-stage-toggle")!);
+    const toggle = await waitFor(() => {
+      const b = container.querySelector<HTMLButtonElement>(".cm-stage-toggle");
+      expect(b).not.toBeNull();
+      return b!;
+    });
     fireEvent.click(toggle);
-    await waitFor(() =>
-      expect(container.querySelector<HTMLButtonElement>(".cm-stage-toggle")?.textContent).toBe("+"),
-    );
 
-    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
-    await waitFor(() =>
-      expect(container.querySelector<HTMLButtonElement>(".cm-stage-toggle")?.textContent).toBe("−"),
-    );
+    // Unstaging the only staged change reverts the index blob to HEAD.
+    expect(onApplyIndex).toHaveBeenCalledTimes(1);
+    expect(onApplyIndex.mock.calls[0]).toEqual(["f.txt", "a\nc\n"]);
+  });
+
+  it("stages every line via 'Stage all' in the unstaged view", async () => {
+    const onApplyIndex = vi.fn();
+    const { container } = renderEditor(inserted, { onApplyIndex });
+
+    await waitFor(() => expect(container.querySelector(".cm-stage-toggle")).not.toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Stage all" }));
+
+    expect(onApplyIndex.mock.calls[0]).toEqual(["f.txt", "a\nb\nc\n"]);
+  });
+
+  it("unstages every line via 'Unstage all' in the staged view", async () => {
+    const onApplyIndex = vi.fn();
+    const { container } = renderEditor(inserted, { stageMode: "staged", onApplyIndex });
+
+    await waitFor(() => expect(container.querySelector(".cm-stage-toggle")).not.toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Unstage all" }));
+
+    expect(onApplyIndex.mock.calls[0]).toEqual(["f.txt", "a\nc\n"]);
   });
 
   it("defaults to the split view with both panes and a view-mode toggle", () => {
-    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+    const { container } = renderEditor(inserted);
 
     expect(pane(container, "head-pane")).toBeInTheDocument();
     expect(pane(container, "worktree-pane")).toBeInTheDocument();
@@ -160,7 +184,7 @@ describe("StageFileEditor", () => {
   });
 
   it("switches to a single unified pane in inline view", () => {
-    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+    const { container } = renderEditor(inserted);
 
     fireEvent.click(screen.getByRole("button", { name: "Inline view" }));
 
@@ -170,51 +194,43 @@ describe("StageFileEditor", () => {
   });
 
   it("shows added and removed lines together in the inline pane", async () => {
-    const { container } = render(<StageFileEditor path="f.txt" contents={modified} onStage={vi.fn()} />);
+    const { container } = renderEditor(modified);
     fireEvent.click(screen.getByRole("button", { name: "Inline view" }));
 
     await waitFor(() => {
       const inline = pane(container, "inline-pane");
       expect(inline.querySelector(".cm-diff-add-line")).not.toBeNull();
       expect(inline.querySelector(".cm-diff-del-line")).not.toBeNull();
-      // No hatched placeholders in the unified view.
       expect(inline.querySelector(".cm-diff-placeholder-line")).toBeNull();
     });
   });
 
   it("stages line-by-line from the inline view", async () => {
-    const onStage = vi.fn();
-    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={onStage} />);
+    const onApplyIndex = vi.fn();
+    const { container } = renderEditor(inserted, { onApplyIndex });
     fireEvent.click(screen.getByRole("button", { name: "Inline view" }));
 
     const toggle = await waitFor(() => {
-      const button = container.querySelector<HTMLButtonElement>('[data-testid="inline-pane"] .cm-stage-toggle');
-      expect(button).not.toBeNull();
-      return button!;
+      const b = container.querySelector<HTMLButtonElement>('[data-testid="inline-pane"] .cm-stage-toggle');
+      expect(b).not.toBeNull();
+      return b!;
     });
-    expect(toggle.textContent).toBe("−");
-    fireEvent.click(toggle); // unstage the only change
-    await waitFor(() =>
-      expect(
-        container.querySelector<HTMLButtonElement>('[data-testid="inline-pane"] .cm-stage-toggle')?.textContent,
-      ).toBe("+"),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Stage" }));
-    expect(onStage.mock.calls[0]).toEqual(["f.txt", "a\nc\n"]);
+    expect(toggle.textContent).toBe("+");
+    fireEvent.click(toggle);
+    expect(onApplyIndex.mock.calls[0]).toEqual(["f.txt", "a\nb\nc\n"]);
   });
 
   it("remembers the chosen view mode across remounts", () => {
-    const first = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+    const first = renderEditor(inserted);
     fireEvent.click(screen.getByRole("button", { name: "Inline view" }));
     first.unmount();
 
-    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+    const { container } = renderEditor(inserted);
     expect(pane(container, "inline-pane")).toBeInTheDocument();
   });
 
   it("switches to a hunk view with an @@ header and change decorations", async () => {
-    const { container } = render(<StageFileEditor path="f.txt" contents={modified} onStage={vi.fn()} />);
+    const { container } = renderEditor(modified);
 
     fireEvent.click(screen.getByRole("button", { name: "Hunk view" }));
 
@@ -229,48 +245,39 @@ describe("StageFileEditor", () => {
   });
 
   it("stages line-by-line from the hunk view", async () => {
-    const onStage = vi.fn();
-    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={onStage} />);
+    const onApplyIndex = vi.fn();
+    const { container } = renderEditor(inserted, { onApplyIndex });
     fireEvent.click(screen.getByRole("button", { name: "Hunk view" }));
 
     const toggle = await waitFor(() => {
-      const button = container.querySelector<HTMLButtonElement>('[data-testid="hunk-pane"] .cm-stage-toggle');
-      expect(button).not.toBeNull();
-      return button!;
+      const b = container.querySelector<HTMLButtonElement>('[data-testid="hunk-pane"] .cm-stage-toggle');
+      expect(b).not.toBeNull();
+      return b!;
     });
-    expect(toggle.textContent).toBe("−");
-    fireEvent.click(toggle); // unstage the only change
-    await waitFor(() =>
-      expect(
-        container.querySelector<HTMLButtonElement>('[data-testid="hunk-pane"] .cm-stage-toggle')?.textContent,
-      ).toBe("+"),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Stage" }));
-    expect(onStage.mock.calls[0]).toEqual(["f.txt", "a\nc\n"]);
+    expect(toggle.textContent).toBe("+");
+    fireEvent.click(toggle);
+    expect(onApplyIndex.mock.calls[0]).toEqual(["f.txt", "a\nb\nc\n"]);
   });
 
   it("remembers the hunk view across remounts", () => {
-    const first = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+    const first = renderEditor(inserted);
     fireEvent.click(screen.getByRole("button", { name: "Hunk view" }));
     first.unmount();
 
-    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+    const { container } = renderEditor(inserted);
     expect(pane(container, "hunk-pane")).toBeInTheDocument();
   });
 
   it("renders the change overview ruler", () => {
-    const { container } = render(<StageFileEditor path="f.txt" contents={inserted} onStage={vi.fn()} />);
+    const { container } = renderEditor(inserted);
     const overview = container.querySelector('[data-testid="change-overview"]');
     expect(overview).not.toBeNull();
-    // One marker for the single added row (in the right lane of the split view).
     const marks = overview!.querySelectorAll("[data-overview-mark]");
     expect(marks.length).toBe(1);
     expect(marks[0].getAttribute("data-color")).toBe("add");
   });
 
   describe("diff-view options", () => {
-    // A change that is only leading/trailing whitespace on line 2.
     const whitespaceOnly: StageFileContents = {
       headContent: "a\nfoo\nc\n",
       worktreeContent: "a\n  foo  \nc\n",
@@ -279,21 +286,21 @@ describe("StageFileEditor", () => {
     };
 
     it("wrap toggle defaults on and flips + persists when clicked", () => {
-      render(<StageFileEditor path="f.txt" contents={modified} onStage={vi.fn()} />);
+      renderEditor(modified);
       const btn = screen.getByRole("button", { name: "Wrap long lines" });
 
-      expect(btn).toHaveAttribute("aria-pressed", "true"); // wraps by default
+      expect(btn).toHaveAttribute("aria-pressed", "true");
       fireEvent.click(btn);
       expect(btn).toHaveAttribute("aria-pressed", "false");
       expect(localStorage.getItem("stageFileEditor.wrap")).toBe("false");
     });
 
     it("remembers the wrap preference across remounts", () => {
-      const first = render(<StageFileEditor path="f.txt" contents={modified} onStage={vi.fn()} />);
+      const first = renderEditor(modified);
       fireEvent.click(screen.getByRole("button", { name: "Wrap long lines" }));
       first.unmount();
 
-      render(<StageFileEditor path="f.txt" contents={modified} onStage={vi.fn()} />);
+      renderEditor(modified);
       expect(screen.getByRole("button", { name: "Wrap long lines" })).toHaveAttribute(
         "aria-pressed",
         "false",
@@ -301,11 +308,8 @@ describe("StageFileEditor", () => {
     });
 
     it("hides whitespace-only changes when the whitespace toggle is on", async () => {
-      const { container } = render(
-        <StageFileEditor path="f.txt" contents={whitespaceOnly} onStage={vi.fn()} />,
-      );
+      const { container } = renderEditor(whitespaceOnly);
 
-      // Shown by default: the whitespace-only change has stage toggles.
       await waitFor(() =>
         expect(container.querySelectorAll(".cm-stage-toggle").length).toBeGreaterThan(0),
       );
@@ -314,7 +318,6 @@ describe("StageFileEditor", () => {
       expect(btn).toHaveAttribute("aria-pressed", "false");
       fireEvent.click(btn);
 
-      // Collapsed to context — nothing left to stage.
       await waitFor(() => expect(container.querySelectorAll(".cm-stage-toggle").length).toBe(0));
       expect(btn).toHaveAttribute("aria-pressed", "true");
       expect(localStorage.getItem("stageFileEditor.ignoreWhitespace")).toBe("true");
@@ -322,11 +325,8 @@ describe("StageFileEditor", () => {
 
     it("keeps a real change visible with the whitespace toggle on", async () => {
       localStorage.setItem("stageFileEditor.ignoreWhitespace", "true");
-      const { container } = render(
-        <StageFileEditor path="f.txt" contents={modified} onStage={vi.fn()} />,
-      );
+      const { container } = renderEditor(modified);
 
-      // "b" → "B" is a genuine change, so it still shows even while ignoring ws.
       await waitFor(() =>
         expect(container.querySelectorAll(".cm-stage-toggle").length).toBeGreaterThan(0),
       );
@@ -334,7 +334,6 @@ describe("StageFileEditor", () => {
   });
 
   describe("image preview", () => {
-    // An added image: only the new (worktree) side has a data URI.
     const addedImage: StageFileContents = {
       headContent: "",
       worktreeContent: "",
@@ -343,7 +342,6 @@ describe("StageFileEditor", () => {
       headImage: null,
       worktreeImage: "data:image/png;base64,AAAA",
     };
-    // A modified image: both sides preview.
     const modifiedImage: StageFileContents = {
       headContent: "",
       worktreeContent: "",
@@ -355,17 +353,9 @@ describe("StageFileEditor", () => {
 
     it("previews an image instead of a text diff, offering whole-file staging", () => {
       const onStageWholeFile = vi.fn();
-      const { container } = render(
-        <StageFileEditor
-          path="logo.png"
-          contents={addedImage}
-          onStage={vi.fn()}
-          onStageWholeFile={onStageWholeFile}
-        />,
-      );
+      const { container } = renderEditor(addedImage, { path: "logo.png", onStageWholeFile });
 
       expect(container.querySelector('[data-testid="image-diff"]')).not.toBeNull();
-      // No text/line panes and no view-mode toggle for an image.
       expect(container.querySelector('[data-testid="head-pane"]')).toBeNull();
       expect(screen.queryByRole("button", { name: "Inline view" })).toBeNull();
 
@@ -377,7 +367,7 @@ describe("StageFileEditor", () => {
     });
 
     it("shows both before/after images for a modified image", () => {
-      render(<StageFileEditor path="logo.png" contents={modifiedImage} onStage={vi.fn()} />);
+      renderEditor(modifiedImage, { path: "logo.png" });
 
       const imgs = screen.getAllByAltText(/preview/i) as HTMLImageElement[];
       expect(imgs.map((i) => i.getAttribute("src"))).toEqual([
@@ -387,9 +377,7 @@ describe("StageFileEditor", () => {
     });
 
     it("has no staging controls when read-only (commit view)", () => {
-      render(
-        <StageFileEditor readOnly path="logo.png" contents={modifiedImage} onStage={vi.fn()} />,
-      );
+      render(<StageFileEditor readOnly path="logo.png" contents={modifiedImage} />);
       expect(screen.queryByRole("button", { name: /stage whole file/i })).toBeNull();
     });
   });
@@ -403,15 +391,13 @@ describe("StageFileEditor", () => {
           contents={modified}
           leftLabel="Parent"
           rightLabel="This commit"
-          onStage={vi.fn()}
         />,
       );
 
       expect(screen.getByText("Parent")).toBeInTheDocument();
       expect(screen.getByText("This commit")).toBeInTheDocument();
-      // No staging affordances.
-      expect(screen.queryByRole("button", { name: "Stage" })).not.toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "Reset" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Stage all" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Unstage all" })).not.toBeInTheDocument();
       await waitFor(() => {
         expect(pane(container, "head-pane").querySelector(".cm-diff-del-line")).not.toBeNull();
         expect(pane(container, "worktree-pane").querySelector(".cm-diff-add-line")).not.toBeNull();
@@ -420,7 +406,7 @@ describe("StageFileEditor", () => {
     });
 
     it("keeps the split/inline view toggle", () => {
-      render(<StageFileEditor readOnly path="f.txt" contents={modified} onStage={vi.fn()} />);
+      render(<StageFileEditor readOnly path="f.txt" contents={modified} />);
       expect(screen.getByRole("button", { name: "Side-by-side view" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Inline view" })).toBeInTheDocument();
     });
@@ -432,9 +418,7 @@ describe("StageFileEditor", () => {
         isBinary: false,
         worktreeExists: false,
       };
-      const { container } = render(
-        <StageFileEditor readOnly path="f.txt" contents={deleted} onStage={vi.fn()} />,
-      );
+      const { container } = render(<StageFileEditor readOnly path="f.txt" contents={deleted} />);
 
       expect(screen.queryByText(/can't be staged/i)).not.toBeInTheDocument();
       await waitFor(() =>
@@ -450,13 +434,7 @@ describe("StageFileEditor", () => {
         worktreeExists: true,
       };
       render(
-        <StageFileEditor
-          readOnly
-          path="logo.png"
-          contents={binary}
-          onStage={vi.fn()}
-          onStageWholeFile={vi.fn()}
-        />,
+        <StageFileEditor readOnly path="logo.png" contents={binary} onStageWholeFile={vi.fn()} />,
       );
 
       expect(screen.getByText(/no preview/i)).toBeInTheDocument();
@@ -472,18 +450,10 @@ describe("StageFileEditor", () => {
       isBinary: true,
       worktreeExists: true,
     };
-    render(
-      <StageFileEditor
-        path="logo.png"
-        contents={binary}
-        onStage={vi.fn()}
-        onStageWholeFile={onStageWholeFile}
-      />,
-    );
+    renderEditor(binary, { path: "logo.png", onStageWholeFile });
 
     expect(screen.getByText(/binary file/i)).toBeInTheDocument();
-    // No line-level Stage/Reset for a non-line-editable file.
-    expect(screen.queryByRole("button", { name: "Stage" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stage all" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Stage whole file" }));
     expect(onStageWholeFile).toHaveBeenCalledWith("logo.png");
   });

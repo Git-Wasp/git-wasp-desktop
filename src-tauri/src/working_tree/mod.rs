@@ -317,47 +317,94 @@ pub fn unstage_file(repo: &Repository, path: &str) -> anyhow::Result<WorkingTree
     get_working_tree_status(repo)
 }
 
-/// Read the HEAD-blob and working-tree content for `path`, for the line-level
-/// staging editor. `head_content` is empty when the path isn't in HEAD (a newly
-/// added file). Marks `is_binary` when either side contains a NUL byte so the
-/// frontend can fall back to whole-file staging.
-pub fn get_stage_file_contents(repo: &Repository, path: &str) -> anyhow::Result<StageFileContents> {
+/// The blob bytes for `path` in HEAD's tree, or empty when the path isn't in
+/// HEAD (an unborn HEAD, or a newly added file).
+fn read_head_blob(repo: &Repository, path: &str) -> Vec<u8> {
+    let Ok(head) = repo.head() else {
+        return Vec::new();
+    };
+    let Ok(tree) = head.peel_to_tree() else {
+        return Vec::new();
+    };
+    match tree.get_path(Path::new(path)) {
+        Ok(entry) => repo
+            .find_blob(entry.id())
+            .map(|b| b.content().to_vec())
+            .unwrap_or_default(),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// The staged (index) blob bytes for `path`, or `None` when the index has no
+/// entry for it (unstaged untracked file, or a staged deletion).
+fn read_index_blob(repo: &Repository, path: &str) -> Option<Vec<u8>> {
+    let index = repo.index().ok()?;
+    let entry = index.get_path(Path::new(path), 0)?;
+    Some(
+        repo.find_blob(entry.id)
+            .map(|b| b.content().to_vec())
+            .unwrap_or_default(),
+    )
+}
+
+/// Read the two sides to diff in the line-level staging editor. The editor is
+/// split by which panel opened the file, so the two sides are the git-native
+/// pair for that direction:
+///
+/// * `staged = false` (opened from **Changes**): index → working tree, i.e. the
+///   *unstaged* edits. `head_content` is the staged (index) blob and
+///   `worktree_content` the file on disk; staging a line writes it into the index.
+/// * `staged = true` (opened from **Staged**): HEAD → index, i.e. the *staged*
+///   edits. `head_content` is the HEAD blob and `worktree_content` the index blob;
+///   unstaging a line reverts it in the index.
+///
+/// Marks `is_binary` when either side contains a NUL byte so the frontend can
+/// fall back to whole-file staging.
+pub fn get_stage_file_contents(
+    repo: &Repository,
+    path: &str,
+    staged: bool,
+) -> anyhow::Result<StageFileContents> {
     let workdir = repo
         .workdir()
         .context("bare repository has no working directory")?;
     let full_path = workdir.join(path);
-    let worktree_exists = full_path.is_file();
-    let worktree_bytes = std::fs::read(&full_path).unwrap_or_default();
 
-    let head_bytes = match repo.head() {
-        Ok(head) => {
-            let tree = head.peel_to_tree().context("HEAD has no tree")?;
-            match tree.get_path(Path::new(path)) {
-                Ok(entry) => repo
-                    .find_blob(entry.id())
-                    .context("HEAD entry is not a blob")?
-                    .content()
-                    .to_vec(),
-                Err(_) => Vec::new(),
-            }
-        }
-        Err(_) => Vec::new(),
+    let head_bytes = read_head_blob(repo, path);
+    let index_entry = read_index_blob(repo, path);
+
+    let (left_bytes, right_bytes, right_exists) = if staged {
+        // HEAD → index (staged edits). The right side "exists" when the index
+        // still tracks the file (a staged deletion has no index entry).
+        (
+            head_bytes,
+            index_entry.clone().unwrap_or_default(),
+            index_entry.is_some(),
+        )
+    } else {
+        // index → working tree (unstaged edits). The left side is the staged
+        // blob, the right side the file on disk.
+        (
+            index_entry.unwrap_or_default(),
+            std::fs::read(&full_path).unwrap_or_default(),
+            full_path.is_file(),
+        )
     };
 
-    let is_binary = head_bytes.contains(&0) || worktree_bytes.contains(&0);
+    let is_binary = left_bytes.contains(&0) || right_bytes.contains(&0);
     let (head_image, worktree_image) = match image_mime_from_path(path) {
         Some(mime) => (
-            image_data_url(&head_bytes, mime),
-            image_data_url(&worktree_bytes, mime),
+            image_data_url(&left_bytes, mime),
+            image_data_url(&right_bytes, mime),
         ),
         None => (None, None),
     };
 
     Ok(StageFileContents {
-        head_content: String::from_utf8_lossy(&head_bytes).into_owned(),
-        worktree_content: String::from_utf8_lossy(&worktree_bytes).into_owned(),
+        head_content: String::from_utf8_lossy(&left_bytes).into_owned(),
+        worktree_content: String::from_utf8_lossy(&right_bytes).into_owned(),
         is_binary,
-        worktree_exists,
+        worktree_exists: right_exists,
         head_image,
         worktree_image,
     })
@@ -1548,10 +1595,48 @@ mod tests {
         make_initial_commit(&repo);
         fs::write(dir.path().join("f.txt"), "a\nB\nc\n").unwrap();
 
-        let c = get_stage_file_contents(&repo, "f.txt").unwrap();
+        let c = get_stage_file_contents(&repo, "f.txt", false).unwrap();
         assert_eq!(c.head_content, "a\nb\nc\n");
         assert_eq!(c.worktree_content, "a\nB\nc\n");
         assert!(!c.is_binary);
+    }
+
+    #[test]
+    fn stage_contents_split_by_staged_flag_reflects_partial_index() {
+        // The editor shows the git-native pair per panel: Staged = HEAD→index,
+        // Changes = index→working tree. With one of two edits staged, each view
+        // shows exactly its own line.
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "f.txt", "a\nb\nc\n");
+        make_initial_commit(&repo);
+        // Working tree edits the first and third lines.
+        fs::write(dir.path().join("f.txt"), "A\nb\nC\n").unwrap();
+        // Stage only the first edit: index becomes "A\nb\nc\n".
+        stage_file_content(&repo, "f.txt", "A\nb\nc\n").unwrap();
+
+        // Staged view (HEAD → index): only the first line differs.
+        let staged = get_stage_file_contents(&repo, "f.txt", true).unwrap();
+        assert_eq!(staged.head_content, "a\nb\nc\n");
+        assert_eq!(staged.worktree_content, "A\nb\nc\n");
+
+        // Unstaged view (index → working tree): only the third line differs.
+        let unstaged = get_stage_file_contents(&repo, "f.txt", false).unwrap();
+        assert_eq!(unstaged.head_content, "A\nb\nc\n");
+        assert_eq!(unstaged.worktree_content, "A\nb\nC\n");
+    }
+
+    #[test]
+    fn staged_view_of_a_newly_staged_file_diffs_head_against_index() {
+        let (dir, repo) = init_repo();
+        make_initial_commit(&repo);
+        fs::write(dir.path().join("new.txt"), "hello\n").unwrap();
+        stage_file_content(&repo, "new.txt", "hello\n").unwrap();
+
+        // Staged: HEAD (absent) → index ("hello\n").
+        let staged = get_stage_file_contents(&repo, "new.txt", true).unwrap();
+        assert_eq!(staged.head_content, "");
+        assert_eq!(staged.worktree_content, "hello\n");
+        assert!(staged.worktree_exists, "the index still tracks the file");
     }
 
     #[test]
@@ -1560,7 +1645,7 @@ mod tests {
         make_initial_commit(&repo);
         fs::write(dir.path().join("new.txt"), "hello\n").unwrap();
 
-        let c = get_stage_file_contents(&repo, "new.txt").unwrap();
+        let c = get_stage_file_contents(&repo, "new.txt", false).unwrap();
         assert_eq!(c.head_content, "");
         assert_eq!(c.worktree_content, "hello\n");
     }
@@ -1572,7 +1657,7 @@ mod tests {
         make_initial_commit(&repo);
         fs::remove_file(dir.path().join("f.txt")).unwrap();
 
-        let c = get_stage_file_contents(&repo, "f.txt").unwrap();
+        let c = get_stage_file_contents(&repo, "f.txt", false).unwrap();
         assert!(!c.worktree_exists);
         assert_eq!(c.head_content, "a\nb\n");
     }
@@ -1583,7 +1668,7 @@ mod tests {
         make_initial_commit(&repo);
         fs::write(dir.path().join("bin"), b"a\0b").unwrap();
 
-        let c = get_stage_file_contents(&repo, "bin").unwrap();
+        let c = get_stage_file_contents(&repo, "bin", false).unwrap();
         assert!(c.is_binary);
     }
 
@@ -1598,7 +1683,7 @@ mod tests {
         )
         .unwrap();
 
-        let c = get_stage_file_contents(&repo, "logo.png").unwrap();
+        let c = get_stage_file_contents(&repo, "logo.png", false).unwrap();
         // New (worktree) side is an image; no previous version on the HEAD side.
         let uri = c.worktree_image.expect("image data URI");
         assert!(uri.starts_with("data:image/png;base64,"));
@@ -1606,7 +1691,7 @@ mod tests {
 
         // A non-image binary gets no image preview.
         fs::write(dir.path().join("blob.bin"), b"a\0b").unwrap();
-        let bin = get_stage_file_contents(&repo, "blob.bin").unwrap();
+        let bin = get_stage_file_contents(&repo, "blob.bin", false).unwrap();
         assert_eq!(bin.worktree_image, None);
     }
 
@@ -1682,7 +1767,7 @@ mod tests {
         make_initial_commit(&repo);
         fs::write(dir.path().join("f.txt"), "a\nb").unwrap(); // dropped final newline
 
-        let c = get_stage_file_contents(&repo, "f.txt").unwrap();
+        let c = get_stage_file_contents(&repo, "f.txt", false).unwrap();
         assert_eq!(c.head_content, "a\nb\n");
         assert_eq!(c.worktree_content, "a\nb");
     }

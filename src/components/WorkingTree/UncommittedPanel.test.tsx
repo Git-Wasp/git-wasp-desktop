@@ -49,7 +49,7 @@ describe("UncommittedPanel", () => {
     render(<UncommittedPanel branch="main" />);
     fireEvent.click(screen.getByText("src/a.ts"));
     await waitFor(() =>
-      expect(useWorkingTreeStore.getState().selectFile).toHaveBeenCalledWith("src/a.ts"),
+      expect(useWorkingTreeStore.getState().selectFile).toHaveBeenCalledWith("src/a.ts", "staged"),
     );
   });
 
@@ -57,7 +57,7 @@ describe("UncommittedPanel", () => {
     render(<UncommittedPanel branch="main" />);
     fireEvent.click(screen.getByText("src/b.ts"));
     await waitFor(() =>
-      expect(useWorkingTreeStore.getState().selectFile).toHaveBeenCalledWith("src/b.ts"),
+      expect(useWorkingTreeStore.getState().selectFile).toHaveBeenCalledWith("src/b.ts", "unstaged"),
     );
   });
 

@@ -10,20 +10,29 @@ import type {
   WorkingTreeStatus,
 } from "../types/workingTree";
 
+// Which side of the index the open file is being edited from. "unstaged" = the
+// Changes panel (index → working tree; toggling a line stages it); "staged" =
+// the Staged panel (HEAD → index; toggling a line unstages it). Drives which two
+// blobs `get_stage_file_contents` returns and how the editor interprets a toggle.
+export type StageMode = "staged" | "unstaged";
+
 interface WorkingTreeStore {
   status: WorkingTreeStatus | null;
   selectedPath: string | null;
+  stageMode: StageMode | null;
   stageDiff: StageFileContents | null;
   identity: Identity | null;
   headCommit: HeadCommitInfo | null;
 
   loadStatus: () => Promise<void>;
   refreshAll: () => Promise<void>;
-  selectFile: (path: string) => Promise<void>;
+  selectFile: (path: string, mode: StageMode) => Promise<void>;
   clearSelectedFile: () => void;
   stageFile: (path: string) => Promise<void>;
   unstageFile: (path: string) => Promise<void>;
-  applyStagedContent: (path: string, content: string) => Promise<void>;
+  /** Write `content` as the file's index blob (line-level stage/unstage) and
+   *  re-fetch the open file's diff in its current mode so the editor updates. */
+  applyIndexContent: (path: string, content: string) => Promise<void>;
   discardFile: (path: string) => Promise<void>;
   deleteFile: (path: string) => Promise<void>;
   discardAll: () => Promise<void>;
@@ -45,14 +54,19 @@ async function reselectAfterStaging(
   status: WorkingTreeStatus,
 ) {
   const target = nextSelectionAfterStaging(prevChanges, unstagedPaths(status), path);
-  set({ selectedPath: target });
-  const stageDiff = await invoke<StageFileContents>("get_stage_file_contents", { path: target });
+  // The next file to stage is, by definition, still unstaged — open it in that view.
+  set({ selectedPath: target, stageMode: "unstaged" });
+  const stageDiff = await invoke<StageFileContents>("get_stage_file_contents", {
+    path: target,
+    staged: false,
+  });
   set({ stageDiff });
 }
 
 export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
   status: null,
   selectedPath: null,
+  stageMode: null,
   stageDiff: null,
   identity: null,
   headCommit: null,
@@ -74,16 +88,18 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
     await useGraphStore.getState().refresh();
   },
 
-  // Selecting a file opens it in the line-level staging editor: load its HEAD vs
-  // working-tree content. The editor is a single surface for staging/unstaging,
-  // so it doesn't matter which list the file was selected from.
-  selectFile: async (path: string) => {
-    set({ selectedPath: path });
-    const stageDiff = await invoke<StageFileContents>("get_stage_file_contents", { path });
+  // Open a file in the line-level staging editor. `mode` says which panel it came
+  // from: "unstaged" shows the index→working-tree diff (toggling a line stages
+  // it), "staged" shows HEAD→index (toggling unstages). The same file can be open
+  // from either side when it's partially staged.
+  selectFile: async (path: string, mode: StageMode) => {
+    set({ selectedPath: path, stageMode: mode });
+    const staged = mode === "staged";
+    const stageDiff = await invoke<StageFileContents>("get_stage_file_contents", { path, staged });
     set({ stageDiff });
   },
 
-  clearSelectedFile: () => set({ selectedPath: null, stageDiff: null }),
+  clearSelectedFile: () => set({ selectedPath: null, stageMode: null, stageDiff: null }),
 
   stageFile: async (path: string) => {
     const prevChanges = unstagedPaths(get().status);
@@ -99,15 +115,23 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
     set({ status });
   },
 
-  // Stage exactly `content` for `path` (the staging editor's result buffer),
-  // then refresh status. When the diff view was open on this file, advance to the
-  // next file that still needs staging (a partial stage keeps it selected).
-  applyStagedContent: async (path: string, content: string) => {
-    const prevChanges = unstagedPaths(get().status);
-    const wasSelected = get().selectedPath === path;
+  // Write `content` as `path`'s index blob — the mechanism behind an immediate
+  // per-line stage/unstage: the editor composes the new index content for the one
+  // toggled line and calls this. Afterwards, re-fetch the same file's diff in its
+  // current mode so the editor reflects the new index (the toggled line moves out
+  // of this view) and refresh the graph's dirty-file node.
+  applyIndexContent: async (path: string, content: string) => {
+    const mode = get().stageMode ?? "unstaged";
     const status = await invoke<WorkingTreeStatus>("stage_file_content", { path, content });
     set({ status });
-    if (wasSelected) await reselectAfterStaging(set, path, prevChanges, status);
+    if (get().selectedPath === path) {
+      const stageDiff = await invoke<StageFileContents>("get_stage_file_contents", {
+        path,
+        staged: mode === "staged",
+      });
+      set({ stageDiff });
+    }
+    await useGraphStore.getState().refresh();
   },
 
   discardFile: async (path: string) => {
