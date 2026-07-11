@@ -115,6 +115,19 @@ describe("HistoryToolbar", () => {
     expect(useGraphStore.getState().focusCurrentBranch).toBe(true);
   });
 
+  it("cycles row density Comfortable → Cozy → Compact → Comfortable via the toolbar button", () => {
+    useGraphStore.setState({ graphDensity: "comfortable" });
+    render(<HistoryToolbar />);
+    const btn = screen.getByRole("button", { name: /change row density/i });
+
+    fireEvent.click(btn);
+    expect(useGraphStore.getState().graphDensity).toBe("cozy");
+    fireEvent.click(btn);
+    expect(useGraphStore.getState().graphDensity).toBe("compact");
+    fireEvent.click(btn);
+    expect(useGraphStore.getState().graphDensity).toBe("comfortable");
+  });
+
   it("disables push and pull when there is no remote", () => {
     useGithubStore.setState({ remoteInfo: null });
     render(<HistoryToolbar />);

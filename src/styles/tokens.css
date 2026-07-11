@@ -137,7 +137,9 @@
 
   /* === LAYOUT — Commit graph ===
      Redesign geometry (see _assets/design_handoff_git_graph_view): a compact
-     56px ledger row, 24px lane pitch, and avatar-marker commit dots (r=10). */
+     56px ledger row, 24px lane pitch, and avatar-marker commit dots (r=10).
+     Row height and dot radius are the "Comfortable" baseline / fallback — the
+     selected density preset (lib/graphDensity) overrides them at runtime. */
   --graph-row-height: 56px;
   --graph-lane-width: 24px;
   --graph-dot-radius: 10px;

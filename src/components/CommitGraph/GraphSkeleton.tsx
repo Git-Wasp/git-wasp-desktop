@@ -21,11 +21,14 @@ export function GraphSkeleton({
   graphWidth,
   graphOnRight,
   rowCount,
+  rowHeight = ROW_HEIGHT,
 }: {
   graphWidth: number;
   /** Split Rail anchors the graph (and its lane placeholder) to the right. */
   graphOnRight: boolean;
   rowCount: number;
+  /** Current density row height, so the skeleton matches the real rows. */
+  rowHeight?: number;
 }) {
   const graphCol = (
     <div style={{ width: graphWidth, flexShrink: 0, position: "relative", height: "100%" }}>
@@ -35,7 +38,7 @@ export function GraphSkeleton({
       />
       <span
         className="graph-skeleton-shimmer graph-skeleton-dot"
-        style={{ [graphOnRight ? "right" : "left"]: DOT_INSET - 5, top: ROW_HEIGHT / 2 - 5 }}
+        style={{ [graphOnRight ? "right" : "left"]: DOT_INSET - 5, top: rowHeight / 2 - 5 }}
       />
     </div>
   );
@@ -56,7 +59,7 @@ export function GraphSkeleton({
           <div
             key={i}
             className="graph-skeleton-row"
-            style={{ display: "flex", alignItems: "center", height: ROW_HEIGHT }}
+            style={{ display: "flex", alignItems: "center", height: rowHeight }}
           >
             {graphOnRight ? (
               <>

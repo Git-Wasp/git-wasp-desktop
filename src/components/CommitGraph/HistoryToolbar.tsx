@@ -11,7 +11,8 @@ import { PromptDialog } from "../common/PromptDialog";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { Tooltip } from "../ui/Tooltip";
-import { BranchFocusIcon, BranchIcon, ColumnsIcon, PullIcon, PushIcon, RefreshIcon, SplitViewIcon, TargetIcon } from "../ui/icons";
+import { BranchFocusIcon, BranchIcon, ColumnsIcon, DensityIcon, PullIcon, PushIcon, RefreshIcon, SplitViewIcon, TargetIcon } from "../ui/icons";
+import { GRAPH_DENSITY, nextDensity } from "../../lib/graphDensity";
 import { OPTIONAL_COLUMN_LABELS } from "./columnModel";
 
 const barStyle: React.CSSProperties = {
@@ -45,6 +46,8 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
   const setFocusCurrentBranch = useGraphStore((s) => s.setFocusCurrentBranch);
   const graphVariant = useGraphStore((s) => s.graphVariant);
   const setGraphVariant = useGraphStore((s) => s.setGraphVariant);
+  const graphDensity = useGraphStore((s) => s.graphDensity);
+  const setGraphDensity = useGraphStore((s) => s.setGraphDensity);
   const visibleColumns = useGraphStore((s) => s.visibleColumns);
   const toggleColumn = useGraphStore((s) => s.toggleColumn);
   const { createBranch, checkoutBranch } = useRepoStore();
@@ -196,6 +199,15 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
             onClick={openColumnsMenu}
           >
             <ColumnsIcon />
+          </IconButton>
+        </Tooltip>
+        <Tooltip label={`Row density: ${GRAPH_DENSITY[graphDensity].label} — click to change`}>
+          <IconButton
+            aria-label="Change row density"
+            onClick={() => setGraphDensity(nextDensity(graphDensity))}
+            style={{ color: graphDensity !== "comfortable" ? "var(--color-accent-primary)" : undefined }}
+          >
+            <DensityIcon />
           </IconButton>
         </Tooltip>
         <Tooltip

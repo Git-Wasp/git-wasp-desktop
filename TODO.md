@@ -1106,6 +1106,26 @@ between sections, and add new ideas under the right heading. Items marked
       canvas cutout ring (`useCommitGraph` resolves graph-bg → bg-app fallback)
       so the ring stays seamless. Custom themes that don't set it fall back to
       `--color-bg-app`. Regression test asserts the graph well uses the token.
+- [x] Compact / density view mode for the commit graph — toggle to trade the
+      spacious 56px row for something that fits more commits, persisted across
+      restarts.
+      — new `lib/graphDensity` preset model (source of truth for row geometry):
+      Comfortable 56px/dot 10 (body below the summary, two-line), Cozy 44px/dot 8
+      (body inline *beside* the summary, same muted style, single row), Compact
+      34px/dot 6 (summary only). Each preset's `bodyPlacement` (below/beside/none)
+      drives where `MessageCell` renders the secondary line.
+      `graphStore.graphDensity` persists to localStorage
+      (`graphDensity` key) mirroring the existing `graphVariant` pattern; a
+      `DensityIcon` toolbar button beside Split Rail cycles the three. Unified the
+      previously-duplicated row height (the `ROW_HEIGHT` constant used by the DOM
+      virtualisation vs the `--graph-row-height` token read by the canvas) so one
+      density-derived number now drives both: `CommitGraph` uses it for all
+      virtualisation math and threads `rowHeight`/`dotRadius` into `useCommitGraph`
+      (canvas redraws on change) and `showBody` into `MessageCell`; the skeleton
+      and HEAD-pulse ring scale too. CSS tokens remain the Comfortable fallback.
+      Tests: `graphDensity` (cycle/order/placement/validation), density
+      persistence, MessageCell body hidden at "none" + shown inline at "beside",
+      toolbar cycle.
 
 ## Other issues
 

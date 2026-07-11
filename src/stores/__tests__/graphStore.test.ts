@@ -278,6 +278,15 @@ describe("graphStore", () => {
     expect(localStorage.getItem("graphFocusCurrentBranch")).toBe("true");
   });
 
+  it("setGraphDensity updates state and persists to localStorage", () => {
+    // Defaults to the spacious Comfortable preset.
+    expect(useGraphStore.getState().graphDensity).toBe("comfortable");
+
+    useGraphStore.getState().setGraphDensity("compact");
+    expect(useGraphStore.getState().graphDensity).toBe("compact");
+    expect(localStorage.getItem("graphDensity")).toBe("compact");
+  });
+
   it("setColumnOrder updates the variant's order and persists it", () => {
     useGraphStore.getState().setColumnOrder("ledger", ["date", "commit", "author", "branch", "hash"]);
     expect(useGraphStore.getState().columnOrder.ledger).toEqual([

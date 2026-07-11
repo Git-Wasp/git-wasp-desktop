@@ -76,6 +76,29 @@ export function ColumnsIcon({ size = 14, title }: IconProps) {
   );
 }
 
+/** Stacked rows — row-density toggle for the commit graph. */
+export function DensityIcon({ size = 14, title }: IconProps) {
+  return (
+    <svg
+      data-icon="density"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      style={{ flexShrink: 0 }}
+    >
+      {title && <title>{title}</title>}
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  );
+}
+
 /** Up arrow to a bar — push (send commits up to the remote). */
 export function PushIcon({ size = 14, title }: IconProps) {
   return (

@@ -5,6 +5,7 @@ import { Tooltip } from "../ui/Tooltip";
 import { useAvatarStore } from "../../stores/avatarStore";
 import { initials } from "../../lib/initials";
 import { formatRelativeDate } from "../../lib/formatDate";
+import type { BodyPlacement } from "../../lib/graphDensity";
 
 // The lane colour for a commit/branch, as a CSS token reference so it re-themes
 // with the rest of the app. Mirrors the canvas graph's per-commit colouring so a
@@ -213,17 +214,35 @@ export function BranchCell({
 
 // --- Commit message cell -----------------------------------------------------
 
-export function MessageCell({ node }: { node: GraphNode }) {
+// The muted secondary line's style, shared so the "below" and "beside"
+// placements read identically (only their position differs).
+const bodyTextStyle = {
+  fontSize: "var(--font-size-xs)",
+  fontWeight: "var(--font-weight-normal)",
+  color: "var(--color-text-muted)",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+} as const;
+
+export function MessageCell({
+  node,
+  bodyPlacement = "below",
+}: {
+  node: GraphNode;
+  bodyPlacement?: BodyPlacement;
+}) {
   const body = (node.body ?? "").replace(/\s+/g, " ").trim();
   const cappedBody = body.length > MAX_BODY_CHARS ? body.slice(0, MAX_BODY_CHARS) + "…" : body;
   const wip = node.isWorkingTree;
+  const hasBody = !!cappedBody && bodyPlacement !== "none";
 
   return (
     <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: "1px" }}>
       <div
         style={{
           display: "flex",
-          alignItems: "center",
+          alignItems: "baseline",
           gap: "var(--space-2)",
           overflow: "hidden",
           whiteSpace: "nowrap",
@@ -234,6 +253,7 @@ export function MessageCell({ node }: { node: GraphNode }) {
           <span
             style={{
               flexShrink: 0,
+              alignSelf: "center",
               padding: "0 var(--space-1)",
               borderRadius: "var(--radius-sm)",
               border: "1px dashed var(--color-text-muted)",
@@ -249,6 +269,8 @@ export function MessageCell({ node }: { node: GraphNode }) {
         )}
         <span
           style={{
+            flexShrink: 1,
+            minWidth: 0,
             fontSize: "var(--font-size-base)",
             fontWeight: "var(--font-weight-semibold)",
             overflow: "hidden",
@@ -263,21 +285,13 @@ export function MessageCell({ node }: { node: GraphNode }) {
         >
           {node.summary}
         </span>
+        {/* Cozy: the body sits inline to the side of the summary, taking the
+            remaining width, in the same muted style as the two-line version. */}
+        {hasBody && bodyPlacement === "beside" && (
+          <span style={{ ...bodyTextStyle, flex: "1 1 0", minWidth: 0 }}>{cappedBody}</span>
+        )}
       </div>
-      {cappedBody && (
-        <span
-          style={{
-            fontSize: "var(--font-size-xs)",
-            fontWeight: "var(--font-weight-normal)",
-            color: "var(--color-text-muted)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {cappedBody}
-        </span>
-      )}
+      {hasBody && bodyPlacement === "below" && <span style={bodyTextStyle}>{cappedBody}</span>}
     </div>
   );
 }

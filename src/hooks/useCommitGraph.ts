@@ -28,12 +28,15 @@ function resolveLaneColors(): string[] {
   return Array.from({ length: 8 }, (_, i) => resolveCssVar(`--color-lane-${i}`));
 }
 
-function resolveConfig(): GraphConfig {
+// Geometry comes from CSS tokens, except row height and dot radius which the
+// caller overrides per the selected density preset (see lib/graphDensity) — the
+// canvas must use the exact same numbers as the DOM virtualisation.
+function resolveConfig(rowHeightOverride?: number, dotRadiusOverride?: number): GraphConfig {
   const px = (v: string) => parseFloat(v) || 0;
   return {
-    rowHeight: px(resolveCssVar("--graph-row-height")) || 34,
+    rowHeight: rowHeightOverride ?? (px(resolveCssVar("--graph-row-height")) || 34),
     laneWidth: px(resolveCssVar("--graph-lane-width")) || 20,
-    dotRadius: px(resolveCssVar("--graph-dot-radius")) || 5,
+    dotRadius: dotRadiusOverride ?? (px(resolveCssVar("--graph-dot-radius")) || 5),
     lineWidth: px(resolveCssVar("--graph-line-width")) || 2,
   };
 }
@@ -58,6 +61,10 @@ export function useCommitGraph(
   // "Focus current branch" mode: when true, commits/edges not on HEAD's line of
   // history are drawn greyed out (still visible) so the current branch stands out.
   focusCurrentBranch?: boolean,
+  // Density-driven geometry (see lib/graphDensity). Kept in step with the DOM
+  // row height so the canvas and the virtualised rows line up exactly.
+  rowHeight?: number,
+  dotRadius?: number,
 ): void {
   const configRef = useRef<GraphConfig | null>(null);
   const laneColorsRef = useRef<string[]>([]);
@@ -65,20 +72,21 @@ export function useCommitGraph(
   // Redraw when avatars resolve so dots swap from colour to image.
   const avatarVersion = useAvatarStore((s) => s.version);
 
-  // Resolve CSS tokens at mount and on theme change (tokens are read from CSS,
-  // so a theme swap must re-resolve colours and redraw).
+  // Resolve CSS tokens at mount, on theme change, and whenever the density
+  // override changes (tokens are read from CSS, so a theme swap must re-resolve
+  // colours and redraw; a density change resizes the row/dot geometry).
   useEffect(() => {
-    configRef.current = resolveConfig();
+    configRef.current = resolveConfig(rowHeight, dotRadius);
     laneColorsRef.current = resolveLaneColors();
 
     const onThemeChange = () => {
-      configRef.current = resolveConfig();
+      configRef.current = resolveConfig(rowHeight, dotRadius);
       laneColorsRef.current = resolveLaneColors();
       setThemeTick((t) => t + 1);
     };
     window.addEventListener(THEME_CHANGE_EVENT, onThemeChange);
     return () => window.removeEventListener(THEME_CHANGE_EVENT, onThemeChange);
-  }, []);
+  }, [rowHeight, dotRadius]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -356,5 +364,5 @@ export function useCommitGraph(
 
       ctx.globalAlpha = 1;
     });
-  }, [viewport, selection, canvasRef, themeTick, width, avatarVersion, hoveredOid, focusCurrentBranch]);
+  }, [viewport, selection, canvasRef, themeTick, width, avatarVersion, hoveredOid, focusCurrentBranch, rowHeight, dotRadius]);
 }

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import type { GraphNode, GraphViewport } from "../types/graph";
+import { DEFAULT_DENSITY, isGraphDensity, type GraphDensity } from "../lib/graphDensity";
 
 // Sentinel oid of the synthetic working-tree (uncommitted changes) node — must
 // match the backend graph layout (`graph/layout.rs`). Selecting it highlights
@@ -37,6 +38,19 @@ const loadFocusCurrentBranch = (): boolean => {
 // like a log file on the left). Persisted so the choice survives reloads.
 export type GraphVariant = "ledger" | "split";
 const VARIANT_KEY = "graphVariant";
+
+// Row-density preset (Comfortable / Cozy / Compact — see lib/graphDensity).
+// Persisted alongside the layout variant so the choice survives reloads.
+const DENSITY_KEY = "graphDensity";
+
+const loadGraphDensity = (): GraphDensity => {
+  try {
+    const stored = localStorage.getItem(DENSITY_KEY);
+    return isGraphDensity(stored) ? stored : DEFAULT_DENSITY;
+  } catch {
+    return DEFAULT_DENSITY;
+  }
+};
 
 const loadGraphVariant = (): GraphVariant => {
   try {
@@ -134,6 +148,9 @@ interface GraphStore {
   // Graph layout variant (Ledger Grid vs Split Rail). Persisted to localStorage.
   graphVariant: GraphVariant;
   setGraphVariant: (value: GraphVariant) => void;
+  // Row-density preset (Comfortable / Cozy / Compact). Persisted to localStorage.
+  graphDensity: GraphDensity;
+  setGraphDensity: (value: GraphDensity) => void;
   // Which optional data columns are shown. Persisted to localStorage.
   visibleColumns: ColumnVisibility;
   toggleColumn: (column: OptionalColumn) => void;
@@ -247,6 +264,17 @@ export const useGraphStore = create<GraphStore>((set, get) => {
       // Ignore storage failures (private mode etc.) — state still updates.
     }
     set({ graphVariant: value });
+  },
+
+  graphDensity: loadGraphDensity(),
+
+  setGraphDensity: (value: GraphDensity) => {
+    try {
+      localStorage.setItem(DENSITY_KEY, value);
+    } catch {
+      // Ignore storage failures (private mode etc.) — state still updates.
+    }
+    set({ graphDensity: value });
   },
 
   visibleColumns: loadColumnVisibility(),

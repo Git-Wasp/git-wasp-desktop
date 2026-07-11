@@ -22,7 +22,6 @@ import { AuthorCell, BranchCell, DateCell, HashCell, MessageCell } from "./colum
 import {
   columnsForVariant,
   COLUMN_META,
-  ROW_HEIGHT,
   type ColumnKind,
   type DataColumn,
   type GraphColumn,
@@ -30,6 +29,7 @@ import {
 } from "./columnModel";
 import type { CSSProperties } from "react";
 import type { GraphNode } from "../../types/graph";
+import { GRAPH_DENSITY, type BodyPlacement } from "../../lib/graphDensity";
 
 const BUFFER_ROWS = 20;
 
@@ -79,6 +79,8 @@ const GraphRow = memo(function GraphRow({
   onRowClick,
   onRowContextMenu,
   graphOnRight,
+  rowHeight,
+  bodyPlacement,
 }: {
   node: GraphNode;
   rowIndex: number;
@@ -86,6 +88,8 @@ const GraphRow = memo(function GraphRow({
   columns: GraphColumn[];
   widths: ColWidths;
   graphOnRight: boolean;
+  rowHeight: number;
+  bodyPlacement: BodyPlacement;
   currentBranch: string | null;
   isTagOnRemote: (name: string) => boolean;
   pillHandlers: PillHandlers;
@@ -113,7 +117,7 @@ const GraphRow = memo(function GraphRow({
   const renderCell = (col: GraphColumn) => {
     switch (col.kind) {
       case "commit":
-        return <MessageCell node={node} />;
+        return <MessageCell node={node} bodyPlacement={bodyPlacement} />;
       case "author":
         return <AuthorCell node={node} />;
       case "branch":
@@ -145,10 +149,10 @@ const GraphRow = memo(function GraphRow({
       onMouseLeave={() => onRowHover(null)}
       style={{
         position: "absolute",
-        top: rowIndex * ROW_HEIGHT,
+        top: rowIndex * rowHeight,
         left: 0,
         right: 0,
-        height: ROW_HEIGHT,
+        height: rowHeight,
         display: "flex",
         alignItems: "center",
         cursor: "pointer",
@@ -232,6 +236,10 @@ export function CommitGraph({
   const scrollToRow = useGraphStore((s) => s.scrollToRow);
   const focusCurrentBranch = useGraphStore((s) => s.focusCurrentBranch);
   const graphVariant = useGraphStore((s) => s.graphVariant);
+  // Row-density preset drives the row height / dot radius (canvas + DOM share
+  // these) and where the commit body line goes (below / beside / hidden).
+  const graphDensity = useGraphStore((s) => s.graphDensity);
+  const { rowHeight, dotRadius, bodyPlacement } = GRAPH_DENSITY[graphDensity];
   const { currentRepo, createBranch, checkoutBranch, renameBranch, deleteBranch, checkoutCommit, createTag, revertCommit } =
     useRepoStore();
   const remoteInfo = useGithubStore((s) => s.remoteInfo);
@@ -316,9 +324,9 @@ export function CommitGraph({
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const limit = Math.ceil(container.clientHeight / ROW_HEIGHT) + BUFFER_ROWS * 2;
+    const limit = Math.ceil(container.clientHeight / rowHeight) + BUFFER_ROWS * 2;
     fetchViewport(0, limit);
-  }, [fetchViewport]);
+  }, [fetchViewport, rowHeight]);
 
   // Resolve gravatars for the authors in view (deduped + cached in the store).
   useEffect(() => {
@@ -346,8 +354,8 @@ export function CommitGraph({
         scrollRaf.current = null;
         const m = pendingScroll.current;
         if (!m) return;
-        const offset = Math.max(0, Math.floor(m.scrollTop / ROW_HEIGHT) - BUFFER_ROWS);
-        const limit = Math.ceil(m.clientHeight / ROW_HEIGHT) + BUFFER_ROWS * 2;
+        const offset = Math.max(0, Math.floor(m.scrollTop / rowHeight) - BUFFER_ROWS);
+        const limit = Math.ceil(m.clientHeight / rowHeight) + BUFFER_ROWS * 2;
 
         // Already-loaded coverage: skip the fetch unless we'd reveal unloaded
         // rows (loadedEnd reaching totalCount means everything below is present).
@@ -362,7 +370,7 @@ export function CommitGraph({
         fetchViewport(offset, limit);
       });
     },
-    [fetchViewport, syncHeaderScroll],
+    [fetchViewport, syncHeaderScroll, rowHeight],
   );
 
   useEffect(() => {
@@ -383,13 +391,13 @@ export function CommitGraph({
     if (scrollToRow === null) return;
     const container = containerRef.current;
     if (!container) return;
-    const target = Math.max(0, scrollToRow * ROW_HEIGHT - container.clientHeight / 2);
+    const target = Math.max(0, scrollToRow * rowHeight - container.clientHeight / 2);
     container.scrollTop = target;
-    const offset = Math.max(0, Math.floor(target / ROW_HEIGHT) - BUFFER_ROWS);
-    const limit = Math.ceil(container.clientHeight / ROW_HEIGHT) + BUFFER_ROWS * 2;
+    const offset = Math.max(0, Math.floor(target / rowHeight) - BUFFER_ROWS);
+    const limit = Math.ceil(container.clientHeight / rowHeight) + BUFFER_ROWS * 2;
     fetchViewport(offset, limit);
     useGraphStore.setState({ scrollToRow: null });
-  }, [scrollToRow, fetchViewport]);
+  }, [scrollToRow, fetchViewport, rowHeight]);
 
   // Merge source into target (auto-checking-out target first), then refresh.
   const handleMerge = useCallback(
@@ -645,12 +653,12 @@ export function CommitGraph({
     }
   };
 
-  useCommitGraph(canvasRef, viewport, selection, graphWidth, hoveredOid, focusCurrentBranch);
+  useCommitGraph(canvasRef, viewport, selection, graphWidth, hoveredOid, focusCurrentBranch, rowHeight, dotRadius);
 
   const offset = viewport?.offset ?? 0;
-  const totalHeight = (viewport?.totalCount ?? 0) * ROW_HEIGHT;
-  const canvasTop = offset * ROW_HEIGHT;
-  const sliceHeight = (viewport?.nodes.length ?? 0) * ROW_HEIGHT;
+  const totalHeight = (viewport?.totalCount ?? 0) * rowHeight;
+  const canvasTop = offset * rowHeight;
+  const sliceHeight = (viewport?.nodes.length ?? 0) * rowHeight;
 
   // Position of the HEAD commit dot (when it's in the loaded slice), so a CSS
   // pulse overlay can draw expanding rings on it — a clear "you are here" cue.
@@ -664,9 +672,9 @@ export function CommitGraph({
       parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--graph-lane-width")) ||
       24;
     const x = GRAPH_PAD_LEFT + nodes[idx].lane * laneWidth + laneWidth / 2;
-    const y = (offset + idx) * ROW_HEIGHT + ROW_HEIGHT / 2;
+    const y = (offset + idx) * rowHeight + rowHeight / 2;
     return { x, y };
-  }, [viewport, offset]);
+  }, [viewport, offset, rowHeight]);
 
   const dataColumns = columns.filter((c) => c.kind !== "graph");
 
@@ -821,7 +829,8 @@ export function CommitGraph({
           <GraphSkeleton
             graphWidth={graphWidth}
             graphOnRight={graphOnRight}
-            rowCount={Math.ceil(window.innerHeight / ROW_HEIGHT)}
+            rowCount={Math.ceil(window.innerHeight / rowHeight)}
+            rowHeight={rowHeight}
           />
         ) : (
         <div style={{ height: totalHeight, minWidth: contentMinWidth, position: "relative" }}>
@@ -842,6 +851,8 @@ export function CommitGraph({
               pillHandlers={pillHandlers}
               onRowClick={handleRowClick}
               onRowContextMenu={handleRowContextMenu}
+              rowHeight={rowHeight}
+              bodyPlacement={bodyPlacement}
             />
           ))}
 
@@ -883,7 +894,7 @@ export function CommitGraph({
                 data-testid="head-pulse"
                 className="graph-head-pulse"
                 aria-hidden
-                style={{ left: headPulse.x, top: headPulse.y }}
+                style={{ left: headPulse.x, top: headPulse.y, width: dotRadius * 2, height: dotRadius * 2 }}
               />
             )}
           </div>

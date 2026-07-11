@@ -97,6 +97,18 @@ describe("MessageCell", () => {
     const body = screen.getByText(/x+…$/);
     expect(body.textContent!.length).toBeLessThan(150);
   });
+
+  it("hides the body line when bodyPlacement is none (Compact)", () => {
+    render(<MessageCell node={node({})} bodyPlacement="none" />);
+    expect(screen.getByText("feat: do a thing")).toBeInTheDocument();
+    expect(screen.queryByText(/with some extra detail/)).not.toBeInTheDocument();
+  });
+
+  it("still shows the body inline when bodyPlacement is beside (Cozy)", () => {
+    render(<MessageCell node={node({})} bodyPlacement="beside" />);
+    expect(screen.getByText("feat: do a thing")).toBeInTheDocument();
+    expect(screen.getByText(/with some extra detail/)).toBeInTheDocument();
+  });
 });
 
 describe("BranchCell", () => {
