@@ -142,6 +142,13 @@
   --graph-lane-width: 24px;
   --graph-dot-radius: 10px;
   --graph-line-width: 2.5px;
+  /* Recessed "well" the commit graph sits in — deliberately a notch darker than
+     --color-bg-app so the graph reads as sunken beneath the surrounding chrome
+     (sidebar/nav/toolbar), giving the UI depth rather than a flat single tone.
+     The canvas paints this same colour as the cutout ring around each dot, so
+     the two must stay in lockstep. Custom themes should set this (it falls back
+     to --color-bg-app in the canvas when unset). */
+  --color-graph-bg: #141510;
   /* Semi-opaque highlight behind each commit row in the graph column. */
   --color-graph-node-bg: rgba(255, 255, 255, 0.035);
   /* Hairline divider between commit rows, so individual commits read clearly.
@@ -204,6 +211,7 @@
   --color-bg-selected: #d6e6fb;
   --color-bg-input:    #ffffff;
   --color-bg-hover:    #e3e7ec;
+  --color-graph-bg: #e7ebf1;
   --color-graph-node-bg: rgba(0, 0, 0, 0.04);
   --color-graph-head-row-bg: rgba(13, 110, 253, 0.10);
   --color-graph-row-divider: rgba(0, 0, 0, 0.07);
@@ -260,6 +268,7 @@
   --color-text-on-accent: #ffffff;
   --color-bg-hover:      #21262d;
   --color-accent-hover:  var(--color-accent-secondary);
+  --color-graph-bg: #010409;
   --color-graph-node-bg: rgba(255, 255, 255, 0.04);
   --color-graph-head-row-bg: rgba(56, 139, 253, 0.12);
 }
@@ -317,6 +326,7 @@
   --color-text-on-accent: #ffffff;
   --color-bg-hover:      #eaeef2;
   --color-accent-hover:  var(--color-accent-secondary);
+  --color-graph-bg: #e9edf1;
   --color-graph-node-bg: rgba(0, 0, 0, 0.04);
   --color-graph-head-row-bg: rgba(9, 105, 218, 0.09);
   --color-graph-row-divider: rgba(0, 0, 0, 0.07);
@@ -372,6 +382,7 @@
   --color-text-on-accent: #193549;
   --color-bg-hover:      #1f4662;
   --color-accent-hover:  #ffd84d;
+  --color-graph-bg: #0c1d2a;
   --color-graph-node-bg: rgba(255, 255, 255, 0.04);
   --color-graph-head-row-bg: rgba(255, 198, 0, 0.10);
 }

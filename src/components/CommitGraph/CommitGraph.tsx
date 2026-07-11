@@ -751,7 +751,7 @@ export function CommitGraph({
   );
 
   return (
-    <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--color-bg-app)" }}>
+    <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--color-graph-bg, var(--color-bg-app))" }}>
       {/* Column header. The graph header cell is frozen; the data header cells
           live in a clip that mirrors the body's horizontal scroll. */}
       <div
@@ -865,7 +865,7 @@ export function CommitGraph({
               height: totalHeight,
               zIndex: 3,
               pointerEvents: "none",
-              background: "var(--color-bg-app)",
+              background: "var(--color-graph-bg, var(--color-bg-app))",
             }}
           >
             <canvas

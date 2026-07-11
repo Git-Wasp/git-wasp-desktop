@@ -122,6 +122,13 @@ describe("CommitGraph columns", () => {
     expect(cell.style.background).toBe("transparent");
   });
 
+  it("sits the graph in the recessed --color-graph-bg well (falling back to --color-bg-app)", () => {
+    const { container } = render(<CommitGraph />);
+    const well = container.firstChild as HTMLElement;
+    expect(well.style.background).toContain("--color-graph-bg");
+    expect(well.style.background).toContain("--color-bg-app");
+  });
+
   it("persists a resized graph column width to localStorage", () => {
     localStorage.removeItem("graphCol:graph");
     render(<CommitGraph />);

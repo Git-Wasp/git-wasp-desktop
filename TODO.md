@@ -1095,7 +1095,17 @@ between sections, and add new ideas under the right heading. Items marked
 - [ ] Improve toast design. Add icons (e.g. info, warning, error) in the right colour, add a "title" as well as the text
 - [ ] Consider a "conventional commits" config option. If enabled, this provides a dropdown for suitable conventional commit prefixes for commit messages (e.g. fix:, ux:, chore:, etc.). Discuss and plan value and implementation before we change any code.
 - [ ] Git graph branch ordering - when there are many branches, the current checked out branch should appear first (left-most) so it is clearly visible. We also have some colored lines still appearing when in "focus" mode, even though the lines are for branches or commits that are not ancestors of the current checked out HEAD.
-- [ ] In themes, ensure that the background of the git graph is much darker than the foreground and highlighting to give it more "depth". Currently the UI still feels to "flat".
+- [x] In themes, ensure that the background of the git graph is much darker than the foreground and highlighting to give it more "depth". Currently the UI still feels to "flat".
+      — new `--color-graph-bg` token: the recessed "well" the graph sits in,
+      tuned a notch darker than `--color-bg-app` in every built-in theme
+      (Monokai `#141510`, GitHub Dark `#010409`, Cobalt2 `#0c1d2a`, and the two
+      light themes slightly greyed), so the graph reads as sunken beneath the
+      sidebar/nav/toolbar chrome and the existing row highlights/head-band stand
+      out more. Wired into the graph view container, the frozen graph-column
+      overlay (both via `var(--color-graph-bg, var(--color-bg-app))`), and the
+      canvas cutout ring (`useCommitGraph` resolves graph-bg → bg-app fallback)
+      so the ring stays seamless. Custom themes that don't set it fall back to
+      `--color-bg-app`. Regression test asserts the graph well uses the token.
 
 ## Other issues
 

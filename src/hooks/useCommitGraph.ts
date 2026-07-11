@@ -101,7 +101,8 @@ export function useCommitGraph(
     // Page background: painted as a "cutout" ring around each dot so crossing
     // lane lines never visibly pierce the marker. Accent: the dashed selection
     // ring. Sans stack: canvas text for the commit-dot initials fallback.
-    const pageBg = resolveCssVar("--color-bg-app") || "#1e1f1c";
+    const pageBg =
+      resolveCssVar("--color-graph-bg") || resolveCssVar("--color-bg-app") || "#141510";
     const selectionAccent = resolveCssVar("--color-accent-primary") || "#4d9de0";
     const sansFont = resolveCssVar("--font-family-sans") || "sans-serif";
     const dpr = window.devicePixelRatio || 1;
