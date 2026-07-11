@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { fireEvent, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { ChangeOverview } from "./ChangeOverview";
@@ -28,15 +28,41 @@ describe("ChangeOverview", () => {
     expect(container.querySelectorAll("[data-overview-mark]").length).toBe(2);
   });
 
-  it("seeks to the clicked vertical fraction", () => {
-    const onSeek = vi.fn();
-    const { getByTestId } = render(<ChangeOverview rows={modifiedRows} onSeek={onSeek} />);
+  it("shows a viewport thumb sized and positioned from the viewport prop", () => {
+    const { getByTestId, rerender, queryByTestId } = render(
+      <ChangeOverview rows={modifiedRows} viewport={{ top: 0.25, height: 0.5 }} onScrollTo={vi.fn()} />,
+    );
+    const thumb = getByTestId("overview-thumb");
+    expect(thumb.style.top).toBe("25%");
+    expect(thumb.style.height).toBe("50%");
+
+    // No thumb when the whole file fits (nothing to scroll).
+    rerender(<ChangeOverview rows={modifiedRows} viewport={{ top: 0, height: 1 }} onScrollTo={vi.fn()} />);
+    expect(queryByTestId("overview-thumb")).toBeNull();
+  });
+
+  it("clicking the track scrolls so the thumb centres on the cursor", () => {
+    const onScrollTo = vi.fn();
+    const { getByTestId } = render(
+      <ChangeOverview rows={modifiedRows} viewport={{ top: 0, height: 0.5 }} onScrollTo={onScrollTo} />,
+    );
     const strip = getByTestId("change-overview");
-    vi.spyOn(strip, "getBoundingClientRect").mockReturnValue({
-      top: 0,
-      height: 100,
-    } as DOMRect);
-    strip.dispatchEvent(new MouseEvent("click", { bubbles: true, clientY: 50 }));
-    expect(onSeek).toHaveBeenCalledWith(0.5);
+    vi.spyOn(strip, "getBoundingClientRect").mockReturnValue({ top: 0, height: 100 } as DOMRect);
+    // Click at 60% (outside the [0,0.5] thumb): centre it there → top 0.6 - 0.25.
+    fireEvent.mouseDown(strip, { clientY: 60 });
+    expect(onScrollTo).toHaveBeenLastCalledWith(0.35);
+  });
+
+  it("dragging the thumb keeps the grip point under the cursor", () => {
+    const onScrollTo = vi.fn();
+    const { getByTestId } = render(
+      <ChangeOverview rows={modifiedRows} viewport={{ top: 0, height: 0.5 }} onScrollTo={onScrollTo} />,
+    );
+    const strip = getByTestId("change-overview");
+    vi.spyOn(strip, "getBoundingClientRect").mockReturnValue({ top: 0, height: 100 } as DOMRect);
+    // Grab the thumb near its top (10%), then drag down to 30%: thumb-top → 0.2.
+    fireEvent.mouseDown(strip, { clientY: 10 });
+    fireEvent.mouseMove(window, { clientY: 30 });
+    expect(onScrollTo.mock.lastCall![0]).toBeCloseTo(0.2, 5);
   });
 });

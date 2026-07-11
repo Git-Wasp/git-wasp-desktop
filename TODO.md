@@ -18,7 +18,7 @@ built yet; **(Phase 6)** are from the polish/hardening phase.
 
 ## Working tree & committing
 
-- [ ] Execute git hooks (pre-commit, pre-push) and show output in a built-in pane that can be hidden and reshown. The contents of the pane should be a "terminal view" with automatic scrolling to keep up with the progress of git hooks. When a repository has git hooks, they should be executed automatically. Add a new option to settings to allow users to choose _per-repository_ which git hooks should run/not run - all should be enabled by default for all respositories making hooks opt-out rather than opt-in. When hooks are running, make it very clear in the git graph view that hooks are running and disable buttons such as commit buttons for the current branch.
+- [ ] Execute git hooks (pre-commit, pre-push) and show output in a built-in pane that can be hidden and reshown. The contents of the pane should be a "terminal view" with automatic scrolling to keep up with the progress of git hooks. When a repository has git hooks, they should be executed automatically. Add a new option to settings to allow users to choose _per-repository_ which git hooks should run/not run (e.g. pre-push is disabled but pre-commit is enabled for a sepecific repository) - all should be enabled by default for all respositories making hooks opt-out rather than opt-in. When hooks are running, make it very clear in the git graph view that hooks are running and disable buttons such as commit buttons for the current branch. The "status" of githooks should be clearly visible for a repo e.g. in a "footer" bar at the base of the git graph (for example).
 
 ## GitHub integration
 
@@ -57,6 +57,7 @@ built yet; **(Phase 6)** are from the polish/hardening phase.
 - [ ] Graph performance profiling against large repos (10k+ commits) (Phase 6)
 - [ ] Implement rustfmt on save + pre-commit hook
 - [ ] Consider implementing a CSP for the frontend (bear in mind we need to support data img or find alternative for user icons)
+- [ ] Add ability to open a repo from the commandline e.g. `gitwasp .` to open current directory, `gitwasp /path/to/repo` to open a repo at a different path
 
 ## General UX
 
@@ -69,7 +70,6 @@ built yet; **(Phase 6)** are from the polish/hardening phase.
 - [ ] Add an integrated terminal that can be shown by clicking a button above the graph view. Should open automatically in the directory that contains the currently opened git repo.
 - [ ] Improve toast design. Add icons (e.g. info, warning, error) in the right colour, add a "title" as well as the text
 - [ ] Consider a "conventional commits" config option. If enabled, this provides a dropdown for suitable conventional commit prefixes for commit messages (e.g. fix:, ux:, chore:, etc.). Discuss and plan value and implementation before we change any code.
-- [ ] Add a "wider" scrollbar for the gutter in the diff view (for reviewing staged changes or viewing existing diffs). When the scrollbar moves (i.e. when the user scrolls), a translucent "current position" highlight should appear over the gutter tracking the scrollbar so we can see where we are vertically with respect to changes highlighted in the gutter.
 
 ## Other issues
 

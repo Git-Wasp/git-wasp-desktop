@@ -608,6 +608,10 @@ export function StageFileEditor({
   const inlineViewRef = useRef<EditorView | null>(null);
   const hunkViewRef = useRef<EditorView | null>(null);
 
+  // The visible slice of the diff, as fractions of the content height, driving
+  // the change-overview's scrollbar thumb. Recomputed on scroll/resize.
+  const [viewport, setViewport] = useState<{ top: number; height: number }>({ top: 0, height: 1 });
+
   const applyStaged = useCallback((next: Set<number>) => {
     stagedRowsRef.current = next;
     setStagedRows(next);
@@ -677,23 +681,60 @@ export function StageFileEditor({
   const registerHunkView = useCallback((v: EditorView | null) => {
     hunkViewRef.current = v;
   }, []);
-  const onScrollHead = useCallback(() => syncScroll("head"), [syncScroll]);
-  const onScrollWorktree = useCallback(() => syncScroll("worktree"), [syncScroll]);
+  // The mounted editors for the current view mode (split shows two synced panes;
+  // the others a single editor). The first is the reference for viewport geometry.
+  const liveViews = useCallback(
+    () =>
+      [headViewRef.current, worktreeViewRef.current, inlineViewRef.current, hunkViewRef.current].filter(
+        (v): v is EditorView => v != null,
+      ),
+    [],
+  );
 
-  // Scroll the live pane(s) to a fraction of their scrollable height (overview
-  // click). Only the current view mode's editors are mounted.
-  const seek = useCallback((fraction: number) => {
-    for (const view of [
-      headViewRef.current,
-      worktreeViewRef.current,
-      inlineViewRef.current,
-      hunkViewRef.current,
-    ]) {
-      if (!view) continue;
-      const max = view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight;
-      view.scrollDOM.scrollTop = fraction * max;
+  // Publish the visible slice (as content-height fractions) so the overview can
+  // draw its scrollbar thumb. Reads the first mounted editor for the current mode.
+  const updateViewport = useCallback(() => {
+    const view = liveViews()[0];
+    if (!view) return;
+    const { scrollTop, scrollHeight, clientHeight } = view.scrollDOM;
+    if (scrollHeight <= 0) return;
+    setViewport({
+      top: scrollTop / scrollHeight,
+      height: Math.min(1, clientHeight / scrollHeight),
+    });
+  }, [liveViews]);
+
+  const onScrollHead = useCallback(() => {
+    syncScroll("head");
+    updateViewport();
+  }, [syncScroll, updateViewport]);
+  const onScrollWorktree = useCallback(() => {
+    syncScroll("worktree");
+    updateViewport();
+  }, [syncScroll, updateViewport]);
+  // Inline/hunk modes have a single (unsynced) pane; still track its scroll.
+  const onScrollSingle = updateViewport;
+
+  // Scroll the live pane(s) so the overview thumb's top lands at `topFraction` of
+  // the content height — used by overview click and thumb drag.
+  const scrollToFraction = useCallback((topFraction: number) => {
+    for (const view of liveViews()) {
+      const { scrollHeight, clientHeight } = view.scrollDOM;
+      const max = scrollHeight - clientHeight;
+      view.scrollDOM.scrollTop = Math.min(max, Math.max(0, topFraction * scrollHeight));
     }
-  }, []);
+  }, [liveViews]);
+
+  // Re-measure when the diff, view mode, or wrap changes (after the editors lay
+  // out) and on window resize, so the thumb reflects the true visible fraction.
+  useEffect(() => {
+    const id = requestAnimationFrame(updateViewport);
+    window.addEventListener("resize", updateViewport);
+    return () => {
+      cancelAnimationFrame(id);
+      window.removeEventListener("resize", updateViewport);
+    };
+  }, [updateViewport, rows, viewMode, wrap, readOnly]);
 
   const onToggleHead = useCallback(
     (lineNo: number) => {
@@ -969,6 +1010,7 @@ export function StageFileEditor({
                 oldLineNumberMap={headLineNumbers}
                 language={language}
                 onView={registerInlineView}
+                onScroll={onScrollSingle}
                 showStageGutter={!readOnly}
                 wrap={wrap}
               />
@@ -987,12 +1029,18 @@ export function StageFileEditor({
                 oldLineNumberMap={hunkOldNumbers}
                 language={language}
                 onView={registerHunkView}
+                onScroll={onScrollSingle}
                 showStageGutter={!readOnly}
                 wrap={wrap}
               />
             </div>
           )}
-          <ChangeOverview rows={rows} split={viewMode === "split"} onSeek={seek} />
+          <ChangeOverview
+            rows={rows}
+            split={viewMode === "split"}
+            viewport={viewport}
+            onScrollTo={scrollToFraction}
+          />
         </div>
       )}
     </div>

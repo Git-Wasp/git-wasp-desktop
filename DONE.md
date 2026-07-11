@@ -566,6 +566,23 @@ description. See TODO.md for work still outstanding.
 
 ## General UX
 
+- [x] Wider diff-view change gutter that doubles as a scrollbar with a live
+      position indicator. The right-hand `ChangeOverview` strip (the change
+      "gutter" in the staging diff *and* the read-only commit diff — both render
+      via `StageFileEditor`) is now widened (14px/lane) and carries a translucent
+      viewport "thumb" (`--color-overview-thumb` token, added to all five themes;
+      border reuses `--color-border-strong`) sized/positioned from the editor's
+      visible slice. `StageFileEditor` tracks the live editor's
+      `scrollTop/scrollHeight/clientHeight` (on scroll in every view mode, plus a
+      rAF re-measure on diff/mode/wrap change and on window resize) and passes it
+      as `viewport={top,height}` fractions. The strip is a real scrollbar:
+      click the track to centre the thumb on the cursor, or drag the thumb
+      (mouse-based with window-level move/up listeners so a drag continues off the
+      strip) — both call `onScrollTo(topFraction)`, which maps to
+      `scrollTop = topFraction × scrollHeight` across the mounted panes. The
+      editor's native scrollbar is kept alongside. Tests: `ChangeOverview` (thumb
+      sizing/positioning from `viewport`, hidden when the file fits, click-centres,
+      drag keeps the grip point under the cursor).
 - [x] Clean merge no longer blanks the whole app — a merge with **no conflicts**
       used to replace the entire UI with the full-screen `MergeEditor`, which then
       showed only an empty file list + a tiny commit-message input. Now a clean

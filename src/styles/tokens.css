@@ -42,6 +42,8 @@
   --color-bg-panel:    var(--color-neutral-50);
   --color-bg-surface:  var(--color-neutral-100);
   --color-bg-elevated: var(--color-neutral-200);
+  /* Translucent viewport thumb over the diff change-overview ("gutter") strip. */
+  --color-overview-thumb: rgba(255, 255, 255, 0.16);
   --color-bg-overlay:  rgba(0, 0, 0, 0.6);
 
   /* === COLOUR — Text === */
@@ -175,6 +177,7 @@
   --color-bg-panel:    #ffffff;
   --color-bg-surface:  #f0f2f5;
   --color-bg-elevated: #e8eaed;
+  --color-overview-thumb: rgba(0, 0, 0, 0.13);
   --color-bg-overlay:  rgba(0, 0, 0, 0.35);
 
   --color-text-primary:   #1a1d23;
@@ -248,6 +251,7 @@
   --color-bg-panel:    #161b22;
   --color-bg-surface:  #161b22;
   --color-bg-elevated: #21262d;
+  --color-overview-thumb: rgba(255, 255, 255, 0.16);
   --color-bg-overlay:  rgba(1, 4, 9, 0.8);
 
   --color-text-primary:   #e6edf3;
@@ -301,6 +305,7 @@
   --color-bg-panel:    #ffffff;
   --color-bg-surface:  #f6f8fa;
   --color-bg-elevated: #eaeef2;
+  --color-overview-thumb: rgba(0, 0, 0, 0.13);
   --color-bg-overlay:  rgba(31, 35, 40, 0.3);
 
   --color-text-primary:   #1f2328;
@@ -361,6 +366,7 @@
   --color-bg-panel:    #193549;
   --color-bg-surface:  #193549;
   --color-bg-elevated: #1f4662;
+  --color-overview-thumb: rgba(255, 255, 255, 0.18);
   --color-bg-overlay:  rgba(8, 20, 30, 0.8);
 
   --color-text-primary:   #ffffff;
