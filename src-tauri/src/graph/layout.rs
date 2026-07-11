@@ -410,6 +410,12 @@ fn assign_lanes(
 
     // lane_colors[i] = color_index for lane i; stable for the lane lifetime.
     let mut lane_colors: Vec<usize> = Vec::new();
+    // lane_on_line[i] = whether the segment currently descending in lane i is on
+    // HEAD's line of history. This tracks the *branch* owning the descending line
+    // (the commit that reserved the lane for its parent), NOT the pending parent
+    // commit — an off-line branch reaching down to a shared on-line ancestor must
+    // stay muted along its whole length, even where it passes through rows below.
+    let mut lane_on_line: Vec<bool> = Vec::new();
     let mut color_counter: usize = 0;
 
     // Maps each oid to its reserved (lane, color_index).
@@ -428,6 +434,12 @@ fn assign_lanes(
     for (row, c) in commits.iter().enumerate() {
         let oid = &c.oid;
         let parents = &c.parents;
+
+        // On the current commit's line of history? The node itself and its
+        // continuation/merge/branch edges take this; it also becomes the status
+        // of any lane this commit reserves for a parent.
+        let head_line = on_line(oid);
+
         // Determine this commit's lane.
         let (lane, color_index) = if let Some(&reserved) = reserved.get(oid) {
             reserved
@@ -439,6 +451,7 @@ fn assign_lanes(
                 color_counter += 1;
                 active_lanes[i] = Some(*oid);
                 lane_colors[i] = c;
+                lane_on_line[i] = head_line;
                 (i, c)
             } else {
                 let i = active_lanes.len();
@@ -446,6 +459,7 @@ fn assign_lanes(
                 color_counter += 1;
                 active_lanes.push(Some(*oid));
                 lane_colors.push(c);
+                lane_on_line.push(head_line);
                 (i, c)
             }
         };
@@ -455,23 +469,18 @@ fn assign_lanes(
         // row's centre, so lines join dot-to-dot.
         let mut edges: Vec<GraphEdge> = Vec::new();
 
-        // On the current commit's line of history? Continuation edges and the
-        // node itself take this; lanes passing straight through take the status
-        // of whichever commit owns them.
-        let head_line = on_line(oid);
-
-        // Other occupied lanes pass straight through to the next row.
+        // Other occupied lanes pass straight through to the next row. Their
+        // on-head-line status is the lane's (the descending branch's), not the
+        // pending parent's — see `lane_on_line`.
         for (i, slot) in active_lanes.iter().enumerate() {
-            if let Some(slot_oid) = slot {
-                if i != lane {
-                    edges.push(GraphEdge {
-                        src_lane: i,
-                        dst_lane: i,
-                        color_index: lane_colors[i],
-                        kind: EdgeKind::Straight,
-                        on_head_line: on_line(slot_oid),
-                    });
-                }
+            if slot.is_some() && i != lane {
+                edges.push(GraphEdge {
+                    src_lane: i,
+                    dst_lane: i,
+                    color_index: lane_colors[i],
+                    kind: EdgeKind::Straight,
+                    on_head_line: lane_on_line[i],
+                });
             }
         }
 
@@ -495,6 +504,7 @@ fn assign_lanes(
                 // continuation down to it (the line through the dots).
                 active_lanes[lane] = Some(*parent);
                 lane_colors[lane] = color_index;
+                lane_on_line[lane] = head_line;
                 reserved.insert(*parent, (lane, color_index));
                 primary_lane_given = true;
                 edges.push(GraphEdge {
@@ -512,6 +522,7 @@ fn assign_lanes(
                     color_counter += 1;
                     active_lanes[i] = Some(*parent);
                     lane_colors[i] = c;
+                    lane_on_line[i] = head_line;
                     reserved.insert(*parent, (i, c));
                     i
                 } else {
@@ -520,6 +531,7 @@ fn assign_lanes(
                     color_counter += 1;
                     active_lanes.push(Some(*parent));
                     lane_colors.push(c);
+                    lane_on_line.push(head_line);
                     reserved.insert(*parent, (i, c));
                     i
                 };
@@ -563,7 +575,40 @@ fn assign_lanes(
         });
     }
 
+    hoist_head_to_left(&mut nodes, head_id);
     nodes
+}
+
+/// Move the checked-out branch's line to the left-most lane so it's immediately
+/// visible even when many other branches occupy earlier lanes (its tip may
+/// otherwise land several lanes in, depending on walk order). Lanes are just
+/// horizontal positions, so consistently swapping two lane indices across every
+/// node and edge is geometrically identical — it only repositions those two
+/// columns, leaving all connections, colours (carried per node/edge, not derived
+/// from the lane) and on-head-line flags intact.
+fn hoist_head_to_left(nodes: &mut [GraphNode], head_id: Option<Oid>) {
+    let Some(head) = head_id else { return };
+    let head_str = head.to_string();
+    let Some(head_lane) = nodes.iter().find(|n| n.oid == head_str).map(|n| n.lane) else {
+        return;
+    };
+    if head_lane == 0 {
+        return;
+    }
+    let swap = |lane: &mut usize| {
+        if *lane == 0 {
+            *lane = head_lane;
+        } else if *lane == head_lane {
+            *lane = 0;
+        }
+    };
+    for n in nodes.iter_mut() {
+        swap(&mut n.lane);
+        for e in n.edges.iter_mut() {
+            swap(&mut e.src_lane);
+            swap(&mut e.dst_lane);
+        }
+    }
 }
 
 /// A stash read from the `refs/stash` reflog. Read this way (not via
@@ -806,6 +851,23 @@ mod tests {
         let tree_id = empty_tree(repo);
         let tree = repo.find_tree(tree_id).unwrap();
         repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, parents)
+            .unwrap()
+    }
+
+    /// Commit at an explicit time (to control the newest-first walk order) and,
+    /// when `head`, move HEAD to it. `head: false` commits off to the side
+    /// without touching HEAD — used to build sibling branches.
+    fn commit_at(
+        repo: &Repository,
+        msg: &str,
+        secs: i64,
+        parents: &[&git2::Commit],
+        head: bool,
+    ) -> git2::Oid {
+        let sig = git2::Signature::new("T", "t@t", &git2::Time::new(secs, 0)).unwrap();
+        let tree = repo.find_tree(empty_tree(repo)).unwrap();
+        let target = if head { Some("HEAD") } else { None };
+        repo.commit(target, &sig, &sig, msg, &tree, parents)
             .unwrap()
     }
 
@@ -1116,6 +1178,88 @@ mod tests {
 
         let viewport = compute_layout(&repo, 0, 100).unwrap();
         assert!(viewport.nodes.iter().all(|n| n.on_head_line));
+    }
+
+    #[test]
+    fn checked_out_branch_is_hoisted_to_the_left_lane() {
+        // A sibling branch with a *newer* commit would otherwise grab lane 0
+        // (the walk is newest-first), pushing the checked-out tip to lane 1. The
+        // hoist must bring HEAD's line back to the left-most lane so it's obvious.
+        let (_dir, repo) = init_repo();
+        let a = repo
+            .find_commit(commit_at(&repo, "a", 100, &[], true))
+            .unwrap();
+        let b = repo
+            .find_commit(commit_at(&repo, "b", 200, &[&a], true))
+            .unwrap(); // HEAD (main tip)
+                       // Sibling feature off `a`, newer than `b`, created without moving HEAD.
+        let f = repo
+            .find_commit(commit_at(&repo, "f", 300, &[&a], false))
+            .unwrap();
+        repo.branch("feature", &f, false).unwrap();
+        assert_eq!(repo.head().unwrap().target(), Some(b.id()), "HEAD is `b`");
+
+        let viewport = compute_layout(&repo, 0, 100).unwrap();
+        let by = |s: &str| viewport.nodes.iter().find(|n| n.summary == s).unwrap();
+        assert_eq!(by("b").lane, 0, "checked-out tip should be left-most");
+        assert!(
+            by("f").lane >= 1,
+            "the newer sibling branch moves off lane 0"
+        );
+    }
+
+    #[test]
+    fn off_line_branch_line_stays_muted_where_it_passes_through() {
+        // main: a - b - e (HEAD = e). Feature off `a`: a - c - d. The feature
+        // (c, d) is off HEAD's line; its line descends past `b`'s row down to the
+        // shared ancestor `a`. That descending segment must read as off-line along
+        // its whole length — including the pass-through at `b`'s row. The old code
+        // took the *pending parent* (`a`, on-line) status there and drew it
+        // coloured; it must take the descending branch's status instead.
+        let (_dir, repo) = init_repo();
+        let a = repo
+            .find_commit(commit_at(&repo, "a", 100, &[], true))
+            .unwrap();
+        let b = repo
+            .find_commit(commit_at(&repo, "b", 200, &[&a], true))
+            .unwrap();
+        let _e = commit_at(&repo, "e", 400, &[&b], true); // HEAD
+        let c = repo
+            .find_commit(commit_at(&repo, "c", 300, &[&a], false))
+            .unwrap();
+        let d = repo
+            .find_commit(commit_at(&repo, "d", 500, &[&c], false))
+            .unwrap();
+        repo.branch("feature", &d, false).unwrap();
+
+        let viewport = compute_layout(&repo, 0, 100).unwrap();
+        let by = |s: &str| viewport.nodes.iter().find(|n| n.summary == s).unwrap();
+
+        // `b` is on HEAD's line; the only straight edge starting at its row is the
+        // feature's pass-through (its own parent link to `a` is a merge edge).
+        let straight: Vec<_> = by("b")
+            .edges
+            .iter()
+            .filter(|e| matches!(e.kind, EdgeKind::Straight))
+            .collect();
+        assert_eq!(
+            straight.len(),
+            1,
+            "b's row carries only the feature pass-through"
+        );
+        assert!(
+            !straight[0].on_head_line,
+            "the off-line feature's descending line must stay muted at b's row"
+        );
+        // Sanity on the node flags the muting is meant to mirror.
+        assert!(
+            !by("c").on_head_line && !by("d").on_head_line,
+            "feature is off-line"
+        );
+        assert!(
+            by("a").on_head_line && by("b").on_head_line && by("e").on_head_line,
+            "main line is on-line"
+        );
     }
 
     #[test]

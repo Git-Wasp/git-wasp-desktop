@@ -1045,6 +1045,12 @@ mod tests {
             let mut config = repo.config().unwrap();
             config.set_str("user.name", "Test").unwrap();
             config.set_str("user.email", "test@test.com").unwrap();
+            // Pin line-ending handling so blobs round-trip byte-for-byte across
+            // platforms. Without this a host with `core.autocrlf=true` (the
+            // Windows git default) rewrites LF to CRLF on checkout, breaking the
+            // exact-content assertions (e.g. reading back "a\n").
+            config.set_bool("core.autocrlf", false).unwrap();
+            config.set_str("core.eol", "lf").unwrap();
         }
         {
             let sig = Signature::now("Test", "test@test.com").unwrap();

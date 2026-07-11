@@ -1094,7 +1094,23 @@ between sections, and add new ideas under the right heading. Items marked
       already had `minWidth: 0` + `overflow: hidden`, so the width was bounded.)
 - [ ] Improve toast design. Add icons (e.g. info, warning, error) in the right colour, add a "title" as well as the text
 - [ ] Consider a "conventional commits" config option. If enabled, this provides a dropdown for suitable conventional commit prefixes for commit messages (e.g. fix:, ux:, chore:, etc.). Discuss and plan value and implementation before we change any code.
-- [ ] Git graph branch ordering - when there are many branches, the current checked out branch should appear first (left-most) so it is clearly visible. We also have some colored lines still appearing when in "focus" mode, even though the lines are for branches or commits that are not ancestors of the current checked out HEAD.
+- [x] Git graph branch ordering - when there are many branches, the current checked out branch should appear first (left-most) so it is clearly visible. We also have some colored lines still appearing when in "focus" mode, even though the lines are for branches or commits that are not ancestors of the current checked out HEAD.
+      — both are backend graph-layout fixes (`graph/layout.rs`):
+      • **Hoist HEAD to lane 0.** New `hoist_head_to_left` post-pass in
+        `assign_lanes` finds the checked-out tip's lane and, if not already 0,
+        consistently swaps that lane index with 0 across every node + edge. Lanes
+        are just x-positions so the swap is geometrically identical (connections,
+        per-node/edge colours, and on-head-line flags all untouched) — it just
+        pulls the current branch to the left even when a newer sibling branch
+        grabbed lane 0 by walk order. Test:
+        `checked_out_branch_is_hoisted_to_the_left_lane`.
+      • **Focus-mode stray coloured lines.** A lane passing straight through a row
+        used to take the *pending parent commit's* on-head-line status; when an
+        off-line branch descended to a shared on-line ancestor, the pass-through
+        rows below rendered coloured. Now a parallel `lane_on_line` vec tracks the
+        status of the *descending branch* (the commit that reserved the lane), so
+        an off-line branch stays muted along its whole length. Test:
+        `off_line_branch_line_stays_muted_where_it_passes_through`.
 - [x] In themes, ensure that the background of the git graph is much darker than the foreground and highlighting to give it more "depth". Currently the UI still feels to "flat".
       — new `--color-graph-bg` token: the recessed "well" the graph sits in,
       tuned a notch darker than `--color-bg-app` in every built-in theme
@@ -1247,6 +1263,14 @@ between sections, and add new ideas under the right heading. Items marked
       — already resolved in earlier work: the dead `useRepoStore` import was
       replaced by `useToastStore` (which is used). `tsc --noEmit` is clean and the
       test passes 4/4.
+- [x] Windows-only test failure: `auto_stash_checkout_parks_changes_and_switches`
+      asserted `read_to_string == "a\n"` but got `"a\r\n"`. The host's
+      `core.autocrlf=true` (Windows git default) rewrote the LF blob to CRLF on
+      checkout. Fixed at the source in the shared `make_git_repo_with_commit`
+      test helper: it now pins `core.autocrlf=false` + `core.eol=lf` in the repo
+      config (alongside the existing hermetic user.name/email), so blobs
+      round-trip byte-for-byte on every platform. (Product code is unchanged — it
+      still respects the user's real autocrlf; only the tests are pinned.)
 
 ## Website
 

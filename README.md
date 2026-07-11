@@ -1,6 +1,8 @@
-# gitclient
+# Git Wasp
 
-A personal Git desktop client built with Tauri v2 + React + TypeScript. Functionally comparable to GitKraken — canvas-rendered commit graph, three-panel merge editor, GitHub/GHE integration, multi-repo workspaces.
+[![CI](https://github.com/Git-Wasp/git-wasp-desktop/actions/workflows/ci.yml/badge.svg)](https://github.com/Git-Wasp/git-wasp-desktop/actions/workflows/ci.yml)
+
+A Git desktop client built with Tauri v2 + React + TypeScript.
 
 **Status:** Phase 1 (Foundation) — opens a repository, displays a virtualised commit graph, shows diffs.
 
