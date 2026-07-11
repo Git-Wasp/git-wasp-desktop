@@ -1,4 +1,4 @@
-use crate::graph::GraphViewport;
+use crate::graph::{GraphViewport, SearchHit};
 use crate::repo_manager::AppState;
 use tauri::State;
 
@@ -41,6 +41,25 @@ pub fn get_graph_viewport(
 pub fn find_commit_row(oid: String, state: State<'_, AppState>) -> Result<Option<usize>, String> {
     state
         .with_repo(|repo| crate::graph::find_commit_row(repo, &oid))
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+/// Search the commit history (message, hash prefix, or author) and return the
+/// matching commits' rows + oids so the frontend can highlight and scroll to
+/// them. Searches the cached layout — the whole history, not just the loaded
+/// viewport slice. A blank query returns nothing.
+#[tauri::command]
+pub fn search_graph(query: String, state: State<'_, AppState>) -> Result<Vec<SearchHit>, String> {
+    if query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    state
+        .with_repo_graph_cache(|repo, cache| -> anyhow::Result<Vec<SearchHit>> {
+            // Ensure the layout cache is current (cheap when unchanged), then search it.
+            crate::graph::compute_layout_cached(repo, cache, 0, 1)?;
+            Ok(crate::graph::search_cache(cache, &query))
+        })
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }

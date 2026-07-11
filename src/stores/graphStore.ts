@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
-import type { GraphNode, GraphViewport } from "../types/graph";
+import type { GraphNode, GraphViewport, SearchHit } from "../types/graph";
 import { DEFAULT_DENSITY, isGraphDensity, type GraphDensity } from "../lib/graphDensity";
 
 // Sentinel oid of the synthetic working-tree (uncommitted changes) node — must
@@ -164,6 +164,19 @@ interface GraphStore {
   revealCommit: (oid: string) => Promise<void>;
   revealHead: () => Promise<void>;
   clearSelection: () => void;
+  // --- Graph search (session state; searches the full history in the backend) ---
+  searchOpen: boolean;
+  searchQuery: string;
+  // Matches in top-to-bottom row order; `searchMatchOids` is the same set for
+  // O(1) per-row highlight/dim checks; `searchIndex` is the current match (-1 none).
+  searchHits: SearchHit[];
+  searchMatchOids: Set<string>;
+  searchIndex: number;
+  openSearch: () => void;
+  closeSearch: () => void;
+  runSearch: (query: string) => Promise<void>;
+  nextMatch: () => void;
+  prevMatch: () => void;
   // Clear all graph state (viewport, row cache, selection). Called when the
   // active repo changes so the next fetch starts from scratch — otherwise the
   // previous repo's cached rows would be served for the new one, and the graph
@@ -237,6 +250,17 @@ export const useGraphStore = create<GraphStore>((set, get) => {
     set({ viewport: fetched, lastOffset: offset, lastLimit: limit });
   };
 
+  // Select a search hit and scroll to its row (we already have the row from the
+  // backend, so no `find_commit_row` round-trip). `extra` carries the search-state
+  // update that goes with the reveal (e.g. the new `searchIndex`).
+  const revealHit = (hit: SearchHit, extra: Partial<GraphStore>) =>
+    set({
+      selection: { anchor: hit.oid, focus: hit.oid, range: new Set([hit.oid]) },
+      selectedOid: hit.oid,
+      scrollToRow: hit.row,
+      ...extra,
+    });
+
   return {
   viewport: null,
   selection: emptySelection(),
@@ -245,6 +269,11 @@ export const useGraphStore = create<GraphStore>((set, get) => {
   lastLimit: null,
   scrollToRow: null,
   nodesByRow: new Map(),
+  searchOpen: false,
+  searchQuery: "",
+  searchHits: [],
+  searchMatchOids: new Set<string>(),
+  searchIndex: -1,
   focusCurrentBranch: loadFocusCurrentBranch(),
   graphVariant: loadGraphVariant(),
 
@@ -316,10 +345,13 @@ export const useGraphStore = create<GraphStore>((set, get) => {
   },
 
   refresh: async () => {
-    const { lastOffset, lastLimit, nodesByRow } = get();
+    const { lastOffset, lastLimit, nodesByRow, searchOpen, searchQuery } = get();
     if (lastOffset === null || lastLimit === null) return;
     nodesByRow.clear();
     await fetchAndCache(lastOffset, lastLimit);
+    // History may have moved (fetch/commit/rebase) — re-run any active search so
+    // match rows/oids stay valid.
+    if (searchOpen && searchQuery.trim()) await get().runSearch(searchQuery);
   },
 
   selectCommit: (oid: string, extend: boolean) => {
@@ -409,6 +441,49 @@ export const useGraphStore = create<GraphStore>((set, get) => {
     set({ selection: emptySelection(), selectedOid: null });
   },
 
+  openSearch: () => set({ searchOpen: true }),
+
+  closeSearch: () =>
+    set({
+      searchOpen: false,
+      searchQuery: "",
+      searchHits: [],
+      searchMatchOids: new Set<string>(),
+      searchIndex: -1,
+    }),
+
+  runSearch: async (query: string) => {
+    set({ searchQuery: query });
+    if (!query.trim()) {
+      set({ searchHits: [], searchMatchOids: new Set<string>(), searchIndex: -1 });
+      return;
+    }
+    const hits = await invoke<SearchHit[]>("search_graph", { query });
+    // A later keystroke may have superseded this query while we awaited.
+    if (get().searchQuery !== query) return;
+    const oids = new Set(hits.map((h) => h.oid));
+    if (hits.length === 0) {
+      set({ searchHits: [], searchMatchOids: oids, searchIndex: -1 });
+      return;
+    }
+    // Jump to the first match (top-most) and highlight the whole set.
+    revealHit(hits[0], { searchHits: hits, searchMatchOids: oids, searchIndex: 0 });
+  },
+
+  nextMatch: () => {
+    const { searchHits, searchIndex } = get();
+    if (searchHits.length === 0) return;
+    const idx = (searchIndex + 1) % searchHits.length;
+    revealHit(searchHits[idx], { searchIndex: idx });
+  },
+
+  prevMatch: () => {
+    const { searchHits, searchIndex } = get();
+    if (searchHits.length === 0) return;
+    const idx = (searchIndex - 1 + searchHits.length) % searchHits.length;
+    revealHit(searchHits[idx], { searchIndex: idx });
+  },
+
   reset: () => {
     // Supersede any fetch still in flight (e.g. the previous repo's) so a late
     // response can't populate the freshly-cleared graph.
@@ -421,6 +496,11 @@ export const useGraphStore = create<GraphStore>((set, get) => {
       lastLimit: null,
       scrollToRow: null,
       nodesByRow: new Map(),
+      searchOpen: false,
+      searchQuery: "",
+      searchHits: [],
+      searchMatchOids: new Set<string>(),
+      searchIndex: -1,
     });
   },
   };

@@ -43,6 +43,13 @@ export interface BranchLabel {
   isTag: boolean;
 }
 
+/** A commit matching a graph search: its absolute display row (to scroll to)
+ *  and oid (to highlight). Returned by the `search_graph` command. */
+export interface SearchHit {
+  row: number;
+  oid: string;
+}
+
 export interface GraphViewport {
   nodes: GraphNode[];
   totalCount: number;

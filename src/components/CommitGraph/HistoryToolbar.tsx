@@ -11,7 +11,7 @@ import { PromptDialog } from "../common/PromptDialog";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { Tooltip } from "../ui/Tooltip";
-import { BranchFocusIcon, BranchIcon, ColumnsIcon, DensityIcon, PullIcon, PushIcon, RefreshIcon, SplitViewIcon, TargetIcon } from "../ui/icons";
+import { BranchFocusIcon, BranchIcon, ColumnsIcon, DensityIcon, PullIcon, PushIcon, RefreshIcon, SearchIcon, SplitViewIcon, TargetIcon } from "../ui/icons";
 import { GRAPH_DENSITY, nextDensity } from "../../lib/graphDensity";
 import { OPTIONAL_COLUMN_LABELS } from "./columnModel";
 
@@ -42,6 +42,9 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
   } = useRemoteStore();
   const refresh = useGraphStore((s) => s.refresh);
   const revealHead = useGraphStore((s) => s.revealHead);
+  const searchOpen = useGraphStore((s) => s.searchOpen);
+  const openSearch = useGraphStore((s) => s.openSearch);
+  const closeSearch = useGraphStore((s) => s.closeSearch);
   const focusCurrentBranch = useGraphStore((s) => s.focusCurrentBranch);
   const setFocusCurrentBranch = useGraphStore((s) => s.setFocusCurrentBranch);
   const graphVariant = useGraphStore((s) => s.graphVariant);
@@ -224,6 +227,16 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
             style={{ color: graphVariant === "split" ? "var(--color-accent-primary)" : undefined }}
           >
             <SplitViewIcon />
+          </IconButton>
+        </Tooltip>
+        <Tooltip label={searchOpen ? "Close search" : "Search commits (⌘/Ctrl+F)"}>
+          <IconButton
+            aria-label="Search commits"
+            aria-pressed={searchOpen}
+            onClick={() => (searchOpen ? closeSearch() : openSearch())}
+            style={{ color: searchOpen ? "var(--color-accent-primary)" : undefined }}
+          >
+            <SearchIcon />
           </IconButton>
         </Tooltip>
         <Tooltip

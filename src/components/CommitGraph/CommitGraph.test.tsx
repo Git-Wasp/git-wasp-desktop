@@ -70,6 +70,11 @@ beforeEach(() => {
     fetchViewport: vi.fn(),
     refresh: vi.fn(),
     selectCommit,
+    searchOpen: false,
+    searchQuery: "",
+    searchHits: [],
+    searchMatchOids: new Set(),
+    searchIndex: -1,
   });
   useRepoStore.setState({
     currentRepo: { name: "r", path: "/r", headBranch: "main" },
@@ -698,5 +703,28 @@ describe("CommitGraph tags", () => {
     expect(checkbox.checked).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: /^delete$/i }));
     await waitFor(() => expect(useTagStore.getState().deleteTag).toHaveBeenCalledWith("v1.0", true));
+  });
+});
+
+describe("CommitGraph search", () => {
+  it("mounts the floating search panel when search is open", () => {
+    useGraphStore.setState({ searchOpen: true });
+    render(<CommitGraph />);
+    expect(screen.getByLabelText("Search commits")).toBeInTheDocument();
+  });
+
+  it("dims non-matching rows while a search is active", () => {
+    useGraphStore.setState({
+      searchOpen: true,
+      searchQuery: "first",
+      searchMatchOids: new Set(["a".repeat(40)]),
+      searchHits: [{ row: 0, oid: "a".repeat(40) }],
+      searchIndex: 0,
+    });
+    const { container } = render(<CommitGraph />);
+    const matchRow = container.querySelector(`[data-oid="${"a".repeat(40)}"]`);
+    const otherRow = container.querySelector(`[data-oid="${"b".repeat(40)}"]`);
+    expect(matchRow).not.toHaveAttribute("data-muted");
+    expect(otherRow).toHaveAttribute("data-muted", "true");
   });
 });

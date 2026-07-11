@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import type { InputHTMLAttributes } from "react";
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -5,9 +6,13 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 /** The shared text input primitive (token-styled, focus-ring via :focus-visible). */
-export function Input({ fullWidth, style, ...rest }: InputProps) {
+export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
+  { fullWidth, style, ...rest },
+  ref,
+) {
   return (
     <input
+      ref={ref}
       {...rest}
       style={{
         height: "var(--control-height-md)",
@@ -25,4 +30,4 @@ export function Input({ fullWidth, style, ...rest }: InputProps) {
       }}
     />
   );
-}
+});

@@ -1,4 +1,4 @@
-use crate::graph::{BranchLabel, EdgeKind, GraphEdge, GraphNode, GraphViewport};
+use crate::graph::{BranchLabel, EdgeKind, GraphEdge, GraphNode, GraphViewport, SearchHit};
 use anyhow::Context;
 use git2::{ObjectType, Oid, Repository, Sort};
 use std::collections::{HashMap, HashSet};
@@ -780,6 +780,51 @@ pub fn find_commit_row(repo: &Repository, oid_str: &str) -> anyhow::Result<Optio
         .map(|i| i + wip_offset))
 }
 
+/// Find commits matching `query` in the cached layout: a case-insensitive
+/// substring of the summary, body, author name or email, or a prefix of the
+/// commit hash. Returns matches in top-to-bottom (newest-first) row order, with
+/// each row shifted for the working-tree node exactly as `slice_viewport` does,
+/// so the frontend can scroll to a hit's row directly. A blank query — or no
+/// cache yet — yields nothing.
+pub fn search_cache(cache: &Option<GraphCache>, query: &str) -> Vec<SearchHit> {
+    match cache {
+        Some(c) => search_nodes(&c.nodes, c.change_count, query),
+        None => Vec::new(),
+    }
+}
+
+fn search_nodes(nodes: &[GraphNode], change_count: u32, query: &str) -> Vec<SearchHit> {
+    let q = query.trim().to_lowercase();
+    if q.is_empty() {
+        return Vec::new();
+    }
+    // Mirror `slice_viewport`: a dirty tree adds the working-tree node at row 0,
+    // shifting every commit down by one.
+    let wip_offset = if !nodes.is_empty() && change_count > 0 {
+        1
+    } else {
+        0
+    };
+    nodes
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| node_matches(n, &q))
+        .map(|(i, n)| SearchHit {
+            row: i + wip_offset,
+            oid: n.oid.clone(),
+        })
+        .collect()
+}
+
+/// `query` must already be trimmed and lowercased.
+fn node_matches(node: &GraphNode, query: &str) -> bool {
+    node.oid.starts_with(query)
+        || node.summary.to_lowercase().contains(query)
+        || node.body.to_lowercase().contains(query)
+        || node.author_name.to_lowercase().contains(query)
+        || node.author_email.to_lowercase().contains(query)
+}
+
 fn changed_file_count(repo: &Repository) -> u32 {
     let mut opts = git2::StatusOptions::new();
     opts.include_untracked(true).include_ignored(false);
@@ -930,6 +975,66 @@ mod tests {
         commit_file("f.txt", "v2\n", "second");
         let head = repo.head().unwrap().target().unwrap().to_string();
         (dir, repo, head)
+    }
+
+    #[test]
+    fn search_matches_message_and_author_case_insensitively() {
+        let (_dir, repo) = init_repo();
+        let c1 = repo
+            .find_commit(make_commit(&repo, "Fix the bug", &[]))
+            .unwrap();
+        make_commit(&repo, "Add a feature", &[&c1]);
+
+        let mut cache: Option<GraphCache> = None;
+        compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+
+        // Message substring, case-insensitive.
+        let hits = search_cache(&cache, "FIX");
+        assert_eq!(hits.len(), 1);
+        assert!(cache
+            .as_ref()
+            .unwrap()
+            .nodes
+            .iter()
+            .any(|n| n.oid == hits[0].oid && n.summary == "Fix the bug"));
+
+        // Author email matches every commit (sig() = test@test.com).
+        assert_eq!(search_cache(&cache, "test@test.com").len(), 2);
+        // No match.
+        assert!(search_cache(&cache, "nonexistent").is_empty());
+        // Blank query yields nothing.
+        assert!(search_cache(&cache, "   ").is_empty());
+    }
+
+    #[test]
+    fn search_matches_hash_prefix() {
+        let (_dir, repo) = init_repo();
+        let oid = make_commit(&repo, "only commit", &[]).to_string();
+
+        let mut cache: Option<GraphCache> = None;
+        compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+
+        let hits = search_cache(&cache, &oid[..8]);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].oid, oid);
+    }
+
+    #[test]
+    fn search_rows_are_top_to_bottom_and_shift_for_a_dirty_tree() {
+        let (_dir, repo) = init_repo();
+        let c1 = repo
+            .find_commit(make_commit(&repo, "match one", &[]))
+            .unwrap();
+        make_commit(&repo, "match two", &[&c1]);
+        let nodes = build_full_layout(&repo).unwrap();
+
+        // Clean tree: newest-first, so "match two" (row 0) precedes "match one".
+        let clean = search_nodes(&nodes, 0, "match");
+        assert_eq!(clean.iter().map(|h| h.row).collect::<Vec<_>>(), vec![0, 1]);
+
+        // Dirty tree: the working-tree node at row 0 shifts both down by one.
+        let dirty = search_nodes(&nodes, 3, "match");
+        assert_eq!(dirty.iter().map(|h| h.row).collect::<Vec<_>>(), vec![1, 2]);
     }
 
     #[test]

@@ -65,6 +65,10 @@ export function useCommitGraph(
   // row height so the canvas and the virtualised rows line up exactly.
   rowHeight?: number,
   dotRadius?: number,
+  // Graph search: when active, matching commits get a highlight band and every
+  // non-match is dimmed (like focus mode). `matchOids` is the set of match oids.
+  searchActive?: boolean,
+  matchOids?: Set<string>,
 ): void {
   const configRef = useRef<GraphConfig | null>(null);
   const laneColorsRef = useRef<string[]>([]);
@@ -103,6 +107,7 @@ export function useCommitGraph(
     const hoverBg = resolveCssVar("--color-bg-hover") || "rgba(255, 255, 255, 0.06)";
     const mutedColor = resolveCssVar("--color-graph-muted") || "#5b6270";
     const mutedAlpha = parseFloat(resolveCssVar("--graph-muted-opacity")) || 0.4;
+    const matchBg = resolveCssVar("--color-graph-match") || "rgba(255, 199, 87, 0.22)";
     // Hairline divider between rows (graph-column half; the DOM row draws the
     // matching border across the data columns) — cues individual commits.
     const rowDivider = resolveCssVar("--color-graph-row-divider") || "rgba(255, 255, 255, 0.06)";
@@ -115,14 +120,18 @@ export function useCommitGraph(
     const sansFont = resolveCssVar("--font-family-sans") || "sans-serif";
     const dpr = window.devicePixelRatio || 1;
 
-    // In focus mode, commits/edges off HEAD's line of history are greyed. These
-    // resolve the effective colour (and, for dots, whether to dim) per element.
+    // A commit matches the active search (highlighted; never dimmed).
+    const isMatch = (node: GraphViewport["nodes"][number]): boolean =>
+      !!searchActive && !!matchOids && matchOids.has(node.oid);
+    // In focus mode, commits/edges off HEAD's line are greyed; during a search,
+    // every non-match is greyed too. These resolve the effective colour and
+    // whether to dim per element.
+    const nodeMuted = (node: GraphViewport["nodes"][number]): boolean =>
+      (!!focusCurrentBranch && !node.onHeadLine) || (!!searchActive && !isMatch(node));
     const nodeColor = (node: GraphViewport["nodes"][number]): string => {
       const base = laneColors[node.colorIndex % 8] || "#4d9de0";
-      return focusCurrentBranch && !node.onHeadLine ? mutedColor : base;
+      return nodeMuted(node) ? mutedColor : base;
     };
-    const nodeMuted = (node: GraphViewport["nodes"][number]): boolean =>
-      !!focusCurrentBranch && !node.onHeadLine;
 
     const cssW = canvas.clientWidth;
     const cssH = canvas.clientHeight;
@@ -160,12 +169,16 @@ export function useCommitGraph(
         ctx.fillRect(0, rowTop + 1, cssW, rowHeight - 2);
       }
 
-      // Stronger row band by priority — selection > hover > HEAD (matches the
-      // DOM cell background in GraphRow). A subtle hover band cues the row the
-      // pointer is over; the base nodeBg above stays underneath.
+      // Stronger row band by priority — selection > search match > hover > HEAD
+      // (matches the DOM cell background in GraphRow). A subtle hover band cues
+      // the row the pointer is over; the base nodeBg above stays underneath.
       const isSelected = selection.range.has(node.oid);
-      const isHovered = !isSelected && hoveredOid != null && node.oid === hoveredOid;
-      if (isHovered && !node.isWorkingTree) {
+      const isMatched = !isSelected && isMatch(node);
+      const isHovered = !isSelected && !isMatched && hoveredOid != null && node.oid === hoveredOid;
+      if (isMatched && !node.isWorkingTree) {
+        ctx.fillStyle = matchBg;
+        ctx.fillRect(0, rowTop, cssW, rowHeight);
+      } else if (isHovered && !node.isWorkingTree) {
         ctx.fillStyle = hoverBg;
         ctx.fillRect(0, rowTop, cssW, rowHeight);
       } else if (node.isHead && !node.isWorkingTree && !isSelected) {
@@ -204,9 +217,12 @@ export function useCommitGraph(
         // Stash edges are drawn dotted and muted; real history edges are solid.
         // In focus mode, edges off HEAD's line are greyed to match their commits.
         const isStashEdge = edge.kind === "Stash";
+        // Grey an edge when it's off the focused branch, or (during a search) when
+        // the commit it descends from isn't a match.
+        const edgeDimmed = (focusCurrentBranch && !edge.onHeadLine) || (!!searchActive && !isMatch(node));
         ctx.strokeStyle = isStashEdge
           ? resolveCssVar("--color-text-muted") || "#8a8a8a"
-          : focusCurrentBranch && !edge.onHeadLine
+          : edgeDimmed
             ? mutedColor
             : laneColors[edge.colorIndex % 8] || "#4d9de0";
         ctx.lineWidth = lineWidth;
@@ -364,5 +380,5 @@ export function useCommitGraph(
 
       ctx.globalAlpha = 1;
     });
-  }, [viewport, selection, canvasRef, themeTick, width, avatarVersion, hoveredOid, focusCurrentBranch, rowHeight, dotRadius]);
+  }, [viewport, selection, canvasRef, themeTick, width, avatarVersion, hoveredOid, focusCurrentBranch, rowHeight, dotRadius, searchActive, matchOids]);
 }

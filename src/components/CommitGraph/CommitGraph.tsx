@@ -17,6 +17,7 @@ import { usePersistedWidth } from "../../lib/usePersistedWidth";
 import { runMerge } from "./dragDrop";
 import { useGraphDragDrop } from "./useGraphDragDrop";
 import { MergeConfirmDialog } from "./MergeConfirmDialog";
+import { GraphSearch } from "./GraphSearch";
 import { GraphSkeleton } from "./GraphSkeleton";
 import { AuthorCell, BranchCell, DateCell, HashCell, MessageCell } from "./columns";
 import {
@@ -69,6 +70,7 @@ const GraphRow = memo(function GraphRow({
   rowIndex,
   selected,
   hovered,
+  matched,
   muted,
   onRowHover,
   columns,
@@ -96,8 +98,10 @@ const GraphRow = memo(function GraphRow({
   onRowClick: (node: GraphNode, shiftKey: boolean) => void;
   onRowContextMenu: (e: React.MouseEvent, node: GraphNode) => void;
   hovered: boolean;
+  // Highlight the row as a search match (a warm band behind the cells).
+  matched: boolean;
   // Dim the cells when this commit is off the focused branch's line of history
-  // (focus mode). The row stays fully interactive.
+  // (focus mode) or is a non-match during a search. The row stays interactive.
   muted: boolean;
   onRowHover: (oid: string | null) => void;
 }) {
@@ -106,13 +110,17 @@ const GraphRow = memo(function GraphRow({
   // actual selection takes over with the normal highlight. (The canvas paints
   // the matching band for the graph column.) Priority: selected > hover > HEAD.
   const isHeadRow = node.isHead && !node.isWorkingTree;
+  // Priority matches the canvas band (useCommitGraph): selection > search match >
+  // hover > HEAD.
   const cellBg = selected
     ? "var(--color-bg-selected)"
-    : hovered
-      ? "var(--color-bg-hover)"
-      : isHeadRow
-        ? "var(--color-graph-head-row-bg)"
-        : "transparent";
+    : matched
+      ? "var(--color-graph-match)"
+      : hovered
+        ? "var(--color-bg-hover)"
+        : isHeadRow
+          ? "var(--color-graph-head-row-bg)"
+          : "transparent";
 
   const renderCell = (col: GraphColumn) => {
     switch (col.kind) {
@@ -235,6 +243,13 @@ export function CommitGraph({
     useGraphStore();
   const scrollToRow = useGraphStore((s) => s.scrollToRow);
   const focusCurrentBranch = useGraphStore((s) => s.focusCurrentBranch);
+  const searchOpen = useGraphStore((s) => s.searchOpen);
+  const searchQuery = useGraphStore((s) => s.searchQuery);
+  const searchMatchOids = useGraphStore((s) => s.searchMatchOids);
+  const openSearch = useGraphStore((s) => s.openSearch);
+  // Dim non-matching commits only once there's a query with results to compare
+  // against — an open-but-empty search box shouldn't grey the whole graph.
+  const searchActive = searchOpen && searchQuery.trim().length > 0;
   const graphVariant = useGraphStore((s) => s.graphVariant);
   // Row-density preset drives the row height / dot radius (canvas + DOM share
   // these) and where the commit body line goes (below / beside / hidden).
@@ -411,6 +426,19 @@ export function CommitGraph({
     fetchViewport(offset, limit);
     useGraphStore.setState({ scrollToRow: null });
   }, [scrollToRow, fetchViewport, rowHeight]);
+
+  // ⌘/Ctrl+F opens the graph search. Only mounted with the graph view, so it
+  // won't fire while a diff editor has the panel.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "f" || e.key === "F")) {
+        e.preventDefault();
+        openSearch();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [openSearch]);
 
   // Merge source into target (auto-checking-out target first), then refresh.
   const handleMerge = useCallback(
@@ -685,7 +713,7 @@ export function CommitGraph({
     }
   };
 
-  useCommitGraph(canvasRef, viewport, selection, graphWidth, hoveredOid, focusCurrentBranch, rowHeight, dotRadius);
+  useCommitGraph(canvasRef, viewport, selection, graphWidth, hoveredOid, focusCurrentBranch, rowHeight, dotRadius, searchActive, searchMatchOids);
 
   const offset = viewport?.offset ?? 0;
   const totalHeight = (viewport?.totalCount ?? 0) * rowHeight;
@@ -792,6 +820,7 @@ export function CommitGraph({
 
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--color-graph-bg, var(--color-bg-app))" }}>
+      {searchOpen && <GraphSearch />}
       {/* Column header. The graph header cell is frozen; the data header cells
           live in a clip that mirrors the body's horizontal scroll. */}
       <div
@@ -873,7 +902,8 @@ export function CommitGraph({
               rowIndex={offset + i}
               selected={selection.range.has(node.oid)}
               hovered={hoveredOid === node.oid}
-              muted={focusCurrentBranch && !node.onHeadLine}
+              matched={searchActive && searchMatchOids.has(node.oid)}
+              muted={(focusCurrentBranch && !node.onHeadLine) || (searchActive && !searchMatchOids.has(node.oid))}
               onRowHover={handleRowHover}
               columns={columns}
               widths={widths}

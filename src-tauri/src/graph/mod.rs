@@ -1,7 +1,9 @@
 mod layout;
 
 pub(crate) use layout::diag_log;
-pub use layout::{compute_layout_cached, find_commit_row, set_change_count, GraphCache};
+pub use layout::{
+    compute_layout_cached, find_commit_row, search_cache, set_change_count, GraphCache,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -84,6 +86,15 @@ pub struct BranchLabel {
     pub name: String,
     pub is_remote: bool,
     pub is_tag: bool,
+}
+
+/// A commit matching a graph search, with its absolute display row (so the
+/// frontend can scroll to it) and oid (so the renderer can highlight it).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHit {
+    pub row: usize,
+    pub oid: String,
 }
 
 #[derive(Debug, Serialize)]
