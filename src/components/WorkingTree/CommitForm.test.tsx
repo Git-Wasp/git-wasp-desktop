@@ -4,16 +4,25 @@ import "@testing-library/jest-dom";
 import { CommitForm } from "./CommitForm";
 import { useWorkingTreeStore } from "../../stores/workingTreeStore";
 import { useGraphStore } from "../../stores/graphStore";
+import { useRepoStore } from "../../stores/repoStore";
 
 let createCommit: ReturnType<typeof vi.fn<(message: string) => Promise<void>>>;
 let amendCommitMessage: ReturnType<typeof vi.fn<(message: string) => Promise<void>>>;
 let discardAll: ReturnType<typeof vi.fn<() => Promise<void>>>;
+let createBranch: ReturnType<typeof vi.fn<(name: string, startPoint?: string) => Promise<void>>>;
+let checkoutBranch: ReturnType<typeof vi.fn<(name: string) => Promise<void>>>;
+let fastForwardBranch: ReturnType<typeof vi.fn<(branch: string, target: string) => Promise<void>>>;
+let listFastForwardableBranches: ReturnType<typeof vi.fn<(target: string) => Promise<string[]>>>;
 
 beforeEach(() => {
   vi.clearAllMocks();
   createCommit = vi.fn<(message: string) => Promise<void>>().mockResolvedValue(undefined);
   amendCommitMessage = vi.fn<(message: string) => Promise<void>>().mockResolvedValue(undefined);
   discardAll = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+  createBranch = vi.fn<(name: string, startPoint?: string) => Promise<void>>().mockResolvedValue(undefined);
+  checkoutBranch = vi.fn<(name: string) => Promise<void>>().mockResolvedValue(undefined);
+  fastForwardBranch = vi.fn<(branch: string, target: string) => Promise<void>>().mockResolvedValue(undefined);
+  listFastForwardableBranches = vi.fn<(target: string) => Promise<string[]>>().mockResolvedValue([]);
   useWorkingTreeStore.setState({
     identity: { name: "A", email: "a@a" },
     headCommit: null,
@@ -24,6 +33,14 @@ beforeEach(() => {
     discardAll,
   });
   useGraphStore.setState({ fetchViewport: vi.fn().mockResolvedValue(undefined) });
+  // Default: on a branch (not detached). Individual detached tests override.
+  useRepoStore.setState({
+    currentRepo: { name: "r", path: "/r", headBranch: "main" },
+    createBranch,
+    checkoutBranch,
+    fastForwardBranch,
+    listFastForwardableBranches,
+  });
 });
 
 describe("CommitForm", () => {
@@ -115,6 +132,64 @@ describe("CommitForm", () => {
       expect(amendCommitMessage).toHaveBeenCalledWith("New subject\n\nOld body"),
     );
     expect(createCommit).not.toHaveBeenCalled();
+  });
+
+  describe("on a detached HEAD", () => {
+    const detach = () =>
+      useRepoStore.setState({
+        currentRepo: { name: "r", path: "/r", headBranch: null },
+      });
+
+    it("blocks the normal commit and requires creating a branch", () => {
+      detach();
+      useWorkingTreeStore.setState({ headCommit: { oid: "abc123", message: "m", pushed: false } });
+      render(<CommitForm stagedCount={1} />);
+
+      expect(screen.getByRole("alert")).toHaveTextContent(/detached head/i);
+      expect(screen.queryByRole("button", { name: /^commit/i })).not.toBeInTheDocument();
+
+      const createBtn = screen.getByRole("button", { name: /create branch & commit/i });
+      // A subject alone isn't enough — a branch name is required.
+      fireEvent.change(screen.getByPlaceholderText(/summary/i), { target: { value: "Fix" } });
+      expect(createBtn).toBeDisabled();
+
+      fireEvent.change(screen.getByLabelText(/new branch name/i), { target: { value: "fix/bug" } });
+      expect(createBtn).toBeEnabled();
+    });
+
+    it("creates the branch, switches to it, then commits — in order", async () => {
+      detach();
+      useWorkingTreeStore.setState({ headCommit: { oid: "abc123", message: "m", pushed: false } });
+      render(<CommitForm stagedCount={1} />);
+
+      fireEvent.change(screen.getByPlaceholderText(/summary/i), { target: { value: "Fix bug" } });
+      fireEvent.change(screen.getByLabelText(/new branch name/i), { target: { value: "fix/bug" } });
+      fireEvent.click(screen.getByRole("button", { name: /create branch & commit/i }));
+
+      await waitFor(() => expect(createCommit).toHaveBeenCalledWith("Fix bug"));
+      expect(createBranch).toHaveBeenCalledWith("fix/bug");
+      expect(checkoutBranch).toHaveBeenCalledWith("fix/bug");
+      // Branch must exist and be current before the commit lands on it.
+      expect(createBranch.mock.invocationCallOrder[0]).toBeLessThan(
+        checkoutBranch.mock.invocationCallOrder[0],
+      );
+      expect(checkoutBranch.mock.invocationCallOrder[0]).toBeLessThan(
+        createCommit.mock.invocationCallOrder[0],
+      );
+    });
+
+    it("offers to fast-forward eligible branches and switch to them", async () => {
+      detach();
+      useWorkingTreeStore.setState({ headCommit: { oid: "abc123", message: "m", pushed: false } });
+      listFastForwardableBranches.mockResolvedValue(["main"]);
+      render(<CommitForm stagedCount={1} />);
+
+      const ffBtn = await screen.findByRole("button", { name: /fast-forward main & switch/i });
+      fireEvent.click(ffBtn);
+
+      await waitFor(() => expect(fastForwardBranch).toHaveBeenCalledWith("main", "abc123"));
+      expect(checkoutBranch).toHaveBeenCalledWith("main");
+    });
   });
 
   it("Reset opens a confirm dialog and discards all on confirm", async () => {

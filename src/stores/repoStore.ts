@@ -55,6 +55,11 @@ interface RepoStore {
    *  commit oid (or null when not committed). */
   revertCommit: (oid: string, autoCommit: boolean) => Promise<string | null>;
   createBranch: (name: string, startPoint?: string) => Promise<void>;
+  /** Advance local `branch` to `target` (a commit oid) when it's a fast-forward.
+   *  Moves the branch pointer without checking it out unless it's current. */
+  fastForwardBranch: (branch: string, target: string) => Promise<void>;
+  /** The local branches that can be fast-forwarded to `target` (a commit oid). */
+  listFastForwardableBranches: (target: string) => Promise<string[]>;
   renameBranch: (oldName: string, newName: string) => Promise<void>;
   deleteBranch: (name: string) => Promise<void>;
   listPrunableBranches: () => Promise<PrunableBranch[]>;
@@ -204,6 +209,17 @@ export const useRepoStore = create<RepoStore>((set, get) => {
       await invoke("create_branch", { name, startPoint: startPoint ?? null });
       await get().loadBranches();
     },
+
+    fastForwardBranch: async (branch: string, target: string) => {
+      await invoke("fast_forward_branch", { branch, target });
+      // The move may have updated the working tree (if `branch` was current), so
+      // refresh the graph and branch list together.
+      await useWorkingTreeStore.getState().refreshAll();
+      await get().loadBranches();
+    },
+
+    listFastForwardableBranches: (target: string) =>
+      invoke<string[]>("list_fast_forwardable_branches", { target }),
 
     renameBranch: async (oldName: string, newName: string) => {
       await invoke("rename_branch", { oldName, newName });

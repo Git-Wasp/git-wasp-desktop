@@ -50,7 +50,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
     useRepoStore();
   const { fetchViewport, revealCommit, refresh } = useGraphStore();
   const { remoteInfo } = useGithubStore();
-  const { aheadBehind, push } = useRemoteStore();
+  const { aheadBehind, push, fastForwardToUpstream } = useRemoteStore();
   const { status: operationStatus, startMerge } = useMergeStore();
   const toastSuccess = useToastStore((s) => s.success);
   const toastError = useToastStore((s) => s.error);
@@ -122,6 +122,16 @@ export function Sidebar({ width = 220 }: { width?: number }) {
     }
   };
 
+  const handleFastForwardToUpstream = async (name: string) => {
+    try {
+      await fastForwardToUpstream(name);
+      toastSuccess(`Fast-forwarded ${name} to its upstream`);
+      await refresh();
+    } catch (e) {
+      toastError(String(e), { title: "Fast-forward failed" });
+    }
+  };
+
   const locals = branches.filter((b) => !b.isRemote);
   // Always float the checked-out branch to the top of the local list; keep the
   // rest in their existing order.
@@ -178,6 +188,16 @@ export function Sidebar({ width = 220 }: { width?: number }) {
             ...(b.isHead
               ? []
               : [{ label: "Checkout branch", onSelect: () => handleCheckoutBranch(b.name) }]),
+            // A clean fast-forward is available: behind the upstream with no local
+            // commits ahead. Advances the branch pointer without checking it out.
+            ...(ab && ab.behind > 0 && ab.ahead === 0
+              ? [
+                  {
+                    label: `Fast-forward to ${b.upstream ?? "upstream"}`,
+                    onSelect: () => handleFastForwardToUpstream(b.name),
+                  },
+                ]
+              : []),
             { label: "Push branch", onSelect: () => handlePushBranch(b.name) },
             { label: "Create tag…", onSelect: () => setTagBranch({ name: b.name, oid: b.oid }) },
             ...(b.isHead || operationStatus.kind === "merge"
