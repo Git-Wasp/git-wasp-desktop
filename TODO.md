@@ -1095,6 +1095,7 @@ between sections, and add new ideas under the right heading. Items marked
 - [ ] Improve toast design. Add icons (e.g. info, warning, error) in the right colour, add a "title" as well as the text
 - [ ] Consider a "conventional commits" config option. If enabled, this provides a dropdown for suitable conventional commit prefixes for commit messages (e.g. fix:, ux:, chore:, etc.). Discuss and plan value and implementation before we change any code.
 - [ ] Git graph branch ordering - when there are many branches, the current checked out branch should appear first (left-most) so it is clearly visible. We also have some colored lines still appearing when in "focus" mode, even though the lines are for branches or commits that are not ancestors of the current checked out HEAD.
+- [ ] In themes, ensure that the background of the git graph is much darker than the foreground and highlighting to give it more "depth". Currently the UI still feels to "flat".
 
 ## Other issues
 
@@ -1141,8 +1142,25 @@ between sections, and add new ideas under the right heading. Items marked
         the cached count with no rebuild); frontend (refreshAll/watcher do one
         `refresh_working_tree` then the viewport, no second scan). Suites green
         (backend 230, frontend 606).
-      • [ ] Remaining idea: lean harder on the watcher so the 8s poll can skip
-        the scan entirely when nothing changed (still open).
+      • [x] **8s poll now skips the `git status` scan when the watcher saw no
+        change.** The Rust file watcher already emits `working-tree-changed`
+        (git-ignored churn filtered out backend-side) whenever the tree or
+        `.git` moves. App now carries an app-level subscription that flags the
+        tree dirty on every such event (on *all* views — the StagingPanel keeps
+        its own subscription for the live sub-second refresh there). The poll
+        consults `shouldScanWorkingTree(dirty, tick)` (`lib/workingTreeSync`):
+        a clean tick skips the expensive `refreshAll` scan entirely; a backstop
+        forces a scan every 8th tick (~64s) to recover any dropped watcher
+        event. `syncHead` still runs every tick (cheap). A freshly opened repo
+        starts dirty so the first tick re-affirms the graph's dirty-file
+        baseline. On an idle large monorepo this drops the per-tick `git status`
+        to roughly one scan per minute. Tests: `shouldScanWorkingTree` (dirty
+        scans; clean non-backstop skips; backstop cadence; custom interval).
+        Also added a README "Performance on managed / corporate devices"
+        section — real-time AV scanning (Defender/Intune) intercepting Git's
+        file I/O is the likely reason a managed M4 Pro underperforms; documents
+        folder/process exclusions for macOS (`mdatp`) and Windows
+        (`Add-MpPreference`).
 - [x] Branch-selector dropdown appears *behind* the graph — z-index/stacking bug.
       The NavBar carries `.elevation-below` (`position: relative; z-index: 2`),
       which creates a stacking context; the dropdown panel's `z-index: 200` was
@@ -1212,4 +1230,7 @@ between sections, and add new ideas under the right heading. Items marked
 - [ ] Removal of unnecessary implementation detail tests (did we take TDD too far?)
 - [ ] Remove comments that litter the codebase. "Public" functions should be documented according to language standards (ts / rust) but inline comments are included too frequently and are a maintenance burden.
 - [ ] Internationalisation. Tokenize strings, and allow users to change language. Initial supported languages to include British English, American English, and Dutch.
-  
+
+## Task tracking
+
+- [ ] Either split this file [TODO.md](./TODO.md) into "todo" and "done" as separate files *or* consider using GitHub issues to track items still to do.

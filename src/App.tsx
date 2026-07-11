@@ -19,6 +19,8 @@ import { ResizeHandle } from "./components/common/ResizeHandle";
 import { usePersistedWidth } from "./lib/usePersistedWidth";
 import { usePersistedBoolean } from "./lib/usePersistedBoolean";
 import { applyDiagnosticsPref } from "./lib/diagnostics";
+import { shouldScanWorkingTree } from "./lib/workingTreeSync";
+import { listen } from "@tauri-apps/api/event";
 import { useRepoStore } from "./stores/repoStore";
 import { useGraphStore } from "./stores/graphStore";
 import { useCommitFileStore } from "./stores/commitFileStore";
@@ -165,10 +167,47 @@ export default function App() {
     void loadRemoteTags();
   }, [repoPath, loadBranches, detectRemote, loadAheadBehind, loadRemoteTags]);
 
+  // The file watcher marks the working tree dirty; the poll consumes the flag to
+  // decide whether the (potentially expensive) `git status` scan is worth
+  // running this tick. See `lib/workingTreeSync`.
+  const wtDirtyRef = useRef(true);
+  const pollTickRef = useRef(0);
+
+  // App-level file-watcher subscription: while a repo is open, flag the working
+  // tree dirty whenever the backend emits `working-tree-changed` (git-ignored
+  // churn is already filtered out backend-side). This runs on every view — the
+  // StagingPanel keeps its own subscription for the live sub-second refresh
+  // there; here we only record that *something* changed so the poll can skip the
+  // scan when nothing has.
+  useEffect(() => {
+    if (!repoPath) return;
+    // A freshly-opened/activated repo starts dirty so the first poll re-affirms
+    // the working-tree baseline for the graph's dirty-file node.
+    wtDirtyRef.current = true;
+    pollTickRef.current = 0;
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+    void listen("working-tree-changed", () => {
+      wtDirtyRef.current = true;
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [repoPath]);
+
   // Background poll: while a repo is open, periodically re-sync the working tree
   // and graph so changes made outside the app — or while not on the uncommitted
-  // view (where the file watcher runs) — appear without needing a restart. The
-  // manual "Check for changes" toolbar button runs the same refresh on demand.
+  // view (where the file watcher's live refresh runs) — appear without needing a
+  // restart. On a large monorepo the `git status` scan is costly, so a clean
+  // tick (nothing flagged by the watcher since the last scan) skips it entirely;
+  // a periodic backstop still forces a scan to recover any dropped watcher
+  // event. HEAD is cheap to re-check, so `syncHead` runs every tick regardless
+  // (an external `git checkout` must move the "current branch" marker). The
+  // manual "Check for changes" toolbar button runs the full refresh on demand.
   useEffect(() => {
     if (!repoPath) return;
     let running = false;
@@ -177,10 +216,12 @@ export default function App() {
       if (running || document.hidden) return;
       running = true;
       try {
-        // Pick up external changes: the working tree/graph, plus HEAD (an
-        // external `git checkout` must move the "current branch" marker).
+        const scan = shouldScanWorkingTree(wtDirtyRef.current, pollTickRef.current);
+        pollTickRef.current += 1;
+        // Clear before scanning so a change landing mid-scan re-arms the flag.
+        wtDirtyRef.current = false;
         await Promise.all([
-          useWorkingTreeStore.getState().refreshAll(),
+          scan ? useWorkingTreeStore.getState().refreshAll() : Promise.resolve(),
           useRepoStore.getState().syncHead(),
         ]);
       } catch {

@@ -61,6 +61,56 @@ cargo test
 
 ---
 
+## Performance on managed / corporate devices
+
+If the app feels sluggish — slow to open large repositories, laggy refreshes,
+high CPU while idle — the most common cause on corporate hardware is
+**real-time antivirus scanning**. Endpoint protection (Microsoft Defender for
+Endpoint, common on Intune-joined devices) intercepts every file read. Git is
+I/O-heavy: a single `git status` on a large monorepo stats tens of thousands of
+files, and the app also runs a file watcher over the working tree. When each of
+those reads is scanned synchronously, throughput can drop several-fold — enough
+that a fast machine (e.g. an M4 Pro) performs *worse* than an unmanaged one.
+
+Excluding your repositories and toolchain from real-time scanning usually
+restores native performance. Exclude:
+
+- The directories where your Git repositories live (the working trees that get
+  scanned/watched)
+- Build output that churns constantly: `target/` (Rust), `node_modules/`,
+  `dist/`
+- Optionally, the `git`, `node`, and `cargo` binaries as *process* exclusions
+
+> **Managed devices:** on an Intune-joined machine these settings are typically
+> controlled by your organisation's policy and you may not be able to change
+> them yourself. Ask IT to add the exclusions above via Intune, or to grant a
+> local exception.
+
+### macOS (Microsoft Defender)
+
+If the `mdatp` CLI is available and local exclusions are permitted:
+
+```sh
+mdatp exclusion folder add --path ~/dev        # your repos root
+mdatp exclusion folder add --path ~/.cargo
+mdatp health --field real_time_protection_enabled   # check current state
+```
+
+### Windows (Microsoft Defender)
+
+In an elevated PowerShell (or via **Windows Security → Virus & threat
+protection → Exclusions**):
+
+```powershell
+Add-MpPreference -ExclusionPath "C:\dev"            # your repos root
+Add-MpPreference -ExclusionProcess "git.exe"
+```
+
+After adding exclusions, reopen a large repository and compare — the difference
+is usually immediately obvious.
+
+---
+
 ## Project structure
 
 ```
