@@ -43,6 +43,11 @@ beforeEach(() => {
     lastLimit: null,
     scrollToRow: null,
     nodesByRow: new Map(),
+    searchOpen: false,
+    searchQuery: "",
+    searchHits: [],
+    searchMatchOids: new Set<string>(),
+    searchIndex: -1,
   });
 });
 
@@ -308,5 +313,65 @@ describe("graphStore", () => {
     const order = useGraphStore.getState().columnOrder.ledger;
     expect(order.slice(0, 2)).toEqual(["date", "commit"]);
     expect([...order].sort()).toEqual(["author", "branch", "commit", "date", "hash"]);
+  });
+
+  describe("search", () => {
+    const hits = [
+      { row: 1, oid: "bbb" },
+      { row: 4, oid: "eee" },
+    ];
+
+    it("runSearch queries the backend, stores hits, and reveals the first match", async () => {
+      mockInvoke.mockResolvedValueOnce(hits);
+
+      await useGraphStore.getState().runSearch("fix");
+
+      expect(mockInvoke).toHaveBeenCalledWith("search_graph", { query: "fix" });
+      const s = useGraphStore.getState();
+      expect(s.searchHits).toEqual(hits);
+      expect(s.searchMatchOids).toEqual(new Set(["bbb", "eee"]));
+      expect(s.searchIndex).toBe(0);
+      // First hit is selected and scrolled to.
+      expect(s.selectedOid).toBe("bbb");
+      expect(s.scrollToRow).toBe(1);
+    });
+
+    it("runSearch with a blank query clears matches without calling the backend", async () => {
+      await useGraphStore.getState().runSearch("   ");
+      expect(mockInvoke).not.toHaveBeenCalled();
+      const s = useGraphStore.getState();
+      expect(s.searchHits).toEqual([]);
+      expect(s.searchIndex).toBe(-1);
+    });
+
+    it("nextMatch and prevMatch wrap around and scroll to the hit", async () => {
+      mockInvoke.mockResolvedValueOnce(hits);
+      await useGraphStore.getState().runSearch("x"); // index 0 (bbb)
+
+      useGraphStore.getState().nextMatch(); // -> index 1 (eee)
+      expect(useGraphStore.getState().searchIndex).toBe(1);
+      expect(useGraphStore.getState().scrollToRow).toBe(4);
+
+      useGraphStore.getState().nextMatch(); // wraps -> index 0 (bbb)
+      expect(useGraphStore.getState().searchIndex).toBe(0);
+      expect(useGraphStore.getState().selectedOid).toBe("bbb");
+
+      useGraphStore.getState().prevMatch(); // wraps back -> index 1 (eee)
+      expect(useGraphStore.getState().searchIndex).toBe(1);
+      expect(useGraphStore.getState().scrollToRow).toBe(4);
+    });
+
+    it("closeSearch clears the query, hits and index", async () => {
+      mockInvoke.mockResolvedValueOnce(hits);
+      await useGraphStore.getState().runSearch("x");
+
+      useGraphStore.getState().closeSearch();
+      const s = useGraphStore.getState();
+      expect(s.searchOpen).toBe(false);
+      expect(s.searchQuery).toBe("");
+      expect(s.searchHits).toEqual([]);
+      expect(s.searchMatchOids.size).toBe(0);
+      expect(s.searchIndex).toBe(-1);
+    });
   });
 });

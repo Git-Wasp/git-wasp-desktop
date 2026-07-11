@@ -168,6 +168,11 @@
   --color-graph-muted: #5b6270;
   /* Opacity applied to muted branch pills / commit messages in that mode. */
   --graph-muted-opacity: 0.4;
+  /* Translucent highlight band behind commits matching a graph search. Distinct
+     from the accent selection band so matches and the current selection read
+     differently. Defined here (dark default); light themes override below and
+     the other dark themes inherit this. */
+  --color-graph-match: rgba(255, 199, 87, 0.22);
 }
 
 /* Light theme overrides — surface/text/border plus the colour groups that
@@ -222,6 +227,7 @@
   --color-graph-row-divider: rgba(0, 0, 0, 0.07);
   --color-graph-muted: #aab2c0;
   --graph-muted-opacity: 0.45;
+  --color-graph-match: rgba(224, 158, 0, 0.28);
 }
 
 /* === GitHub Dark =========================================================

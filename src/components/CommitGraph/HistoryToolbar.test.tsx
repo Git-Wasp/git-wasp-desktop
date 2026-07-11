@@ -134,4 +134,15 @@ describe("HistoryToolbar", () => {
     expect(screen.getByRole("button", { name: /^push$/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /^pull/i })).toBeDisabled();
   });
+
+  it("the search button toggles the graph search open and closed", () => {
+    useGraphStore.setState({ searchOpen: false });
+    render(<HistoryToolbar />);
+    const btn = screen.getByRole("button", { name: "Search commits" });
+
+    fireEvent.click(btn);
+    expect(useGraphStore.getState().searchOpen).toBe(true);
+    fireEvent.click(btn);
+    expect(useGraphStore.getState().searchOpen).toBe(false);
+  });
 });

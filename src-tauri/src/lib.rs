@@ -55,6 +55,7 @@ pub fn run() {
             // Graph
             commands::graph::get_graph_viewport,
             commands::graph::find_commit_row,
+            commands::graph::search_graph,
             commands::graph::refresh_working_tree,
             // Diff (history)
             commands::diff::get_commit_diff,

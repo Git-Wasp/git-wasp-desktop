@@ -566,6 +566,30 @@ description. See TODO.md for work still outstanding.
 
 ## General UX
 
+- [x] Search feature for the git graph. A magnifier button in the history
+      toolbar (and ⌘/Ctrl+F) opens a floating search panel at the top-right of
+      the graph — the action bar stays visible. It searches **the whole history**
+      (case-insensitive) by commit message (summary + body), hash prefix, and
+      author name/email. Because the graph is virtualised (frontend holds only
+      the viewport slice), search runs in the backend: a `search_graph` command
+      searches the cached full layout (`graph::search_cache` over
+      `GraphCache.nodes`, reusing `slice_viewport`'s working-tree row offset so
+      hit rows line up with rendered rows) and returns `{row, oid}` per match.
+      The panel shows the current position + total (`3 / 17`, or "No matches");
+      up/down (or Enter / Shift+Enter) step through matches, wrapping, each
+      selecting the commit and scrolling it into view via the existing
+      `scrollToRow` path (no extra backend round-trip — the row comes with the
+      hit). Highlighting: matching commits get a warm band
+      (`--color-graph-match`, added to the token layer) in both the canvas
+      (`useCommitGraph`) and the DOM cells (`GraphRow`); non-matches are dimmed
+      like focus-branch mode; the current match, being selected, reads strongest.
+      Session state lives in `graphStore` (`searchOpen/Query/Hits/MatchOids/Index`
+      + `openSearch/closeSearch/runSearch/nextMatch/prevMatch`), debounced ~150ms,
+      cleared on repo change and re-run on refresh. Also made the shared `Input`
+      forward refs (for autofocus). Tests: backend `search_cache` (message / body
+      / author / hash-prefix, case-insensitive, blank → empty, dirty-tree row
+      offset); frontend graphStore search, `GraphSearch`, toolbar toggle, and
+      CommitGraph dim/panel-mount.
 - [x] Wider diff-view change gutter that doubles as a scrollbar with a live
       position indicator. The right-hand `ChangeOverview` strip (the change
       "gutter" in the staging diff *and* the read-only commit diff — both render
