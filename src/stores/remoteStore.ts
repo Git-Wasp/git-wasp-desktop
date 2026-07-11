@@ -19,6 +19,10 @@ interface RemoteStore {
   // the user cancels the auto-stash prompt.
   pull: (mode?: PullMode, remoteName?: string, branch?: string) => Promise<PullResult | undefined>;
   push: (remoteName?: string, branch?: string) => Promise<void>;
+  /** Fast-forward a local branch to its upstream using the already-fetched
+   *  remote state (no network). For advancing a branch that isn't checked out,
+   *  e.g. local `main` to `origin/main` while on a feature branch. */
+  fastForwardToUpstream: (branch: string) => Promise<void>;
 }
 
 export const useRemoteStore = create<RemoteStore>((set, get) => ({
@@ -90,6 +94,17 @@ export const useRemoteStore = create<RemoteStore>((set, get) => ({
       throw e;
     } finally {
       set({ isPushing: false });
+    }
+  },
+
+  fastForwardToUpstream: async (branch: string) => {
+    set({ lastError: null });
+    try {
+      await invoke("fast_forward_to_upstream", { branch });
+      await get().loadAheadBehind();
+    } catch (e) {
+      set({ lastError: logOperationError("fast-forward", e) });
+      throw e;
     }
   },
 }));

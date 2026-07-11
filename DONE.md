@@ -152,6 +152,33 @@ description. See TODO.md for work still outstanding.
 
 ## Working tree & committing
 
+- [x] Support "fast forwarding" e.g. fast forward main to the current checked-out
+      commit, and stop the detached-HEAD footgun (main pulled on the remote, local
+      main not updated, committed onto a bare "HEAD", then couldn't push). Two
+      capabilities, backed by a new pure `branch_ops` module (`fast_forward`,
+      `fast_forward_to_upstream`, `fast_forwardable_branches` — a move only
+      happens when the target is a descendant of the branch tip; when the branch
+      is checked out the working tree is materialised *before* the ref moves,
+      mirroring `remote_ops::pull_ff`; when HEAD is detached only the ref moves):
+      • **Fast-forward a branch to a commit** — surfaced three ways: graph
+        right-click "Fast-forward <branch> to here" (only for branches the backend
+        reports as eligible, via `list_fast_forwardable_branches`, so no invalid
+        offers); sidebar row menu "Fast-forward to <upstream>" when a local branch
+        is behind its upstream with nothing ahead (moves the ref without checkout,
+        no fetch); and the detached-HEAD recovery below.
+      • **Block committing on a detached HEAD** — the commit form now detects a
+        detached HEAD (repo open but `headBranch` null), shows a warning, and
+        replaces the commit button with "Create branch & commit" (creates a branch
+        at HEAD, checks it out, then commits — so the commit lands somewhere
+        pushable). It also offers "Fast-forward <branch> & switch" for any branch
+        that descends to HEAD, i.e. advance main to the orphan commit and check it
+        out. Commands `fast_forward_branch` / `fast_forward_to_upstream` /
+        `list_fast_forwardable_branches`; store actions on `repoStore`
+        (`fastForwardBranch`, `listFastForwardableBranches`) and `remoteStore`
+        (`fastForwardToUpstream`). Tests: `branch_ops` unit tests (non-current ref
+        move, current-branch tree materialisation, detached recovery,
+        already-up-to-date, diverged-untouched, eligibility filtering); frontend
+        CommitForm/CommitGraph/Sidebar tests.
 - [x] "Staging" area for files during commit: stage an entire file or a hunk and
       move it to the panel below; support staging deleted and added files; allow
       "unstage"

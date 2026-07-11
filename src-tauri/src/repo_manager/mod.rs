@@ -429,6 +429,30 @@ impl RepoManager {
             .ok_or_else(|| anyhow::anyhow!("no repo after checkout"))
     }
 
+    /// Fast-forward local `branch` to `target_oid` (see [`crate::branch_ops`]).
+    pub fn fast_forward_branch(
+        &self,
+        branch: &str,
+        target_oid: &str,
+    ) -> anyhow::Result<crate::branch_ops::FastForwardOutcome> {
+        let oid = git2::Oid::from_str(target_oid).context("invalid commit oid")?;
+        self.with_repo(|repo| crate::branch_ops::fast_forward(repo, branch, oid))?
+    }
+
+    /// Fast-forward local `branch` to its upstream tracking branch (no fetch).
+    pub fn fast_forward_to_upstream(
+        &self,
+        branch: &str,
+    ) -> anyhow::Result<crate::branch_ops::FastForwardOutcome> {
+        self.with_repo(|repo| crate::branch_ops::fast_forward_to_upstream(repo, branch))?
+    }
+
+    /// Local branches that can be fast-forwarded to `target_oid`.
+    pub fn fast_forwardable_branches(&self, target_oid: &str) -> anyhow::Result<Vec<String>> {
+        let oid = git2::Oid::from_str(target_oid).context("invalid commit oid")?;
+        self.with_repo(|repo| crate::branch_ops::fast_forwardable_branches(repo, oid))?
+    }
+
     /// Create a tag at `oid`. With a non-empty `message` it's an annotated tag
     /// (using the repo's signature); otherwise a lightweight tag.
     pub fn create_tag(
@@ -739,6 +763,25 @@ impl AppState {
 
     pub fn create_branch(&self, name: &str, start_oid: Option<&str>) -> anyhow::Result<BranchInfo> {
         self.manager.create_branch(name, start_oid)
+    }
+
+    pub fn fast_forward_branch(
+        &self,
+        branch: &str,
+        target_oid: &str,
+    ) -> anyhow::Result<crate::branch_ops::FastForwardOutcome> {
+        self.manager.fast_forward_branch(branch, target_oid)
+    }
+
+    pub fn fast_forward_to_upstream(
+        &self,
+        branch: &str,
+    ) -> anyhow::Result<crate::branch_ops::FastForwardOutcome> {
+        self.manager.fast_forward_to_upstream(branch)
+    }
+
+    pub fn fast_forwardable_branches(&self, target_oid: &str) -> anyhow::Result<Vec<String>> {
+        self.manager.fast_forwardable_branches(target_oid)
     }
 
     pub fn rename_branch(&self, old_name: &str, new_name: &str) -> anyhow::Result<()> {

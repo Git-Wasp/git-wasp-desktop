@@ -1,4 +1,5 @@
 mod avatar;
+mod branch_ops;
 mod commands;
 mod credential_store;
 mod diff_engine;
@@ -72,6 +73,9 @@ pub fn run() {
             commands::branch::rename_branch,
             commands::branch::delete_branch,
             commands::branch::get_ahead_behind,
+            commands::branch::fast_forward_branch,
+            commands::branch::fast_forward_to_upstream,
+            commands::branch::list_fast_forwardable_branches,
             // Working tree status
             commands::status::get_working_tree_status,
             // Staging

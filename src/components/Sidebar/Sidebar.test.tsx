@@ -65,6 +65,7 @@ beforeEach(() => {
     fetch: vi.fn().mockResolvedValue({ updatedRefs: [] }),
     pull: vi.fn().mockResolvedValue({ status: "AlreadyUpToDate" }),
     push: vi.fn().mockResolvedValue(undefined),
+    fastForwardToUpstream: vi.fn().mockResolvedValue(undefined),
   });
 
   useMergeStore.setState({
@@ -147,6 +148,40 @@ describe("Sidebar", () => {
     fireEvent.click(screen.getByText("Push branch"));
 
     await waitFor(() => expect(push).toHaveBeenCalledWith(undefined, "feature"));
+  });
+
+  it("offers fast-forward-to-upstream only when behind with nothing ahead", async () => {
+    const fastForwardToUpstream = vi.fn().mockResolvedValue(undefined);
+    useRemoteStore.setState({
+      fastForwardToUpstream,
+      aheadBehind: [{ branch: "feature", ahead: 0, behind: 2, upstream: "origin/feature" }],
+    });
+    useRepoStore.setState({
+      branches: [
+        { name: "feature", isRemote: false, isHead: false, upstream: "origin/feature", oid: "a", ahead: null, behind: null },
+      ],
+    });
+
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole("button", { name: "feature actions" }));
+    fireEvent.click(screen.getByText("Fast-forward to origin/feature"));
+
+    await waitFor(() => expect(fastForwardToUpstream).toHaveBeenCalledWith("feature"));
+  });
+
+  it("hides fast-forward-to-upstream when the branch is also ahead (diverged)", () => {
+    useRemoteStore.setState({
+      aheadBehind: [{ branch: "feature", ahead: 1, behind: 2, upstream: "origin/feature" }],
+    });
+    useRepoStore.setState({
+      branches: [
+        { name: "feature", isRemote: false, isHead: false, upstream: "origin/feature", oid: "a", ahead: null, behind: null },
+      ],
+    });
+
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole("button", { name: "feature actions" }));
+    expect(screen.queryByText(/Fast-forward to/)).not.toBeInTheDocument();
   });
 
   it("creates a tag at a branch tip from its row menu", async () => {

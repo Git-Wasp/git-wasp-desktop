@@ -100,6 +100,57 @@ pub async fn delete_tag(name: String, state: State<'_, AppState>) -> Result<(), 
     state.delete_tag(&name).map_err(|e| e.to_string())
 }
 
+/// Fast-forward local `branch` to `target` (a commit oid), advancing the branch
+/// pointer without checking it out unless it's the current branch. Errors with a
+/// clear message when the move isn't a fast-forward.
+#[tauri::command]
+pub async fn fast_forward_branch(
+    branch: String,
+    target: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    use crate::branch_ops::FastForwardOutcome;
+    match state
+        .fast_forward_branch(&branch, &target)
+        .map_err(|e| e.to_string())?
+    {
+        FastForwardOutcome::NotFastForward => Err(format!(
+            "cannot fast-forward {branch}: it has diverged from that commit"
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// Fast-forward local `branch` to its upstream tracking branch, using the
+/// already-fetched remote state (no network access).
+#[tauri::command]
+pub async fn fast_forward_to_upstream(
+    branch: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    use crate::branch_ops::FastForwardOutcome;
+    match state
+        .fast_forward_to_upstream(&branch)
+        .map_err(|e| e.to_string())?
+    {
+        FastForwardOutcome::NotFastForward => Err(format!(
+            "cannot fast-forward {branch}: it has diverged from its upstream"
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// The local branches that can be fast-forwarded to `target` (a commit oid).
+#[tauri::command]
+pub async fn list_fast_forwardable_branches(
+    target: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    state
+        .fast_forwardable_branches(&target)
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn get_ahead_behind(state: State<'_, AppState>) -> Result<Vec<AheadBehind>, String> {
     state

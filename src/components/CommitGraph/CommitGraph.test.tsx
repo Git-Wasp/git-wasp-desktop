@@ -80,6 +80,8 @@ beforeEach(() => {
     checkoutCommit: vi.fn().mockResolvedValue(undefined),
     createTag: vi.fn().mockResolvedValue(undefined),
     revertCommit: vi.fn().mockResolvedValue(null),
+    fastForwardBranch: vi.fn().mockResolvedValue(undefined),
+    listFastForwardableBranches: vi.fn().mockResolvedValue([]),
   });
   useGithubStore.setState({ remoteInfo: null });
 });
@@ -376,6 +378,29 @@ describe("CommitGraph context menu", () => {
       expect(useRepoStore.getState().createBranch).toHaveBeenCalledWith("feature/x", "b".repeat(40)),
     );
     expect(useRepoStore.getState().checkoutBranch).toHaveBeenCalledWith("feature/x");
+  });
+
+  it("offers to fast-forward only the branches the backend reports as eligible", async () => {
+    const fastForwardBranch = vi.fn().mockResolvedValue(undefined);
+    useRepoStore.setState({
+      fastForwardBranch,
+      listFastForwardableBranches: vi.fn().mockResolvedValue(["main"]),
+    });
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("second commit"));
+
+    const ffItem = await screen.findByText("Fast-forward main to here");
+    fireEvent.click(ffItem);
+    await waitFor(() => expect(fastForwardBranch).toHaveBeenCalledWith("main", "b".repeat(40)));
+  });
+
+  it("omits fast-forward items when no branch is eligible", async () => {
+    useRepoStore.setState({ listFastForwardableBranches: vi.fn().mockResolvedValue([]) });
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("second commit"));
+    // Give the (empty) eligibility fetch a chance to resolve.
+    await waitFor(() => expect(screen.getByText("Checkout this commit")).toBeInTheDocument());
+    expect(screen.queryByText(/Fast-forward .* to here/)).not.toBeInTheDocument();
   });
 
   it("offers commit-level actions (checkout this commit, create tag)", () => {

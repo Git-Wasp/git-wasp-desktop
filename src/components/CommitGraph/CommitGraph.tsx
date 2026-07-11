@@ -240,8 +240,18 @@ export function CommitGraph({
   // these) and where the commit body line goes (below / beside / hidden).
   const graphDensity = useGraphStore((s) => s.graphDensity);
   const { rowHeight, dotRadius, bodyPlacement } = GRAPH_DENSITY[graphDensity];
-  const { currentRepo, createBranch, checkoutBranch, renameBranch, deleteBranch, checkoutCommit, createTag, revertCommit } =
-    useRepoStore();
+  const {
+    currentRepo,
+    createBranch,
+    checkoutBranch,
+    renameBranch,
+    deleteBranch,
+    checkoutCommit,
+    createTag,
+    revertCommit,
+    fastForwardBranch,
+    listFastForwardableBranches,
+  } = useRepoStore();
   const remoteInfo = useGithubStore((s) => s.remoteInfo);
   const startMerge = useMergeStore((s) => s.startMerge);
   const operationStatus = useMergeStore((s) => s.status);
@@ -256,6 +266,9 @@ export function CommitGraph({
   const isTagOnRemote = useCallback((name: string) => remoteTags.includes(name), [remoteTags]);
 
   const [menu, setMenu] = useState<MenuState | null>(null);
+  // Local branches that could be fast-forwarded to the right-clicked commit,
+  // fetched from the backend when the menu opens so we only offer valid moves.
+  const [ffBranches, setFfBranches] = useState<string[]>([]);
   const [prompt, setPrompt] = useState<PromptState | null>(null);
   const [tagDelete, setTagDelete] = useState<{ name: string; onRemote: boolean } | null>(null);
   // The row the pointer is over, for a subtle hover highlight. Stable setter, so
@@ -461,10 +474,16 @@ export function CommitGraph({
       // commits, so don't select them as one.
       if (!node.isWorkingTree && !node.isStash) {
         selectCommit(node.oid, false);
+        // Resolve which branches can fast-forward to this commit; the menu items
+        // appear once it lands (clears first so a stale list can't linger).
+        setFfBranches([]);
+        listFastForwardableBranches(node.oid).then(setFfBranches).catch(() => setFfBranches([]));
+      } else {
+        setFfBranches([]);
       }
       setMenu({ x: e.clientX, y: e.clientY, node });
     },
-    [selectCommit],
+    [selectCommit, listFastForwardableBranches],
   );
 
   const runStashOp = async (op: () => Promise<void>, success: string) => {
@@ -568,6 +587,19 @@ export function CommitGraph({
         },
       );
 
+      // Fast-forward any local branch that this commit descends from — the way to
+      // advance e.g. `main` onto a commit (including a detached-HEAD commit)
+      // without checking that branch out first.
+      if (ffBranches.length > 0) {
+        items.push({ separator: true });
+        for (const branch of ffBranches) {
+          items.push({
+            label: `Fast-forward ${branch} to here`,
+            onSelect: () => runBranchOp(() => fastForwardBranch(branch, node.oid)),
+          });
+        }
+      }
+
       const localBranches = node.branchLabels.filter((l) => !l.isRemote && !l.isTag);
       if (localBranches.length > 0) {
         items.push({ separator: true });
@@ -630,7 +662,7 @@ export function CommitGraph({
       return items;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [checkoutBranch, deleteBranch, checkoutCommit, remoteInfo, currentRepo, operationStatus.kind, startMerge, isTagOnRemote],
+    [checkoutBranch, deleteBranch, checkoutCommit, remoteInfo, currentRepo, operationStatus.kind, startMerge, isTagOnRemote, ffBranches, fastForwardBranch],
   );
 
   const handlePromptConfirm = async (value: string) => {
