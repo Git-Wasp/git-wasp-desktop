@@ -66,5 +66,15 @@ export default tseslint.config(
     rules: {
       "no-restricted-syntax": "off",
     },
-  }
+  },
+  {
+    // Story files may export non-component values (args/argTypes objects) and
+    // legitimately use sentinel strings in fixtures; keep them off the
+    // component-only and no-drift rules so `--max-warnings 0` stays green.
+    files: ["**/*.stories.tsx"],
+    rules: {
+      "react-refresh/only-export-components": "off",
+      "no-restricted-syntax": "off",
+    },
+  },
 );
