@@ -50,7 +50,6 @@ built yet; **(Phase 6)** are from the polish/hardening phase.
 
 ## Engineering & tooling
 
-- [ ] Add Storybook (or similar, if there's something better) for viewing and refining UI components
 - [ ] Determine a versioning mechanism (commit hash, semantic versioning, etc.). Implement it and link it to release process.
 - [ ] GitHub Actions release workflow — tag-triggered matrix, artifacts to Release (Phase 6)
 - [ ] `cargo-deny` / licence audit in CI (Phase 6)
@@ -62,6 +61,7 @@ built yet; **(Phase 6)** are from the polish/hardening phase.
 
 ## General UX
 
+- [ ] The "radar style" highlight on the commit graph for the currently checked out commit is not correctly centred when in "comfortable" or "compact" mode (but is correct when is "cozy" mode)
 - [ ] Include section in settings to view open source packages used. Perhaps an "about" section that also includes the version, it's latest commit, a link to the repo etc.?
 - [ ] Add a "notifications" button (bell) to the top menu bar. When notifications are fired (currently toasts) append a notification to a floating panel that opens from the right when clicking the "notifications" icon. Allow notifications to be dismissed one at a time or all at once. Notifications should have scope - either to a repo or global. If per-repo, the repo name should be shown in the notification details. All notifications should include a timestamp.
 - [ ] Add "pin" functionality to left-hand sidebar panels that allow "pinning" a branch to the top, pinning a remote branch to the top, or pinning a recent repo to the top. The pinned items should persist between restarts. Pinning should be via a "pin" icon shown on hover - if not already pinned, the icon only shows on hover. If already pinned a solid pin icon is shown when not hovering, and changes to an "unfilled" pin icon on hover. A pinned item can be unpinned by clicking the pin icon again. Pinned items appear at the top. Give more spacing around the existing buttons at the top of this panel too (prune / new branch)

@@ -626,6 +626,7 @@ description. See TODO.md for work still outstanding.
 
 ## General UX
 
+- [x] Add Storybook (or similar, if there's something better) for viewing and refining UI components. Added ladle.
 - [x] Search feature for the git graph. A magnifier button in the history
       toolbar (and ⌘/Ctrl+F) opens a floating search panel at the top-right of
       the graph — the action bar stays visible. It searches **the whole history**
