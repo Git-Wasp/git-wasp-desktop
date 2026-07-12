@@ -73,7 +73,7 @@ built yet; **(Phase 6)** are from the polish/hardening phase.
 - [ ] Auto-theme switching. Allow user to choose a "default dark" and a "default light" theme and switch between them automatically when the OS theme is "light" or "dark"
 - [ ] On MacOS, the app logo seems larger than other apps' logos. Is this an issue on our end, or is it a Tauri issue?
 - [ ] Click "interactivity" on elements such as buttons, "ellipsis" menu buttons etc (something _like_ Material Design) that makes user interactions with elements obvious
-- [ ] Update stashes sidebar menu so that buttons are removed and the buttons' functionality is in a menu triggered by an "ellipsis" menu
+- [ ] Update stashes sidebar menu so that buttons are removed and the buttons' functionality is in a menu triggered by an "ellipsis" menu. Add a "view" option to the menu - choosing this option should select the stash in the commit graph and scroll the viewport to it automatically.
 
 ## Other issues
 
