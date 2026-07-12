@@ -13,6 +13,8 @@
     "tauri": "tauri",
     "lint": "eslint src --ext .ts,.tsx --max-warnings 0",
     "test:unit": "vitest run",
+    "ladle": "ladle serve",
+    "ladle:build": "ladle build",
     "test:watch": "vitest"
   },
   "dependencies": {
@@ -31,6 +33,7 @@
     "zustand": "^5"
   },
   "devDependencies": {
+    "@ladle/react": "^5.1.1",
     "@tailwindcss/vite": "^4",
     "@tauri-apps/cli": "^2",
     "@testing-library/jest-dom": "^6.9.1",

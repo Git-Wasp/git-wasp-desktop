@@ -26,3 +26,6 @@ src-tauri/gen/
 *.njsproj
 *.sln
 *.sw?
+
+# Ladle component-workshop build output
+/build
