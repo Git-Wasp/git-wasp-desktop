@@ -65,4 +65,43 @@ describe("ChangeOverview", () => {
     fireEvent.mouseMove(window, { clientY: 30 });
     expect(onScrollTo.mock.lastCall![0]).toBeCloseTo(0.2, 5);
   });
+
+  it("forwards the wheel delta so hovering the strip scrolls the diff, not just dragging", () => {
+    const onWheelScroll = vi.fn();
+    const { getByTestId } = render(
+      <ChangeOverview
+        rows={modifiedRows}
+        viewport={{ top: 0, height: 0.5 }}
+        onScrollTo={vi.fn()}
+        onWheelScroll={onWheelScroll}
+      />,
+    );
+    const strip = getByTestId("change-overview");
+    fireEvent.wheel(strip, { deltaY: 120 });
+    expect(onWheelScroll).toHaveBeenCalledWith(120);
+  });
+
+  it("does not forward wheel scrolling when the whole file already fits (nothing to scroll)", () => {
+    const onWheelScroll = vi.fn();
+    const { getByTestId } = render(
+      <ChangeOverview
+        rows={modifiedRows}
+        viewport={{ top: 0, height: 1 }}
+        onScrollTo={vi.fn()}
+        onWheelScroll={onWheelScroll}
+      />,
+    );
+    fireEvent.wheel(getByTestId("change-overview"), { deltaY: 120 });
+    expect(onWheelScroll).not.toHaveBeenCalled();
+  });
+
+  it("renders a header spacer above the track when showHeaderSpacer is set (split view's pane headings)", () => {
+    const { queryByTestId } = render(<ChangeOverview rows={modifiedRows} showHeaderSpacer />);
+    expect(queryByTestId("overview-header-spacer")).toBeInTheDocument();
+  });
+
+  it("renders no header spacer by default (no pane headings to offset)", () => {
+    const { queryByTestId } = render(<ChangeOverview rows={modifiedRows} />);
+    expect(queryByTestId("overview-header-spacer")).toBeNull();
+  });
 });

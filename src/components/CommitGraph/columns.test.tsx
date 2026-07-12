@@ -261,6 +261,12 @@ describe("AuthorCell", () => {
     expect(screen.getByText("—")).toBeInTheDocument();
     expect(screen.queryByText("PN")).toBeNull();
   });
+
+  it("renders an em dash and no '?' avatar on a stash row (author isn't tracked)", () => {
+    render(<AuthorCell node={node({ isStash: true, authorName: "", authorEmail: "" })} />);
+    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.queryByText("?")).toBeNull();
+  });
 });
 
 describe("HashCell", () => {
@@ -279,5 +285,10 @@ describe("DateCell", () => {
   it("renders 'Now' on the uncommitted-changes row", () => {
     render(<DateCell node={node({ isWorkingTree: true })} />);
     expect(screen.getByText("Now")).toBeInTheDocument();
+  });
+
+  it("renders an em dash on a stash row instead of the unix epoch", () => {
+    render(<DateCell node={node({ isStash: true, authorTimestamp: 0 })} />);
+    expect(screen.getByText("—")).toBeInTheDocument();
   });
 });

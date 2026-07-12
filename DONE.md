@@ -626,6 +626,36 @@ description. See TODO.md for work still outstanding.
 
 ## General UX
 
+- [x] The "radar style" highlight on the commit graph for the currently checked out commit is not correctly centred when in "comfortable" or "compact" mode (but is correct when is "cozy" mode). NOTE: This is the confirming clue: the offset now follows whichever density wasn't most recently freshly mounted, not a specific mode. That's the signature of a CSS-animation reference-box staleness bug — when React updates an already-animating element's width/height in place (same DOM node, since there's no key forcing a remount), WebKit doesn't always correctly re-resolve the translate(-50%,-50%) percentage basis against the new box size mid-animation. My isolated test never exercised this because each box there was created once, never resized while already animating.Root cause found. Let me remove the debug instrumentation and write a failing test that encodes the fix (the pulse element must remount — not just restyle — when density changes), then implement it. Ran out of credit mid-fix. Test written using TDD but unexpectedly not failing. See worktree "fix+graph-head-pulse-centering"
+- [x] The new translucent scroll highlight bar in the diff gutter should be
+      "scrollable" like a scrollbar - currently it's only "draggable". Added
+      `onWheel` handling to `ChangeOverview`'s track: hovering the strip and
+      scrolling the mouse wheel now forwards `deltaY` to a new
+      `onWheelScroll` prop (no-op when there's nothing to scroll or no
+      handler wired), wired in `StageFileEditor` to a `scrollByDelta` that
+      nudges each live CodeMirror pane's `scrollDOM.scrollTop` by that pixel
+      delta (mirrors `scrollToFraction`'s per-view loop used by click/drag).
+      Follow-up from the same conversation: in split view the panes carry a
+      "Parent"/"This commit" heading (`paneLabelStyle`) above their scrollable
+      content, so the overview strip — previously a sibling spanning the full
+      row height — sat visually "higher" than the content it tracks. Fixed by
+      giving `ChangeOverview` an optional `showHeaderSpacer` prop that renders
+      an invisible spacer reusing `paneLabelStyle` (moved to a small shared
+      `paneLabelStyle.ts` to avoid a circular import between the two
+      components) above the actual track, so its 0%/100% line up with the
+      editor's real scrollable viewport; only enabled in split mode, where the
+      heading exists. Tests: wheel forwarding (and the "nothing to scroll"
+      no-op case) and header-spacer presence/absence in `ChangeOverview.test.tsx`.
+- [x] Update "author" entry for stashes - in the git graph view don't show a
+      "question mark in a circle" or a date, just show dashes for those
+      columns instead of default values (the date shows 1 Jan 1970 - unix
+      epoch). Pure frontend fix — the backend already flags stash rows via
+      `GraphNode.isStash` and deliberately leaves author/timestamp empty/zero
+      for them (`layout.rs`), no backend change needed. `AuthorCell` and
+      `DateCell` (`columns.tsx`) now treat `isStash` the same as
+      `isWorkingTree`: a dashed avatar placeholder + em dash instead of the
+      "?" initials fallback (`initials("")` → "?") and the unix-epoch date.
+      Tests added in `columns.test.tsx`.
 - [x] Add Storybook (or similar, if there's something better) for viewing and refining UI components. Added ladle.
 - [x] Search feature for the git graph. A magnifier button in the history
       toolbar (and ⌘/Ctrl+F) opens a floating search panel at the top-right of
