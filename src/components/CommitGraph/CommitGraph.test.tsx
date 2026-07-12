@@ -142,7 +142,18 @@ describe("CommitGraph columns", () => {
     expect(cell.style.background).toBe("transparent");
   });
 
-  it("gives a hovered row a border+glow overlay that spans the full row (not just the data cells)", () => {
+  it("gives a hovered row a real top+bottom border on the row root (not a box-shadow, so it can't hide behind a cell's own opaque background)", () => {
+    const { container } = render(<CommitGraph />);
+    const row = container.querySelector(`[data-oid="${"b".repeat(40)}"]`) as HTMLElement;
+    expect(row.style.borderTop).toContain("transparent");
+    fireEvent.mouseEnter(row);
+    expect(row.style.borderTop).toContain("--color-accent-primary");
+    expect(row.style.borderBottom).toContain("--color-accent-primary");
+    fireEvent.mouseLeave(row);
+    expect(row.style.borderTop).toContain("transparent");
+  });
+
+  it("gives a hovered row a glow overlay that spans the full row (not just the data cells)", () => {
     const { container } = render(<CommitGraph />);
     const row = container.querySelector(`[data-oid="${"b".repeat(40)}"]`) as HTMLElement;
     const glow = row.querySelector('[data-testid="row-glow"]') as HTMLElement;
@@ -165,6 +176,8 @@ describe("CommitGraph columns", () => {
       }),
     );
     const row = screen.getByText("second commit").closest("[data-oid]") as HTMLElement;
+    expect(row.style.borderTop).toContain("--color-accent-primary");
+    expect(row.style.borderTop).not.toContain("color-mix"); // full strength, not the hover tint
     const glow = row.querySelector('[data-testid="row-glow"]') as HTMLElement;
     expect(glow.style.boxShadow).toContain("--color-accent-primary");
     expect(glow.style.boxShadow).toContain("0 0 6px");

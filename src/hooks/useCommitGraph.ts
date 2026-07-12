@@ -207,22 +207,25 @@ export function useCommitGraph(
         ctx.fillRect(0, rowTop, cssW, rowHeight);
       }
 
-      // Hover/selected border + glow, matching the DOM row's overlay (see
-      // GraphRow's `rowGlow`) pixel-for-pixel so the canvas (graph column) and
-      // DOM (data columns) read as one continuous highlighted bar instead of
-      // two independently-coloured halves.
+      // Hover/selected border, matching the DOM row's real border-top/-bottom
+      // (see GraphRow's `rowBorderColor`) pixel-for-pixel so the canvas
+      // (graph column) and DOM (data columns) read as one continuous bar
+      // instead of two independently-coloured halves. A filled 1px rect —
+      // the same technique as the row-divider hairline just below — not a
+      // centred `stroke()`: a canvas stroke and a DOM border/box-shadow don't
+      // reliably rasterise to the same pixel row, which showed up as the
+      // graph-column and data-column borders looking visibly offset from
+      // each other. `shadowBlur` still adds a soft glow around the crisp
+      // bar without disturbing its own edge.
       if (isSelected || isHovered) {
-        ctx.strokeStyle = selectionAccent;
+        ctx.save();
         ctx.shadowColor = selectionAccent;
-        ctx.shadowBlur = isSelected ? 8 : 4;
-        ctx.globalAlpha = baseAlpha * (isSelected ? 0.9 : 0.55);
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(0, rowTop + 0.5);
-        ctx.lineTo(cssW, rowTop + 0.5);
-        ctx.moveTo(0, rowTop + rowHeight - 0.5);
-        ctx.lineTo(cssW, rowTop + rowHeight - 0.5);
-        ctx.stroke();
+        ctx.shadowBlur = isSelected ? 6 : 3;
+        ctx.globalAlpha = baseAlpha * (isSelected ? 0.9 : 0.7);
+        ctx.fillStyle = selectionAccent;
+        ctx.fillRect(0, rowTop, cssW, 1);
+        ctx.fillRect(0, rowTop + rowHeight - 1, cssW, 1);
+        ctx.restore();
       }
 
       // Accent border down the inner edge of the graph background, only on the

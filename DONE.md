@@ -675,6 +675,29 @@ description. See TODO.md for work still outstanding.
       also picks up the `graph-row-muted` class. Tests extended in
       `CommitGraph.test.tsx` for the overlay (present, non-intercepting,
       correct box-shadow per state).
+      **Second follow-up** — a screenshot showed the top/bottom border
+      visibly offset between the graph column and the data columns (a couple
+      of px, "jarring"). Root cause: the border was a canvas `stroke()`
+      (centred on the path, at `rowTop + 0.5`) on one side and a DOM
+      `box-shadow` (`inset 0 1px 0 …`) on the other — a canvas stroke and a
+      CSS box-shadow don't reliably rasterise to the same pixel row (AA/DPR
+      rounding differs between the two rendering pipelines), so the two
+      "1px" lines landed on different physical pixels. Fixed by switching
+      both sides to the same *filled-rect* technique already used (and
+      already proven to align) by the plain row-divider hairline: the DOM
+      border is now a real `border-top`/`border-bottom` on the row root
+      (`rowBorderColor`) instead of a box-shadow — a real border also can't
+      be hidden behind a cell's own opaque background, unlike a box-shadow —
+      and the canvas draws two `ctx.fillRect` 1px bars instead of a centred
+      `stroke()`, at the exact same `rowTop` / `rowTop + rowHeight - 1`
+      coordinates the row-divider itself uses. `shadowBlur` on the canvas
+      fill (and the DOM overlay's separate inset glow) still adds a soft
+      glow around the crisp bar without disturbing its own edge — the glow
+      is diffuse by design, so a slight blur mismatch there is fine; it was
+      only the hard-edged border that needed pixel-exact alignment. Tests
+      updated in `CommitGraph.test.tsx` to check the row root's own
+      `borderTop`/`borderBottom` (previously checked the overlay's
+      box-shadow, which no longer carries the border).
 - [x] The new translucent scroll highlight bar in the diff gutter should be
       "scrollable" like a scrollbar - currently it's only "draggable". Added
       `onWheel` handling to `ChangeOverview`'s track: hovering the strip and

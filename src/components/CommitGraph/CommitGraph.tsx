@@ -124,21 +124,31 @@ const GraphRow = memo(function GraphRow({
           ? "var(--color-graph-head-row-bg)"
           : "transparent";
 
-  // Hover/selected border + glow, matched pixel-for-pixel by the canvas's own
-  // border+glow on the graph column (useCommitGraph) so the two surfaces read
-  // as one continuous bar. Drawn on a dedicated overlay (see below) rendered
-  // *after* the cells, not as a box-shadow on the row root: each cell paints
-  // its own opaque `cellBg` on top of the row, which would otherwise hide an
-  // inset shadow on the row itself (only the graph column, which has no
-  // opaque DOM cell under the canvas, showed it — looking like the border
-  // stopped at the commit dot). Inset-only (no outward blur) so it can't
-  // bleed into the row above/below — these rows are absolutely-positioned
-  // siblings, and an outward glow would get inconsistently clipped by
-  // whichever neighbour paints on top of it.
-  const rowGlow = selected
-    ? "inset 0 1px 0 var(--color-accent-primary), inset 0 -1px 0 var(--color-accent-primary), inset 0 0 6px 0 color-mix(in srgb, var(--color-accent-primary) 55%, transparent)"
+  // Hover/selected border: a real border-top/border-bottom on the row root,
+  // not a box-shadow. box-sizing: border-box (global reset) keeps the row's
+  // rendered height fixed, and — unlike a box-shadow — a real border is
+  // painted outside the content box, so it can never be hidden behind a
+  // cell's own opaque `cellBg` sitting on top of it (that was the previous
+  // bug: only the graph column, which has no opaque DOM cell under the
+  // frozen canvas, showed the border, reading as "a border around the
+  // commit dots and nowhere else"). It's also the same crisp-filled-pixel
+  // technique as the canvas's border (useCommitGraph's fillRect, replacing
+  // its previous centred `stroke()`), which is what keeps the two aligned —
+  // a canvas stroke and a CSS box-shadow don't reliably rasterise to the
+  // same pixel row.
+  const rowBorderColor = selected
+    ? "var(--color-accent-primary)"
     : hovered
-      ? "inset 0 1px 0 color-mix(in srgb, var(--color-accent-primary) 55%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--color-accent-primary) 55%, transparent), inset 0 0 4px 0 color-mix(in srgb, var(--color-accent-primary) 30%, transparent)"
+      ? "color-mix(in srgb, var(--color-accent-primary) 70%, transparent)"
+      : null;
+
+  // Soft ambient glow — kept separate from the border above (see the
+  // dedicated overlay below) since it's diffuse by design, so any minor
+  // canvas/DOM blur mismatch is imperceptible, unlike a hard-edged border.
+  const rowGlow = selected
+    ? "inset 0 0 6px 0 color-mix(in srgb, var(--color-accent-primary) 55%, transparent)"
+    : hovered
+      ? "inset 0 0 4px 0 color-mix(in srgb, var(--color-accent-primary) 30%, transparent)"
       : "none";
 
   const renderCell = (col: GraphColumn) => {
@@ -186,7 +196,10 @@ const GraphRow = memo(function GraphRow({
         // Hairline separator between rows (data-column half; the canvas draws the
         // matching line across the graph column). box-sizing: border-box keeps
         // the row height fixed, so this can't drift row geometry off the canvas.
-        borderBottom: "1px solid var(--color-graph-row-divider)",
+        // Always present (transparent top when not hovered/selected) so toggling
+        // the accent colour in/out never shifts row geometry by a pixel.
+        borderTop: `1px solid ${rowBorderColor ?? "transparent"}`,
+        borderBottom: `1px solid ${rowBorderColor ?? "var(--color-graph-row-divider)"}`,
       }}
     >
       {columns.flatMap((col) => {
@@ -231,8 +244,9 @@ const GraphRow = memo(function GraphRow({
       {!graphOnRight && (
         <div data-cell="filler" style={{ flex: "1 1 0", minWidth: 0, height: "100%", background: cellBg }} />
       )}
-      {/* Border+glow overlay, last so it paints on top of every cell's own
-          opaque background (see the comment on `rowGlow` above). */}
+      {/* Glow overlay (the border itself lives on the row root — see
+          `rowBorderColor` above), last so it paints on top of every cell's
+          own opaque background rather than underneath it. */}
       <div
         data-testid="row-glow"
         aria-hidden
