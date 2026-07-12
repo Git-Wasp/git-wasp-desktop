@@ -24,3 +24,38 @@ export const States: Story = () => (
     </Button>
   </div>
 );
+
+interface PlaygroundArgs {
+  variant: "primary" | "secondary" | "tertiary" | "danger";
+  label: string;
+  disabled: boolean;
+  loading: boolean;
+  fullWidth: boolean;
+}
+
+export const Playground: Story<PlaygroundArgs> = ({
+  variant,
+  label,
+  disabled,
+  loading,
+  fullWidth,
+}) => (
+  <Button variant={variant} disabled={disabled} loading={loading} fullWidth={fullWidth}>
+    {label}
+  </Button>
+);
+
+Playground.args = {
+  label: "Save changes",
+  disabled: false,
+  loading: false,
+  fullWidth: false,
+};
+
+Playground.argTypes = {
+  variant: {
+    options: ["primary", "secondary", "tertiary", "danger"],
+    control: { type: "select" },
+    defaultValue: "primary",
+  },
+};
