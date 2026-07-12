@@ -996,6 +996,12 @@ export function CommitGraph({
             />
             {headPulse && (
               <span
+                // Keyed on density: the ring is CSS-animated (`transform:
+                // translate(-50%,-50%)`, expanding via keyframes), and a density
+                // switch changes its box size (dotRadius) mid-animation. Restyling
+                // the same node leaves the running animation centred against its
+                // previous size; a fresh element re-centres cleanly.
+                key={graphDensity}
                 data-testid="head-pulse"
                 className="graph-head-pulse"
                 aria-hidden

@@ -269,6 +269,20 @@ describe("CommitGraph checked-out indicators", () => {
     render(<CommitGraph />);
     expect(screen.queryByTestId("head-pulse")).toBeNull();
   });
+
+  it("remounts the HEAD pulse (not just restyles it) when the row density changes", () => {
+    // The pulse is a CSS-animated element (expanding ring, `transform:
+    // translate(-50%,-50%)`); switching density mid-animation only restyles
+    // left/top/width/height on the same DOM node unless it carries a
+    // density-keyed `key`, which stale-restyle-only render lets the browser
+    // resolve the ring's centring against the wrong (previous) box size —
+    // fixed centring requires a fresh element per density.
+    render(<CommitGraph />);
+    const before = screen.getByTestId("head-pulse");
+    act(() => useGraphStore.getState().setGraphDensity("compact"));
+    const after = screen.getByTestId("head-pulse");
+    expect(after).not.toBe(before);
+  });
 });
 
 describe("CommitGraph focus-current-branch mode", () => {
