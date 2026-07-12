@@ -74,6 +74,7 @@ built yet; **(Phase 6)** are from the polish/hardening phase.
 - [ ] On MacOS, the app logo seems larger than other apps' logos. Is this an issue on our end, or is it a Tauri issue?
 - [ ] Click "interactivity" on elements such as buttons, "ellipsis" menu buttons etc (something _like_ Material Design) that makes user interactions with elements obvious
 - [ ] Update stashes sidebar menu so that buttons are removed and the buttons' functionality is in a menu triggered by an "ellipsis" menu. Add a "view" option to the menu - choosing this option should select the stash in the commit graph and scroll the viewport to it automatically.
+- [ ] Use GitHub URLs to get avatars rather than gravatar.com. URL path should be `https://github.com/{user}.png` with optional size (e.g. `?size=50`). Same efficiencies and caching should be honoured.
 
 ## Other issues
 
