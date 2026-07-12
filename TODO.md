@@ -68,7 +68,6 @@ built yet; **(Phase 6)** are from the polish/hardening phase.
 - [ ] Add an integrated terminal that can be shown by clicking a button above the graph view. Should open automatically in the directory that contains the currently opened git repo.
 - [ ] Improve toast design. Add icons (e.g. info, warning, error) in the right colour, add a "title" as well as the text
 - [ ] Consider a "conventional commits" config option. If enabled, this provides a dropdown for suitable conventional commit prefixes for commit messages (e.g. fix:, ux:, chore:, etc.). Discuss and plan value and implementation before we change any code.
-- [ ] Graph highlight inconsistencies - the "uncommitted changes" doesn't highlight consistently with other rows - when hovering (and it's not selected) the graph node doesn't have background highlighting like the rest of the row. Some elements have borders and other don't, which leads to inconsistent horizontal "feel". Make the bars have consistent borders, consistent highlighting, and perhaps some "glow" on hover and selected states.
 - [ ] Add min width to branch pills. Ensure that when rendered pills overflow the available horizontal width that the UX is better e.g. "[branch] [other-branch] 2 more..."
 - [ ] PR editor view doesn't fill the viewport - could be wider
 - [ ] Auto-theme switching. Allow user to choose a "default dark" and a "default light" theme and switch between them automatically when the OS theme is "light" or "dark"
@@ -76,6 +75,8 @@ built yet; **(Phase 6)** are from the polish/hardening phase.
 - [ ] Click "interactivity" on elements such as buttons, "ellipsis" menu buttons etc (something _like_ Material Design) that makes user interactions with elements obvious
 - [ ] Update stashes sidebar menu so that buttons are removed and the buttons' functionality is in a menu triggered by an "ellipsis" menu. Add a "view" option to the menu - choosing this option should select the stash in the commit graph and scroll the viewport to it automatically.
 - [ ] Use GitHub URLs to get avatars rather than gravatar.com. URL path should be `https://github.com/{user}.png` with optional size (e.g. `?size=50`). Same efficiencies and caching should be honoured.
+- [ ] Ladle - it works, but it looks **terrible** compared to what I'm used to with storybook. Can ladle be made to look good, or can we switch to storybook instead.
+- [ ] Consider building in a "todo list" capability with statuses like "todo", "doing", "done" to track small items of work per repository from in the app (rather than having to use github issues). Might be a terrible idea. 
 
 ## Other issues
 

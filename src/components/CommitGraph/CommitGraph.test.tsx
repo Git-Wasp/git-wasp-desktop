@@ -142,6 +142,32 @@ describe("CommitGraph columns", () => {
     expect(cell.style.background).toBe("transparent");
   });
 
+  it("gives a hovered row a border+glow on the row itself, so it spans the full row (not just the data cells)", () => {
+    const { container } = render(<CommitGraph />);
+    const row = container.querySelector(`[data-oid="${"b".repeat(40)}"]`) as HTMLElement;
+    expect(row.style.boxShadow).toBe("none");
+    fireEvent.mouseEnter(row);
+    expect(row.style.boxShadow).toContain("--color-accent-primary");
+    fireEvent.mouseLeave(row);
+    expect(row.style.boxShadow).toBe("none");
+  });
+
+  it("gives a selected row a stronger border+glow than a hovered one", () => {
+    render(<CommitGraph />);
+    fireEvent.click(screen.getByText("second commit"));
+    expect(selectCommit).toHaveBeenCalledWith("b".repeat(40), "replace");
+    // selectCommit is mocked (doesn't update the store), so drive `selected`
+    // via store state directly to check the row's own style.
+    act(() =>
+      useGraphStore.setState({
+        selection: { anchor: "b".repeat(40), focus: "b".repeat(40), range: new Set(["b".repeat(40)]) },
+      }),
+    );
+    const row = screen.getByText("second commit").closest("[data-oid]") as HTMLElement;
+    expect(row.style.boxShadow).toContain("--color-accent-primary");
+    expect(row.style.boxShadow).toContain("0 0 6px");
+  });
+
   it("sits the graph in the recessed --color-graph-bg well (falling back to --color-bg-app)", () => {
     const { container } = render(<CommitGraph />);
     const well = container.firstChild as HTMLElement;

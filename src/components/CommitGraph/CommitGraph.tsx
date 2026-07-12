@@ -124,6 +124,17 @@ const GraphRow = memo(function GraphRow({
           ? "var(--color-graph-head-row-bg)"
           : "transparent";
 
+  // Hover/selected border + glow on the row itself (not per cell), so it
+  // spans the full row width in one declaration — matched pixel-for-pixel by
+  // the canvas's own border+glow on the graph column (useCommitGraph) so the
+  // two surfaces read as one continuous bar rather than stopping at the
+  // graph-column edge.
+  const rowGlow = selected
+    ? "inset 0 1px 0 var(--color-accent-primary), inset 0 -1px 0 var(--color-accent-primary), 0 0 6px 1px color-mix(in srgb, var(--color-accent-primary) 45%, transparent)"
+    : hovered
+      ? "inset 0 1px 0 color-mix(in srgb, var(--color-accent-primary) 55%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--color-accent-primary) 55%, transparent)"
+      : "none";
+
   const renderCell = (col: GraphColumn) => {
     switch (col.kind) {
       case "commit":
@@ -170,6 +181,7 @@ const GraphRow = memo(function GraphRow({
         // matching line across the graph column). box-sizing: border-box keeps
         // the row height fixed, so this can't drift row geometry off the canvas.
         borderBottom: "1px solid var(--color-graph-row-divider)",
+        boxShadow: rowGlow,
       }}
     >
       {columns.flatMap((col) => {

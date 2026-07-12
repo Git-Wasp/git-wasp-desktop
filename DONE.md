@@ -627,6 +627,25 @@ description. See TODO.md for work still outstanding.
 ## General UX
 
 - [x] The "radar style" highlight on the commit graph for the currently checked out commit is not correctly centred when in "comfortable" or "compact" mode (but is correct when is "cozy" mode). NOTE: This is the confirming clue: the offset now follows whichever density wasn't most recently freshly mounted, not a specific mode. That's the signature of a CSS-animation reference-box staleness bug — when React updates an already-animating element's width/height in place (same DOM node, since there's no key forcing a remount), WebKit doesn't always correctly re-resolve the translate(-50%,-50%) percentage basis against the new box size mid-animation. My isolated test never exercised this because each box there was created once, never resized while already animating.Root cause found. Let me remove the debug instrumentation and write a failing test that encodes the fix (the pulse element must remount — not just restyle — when density changes), then implement it. Ran out of credit mid-fix. Test written using TDD but unexpectedly not failing. See worktree "fix+graph-head-pulse-centering"
+- [x] Graph highlight inconsistencies - the "uncommitted changes" row didn't
+      highlight consistently with other rows: on hover (unselected) the graph
+      column had no background band, though the DOM data cells (author,
+      message, etc.) always did. Root cause: `useCommitGraph`'s canvas row-band
+      pass explicitly excluded `isWorkingTree` from the base band, the hover
+      band, and the search-match band, while `GraphRow`'s DOM cell background
+      never had that exclusion — the highlight looked like it stopped short at
+      the graph column on that one row. Removed the `!node.isWorkingTree`
+      guards so it now bands consistently like every other row. Also added a
+      consistent hover/selected border+glow, replicated pixel-for-pixel in
+      both surfaces so they read as one continuous bar rather than two
+      independently-coloured halves: the DOM row root gets a `boxShadow`
+      (`inset` top/bottom border + a soft outer glow, `--color-accent-primary`,
+      stronger for selected than hover) and the canvas draws a matching
+      stroked top/bottom border with `ctx.shadowBlur`/`shadowColor` at the
+      same row bounds. Tests added in `CommitGraph.test.tsx` (hover and
+      selected row box-shadow); canvas drawing itself has no dedicated tests
+      (consistent with the rest of `useCommitGraph.ts` — jsdom has no real
+      canvas backend, so the hook early-returns there).
 - [x] The new translucent scroll highlight bar in the diff gutter should be
       "scrollable" like a scrollbar - currently it's only "draggable". Added
       `onWheel` handling to `ChangeOverview`'s track: hovering the strip and

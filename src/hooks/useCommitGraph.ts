@@ -163,11 +163,12 @@ export function useCommitGraph(
     viewport.nodes.forEach((node, localRow) => {
       const rowTop = localRow * rowHeight;
 
-      // Per-commit highlight band behind the row.
-      if (!node.isWorkingTree) {
-        ctx.fillStyle = nodeBg;
-        ctx.fillRect(0, rowTop + 1, cssW, rowHeight - 2);
-      }
+      // Per-commit highlight band behind the row — including the working-tree
+      // row, which used to be excluded here even though its DOM cells (author,
+      // message, etc.) always got the equivalent background; that mismatch
+      // made the highlight look like it stopped short at the graph column.
+      ctx.fillStyle = nodeBg;
+      ctx.fillRect(0, rowTop + 1, cssW, rowHeight - 2);
 
       // Stronger row band by priority — selection > search match > hover > HEAD
       // (matches the DOM cell background in GraphRow). A subtle hover band cues
@@ -175,10 +176,10 @@ export function useCommitGraph(
       const isSelected = selection.range.has(node.oid);
       const isMatched = !isSelected && isMatch(node);
       const isHovered = !isSelected && !isMatched && hoveredOid != null && node.oid === hoveredOid;
-      if (isMatched && !node.isWorkingTree) {
+      if (isMatched) {
         ctx.fillStyle = matchBg;
         ctx.fillRect(0, rowTop, cssW, rowHeight);
-      } else if (isHovered && !node.isWorkingTree) {
+      } else if (isHovered) {
         ctx.fillStyle = hoverBg;
         ctx.fillRect(0, rowTop, cssW, rowHeight);
       } else if (node.isHead && !node.isWorkingTree && !isSelected) {
@@ -190,6 +191,26 @@ export function useCommitGraph(
       if (isSelected) {
         ctx.fillStyle = selectedBg;
         ctx.fillRect(0, rowTop, cssW, rowHeight);
+      }
+
+      // Hover/selected border + glow, matching the DOM row's box-shadow
+      // (CommitGraph's GraphRow) pixel-for-pixel so the canvas (graph column)
+      // and DOM (data columns) read as one continuous highlighted bar instead
+      // of two independently-coloured halves.
+      if (isSelected || isHovered) {
+        ctx.save();
+        ctx.strokeStyle = selectionAccent;
+        ctx.shadowColor = selectionAccent;
+        ctx.shadowBlur = isSelected ? 8 : 4;
+        ctx.globalAlpha = isSelected ? 0.9 : 0.55;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, rowTop + 0.5);
+        ctx.lineTo(cssW, rowTop + 0.5);
+        ctx.moveTo(0, rowTop + rowHeight - 0.5);
+        ctx.lineTo(cssW, rowTop + rowHeight - 0.5);
+        ctx.stroke();
+        ctx.restore();
       }
 
       // Accent border down the inner edge of the graph background, only on the
