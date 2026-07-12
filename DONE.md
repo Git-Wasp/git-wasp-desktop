@@ -656,6 +656,16 @@ description. See TODO.md for work still outstanding.
       `isWorkingTree`: a dashed avatar placeholder + em dash instead of the
       "?" initials fallback (`initials("")` → "?") and the unix-epoch date.
       Tests added in `columns.test.tsx`.
+- [x] Failing tests on main: `StagingPanel.test.tsx(119,59): error TS2322: Type
+      '"Untracked"' is not assignable to type 'StatusCode'`, breaking
+      `npm run build:web` (and so the Tauri build). Root cause: the test's mock
+      untracked entry used `status: "Untracked"`, a value the real backend
+      never produces there — `StatusCode` (`workingTree.ts`, mirroring the Rust
+      enum in `working_tree/mod.rs`) is only `Added | Modified | Deleted |
+      Renamed`; untracked files are represented by being in the `untracked`
+      array with status `Added` (confirmed against `get_working_tree_status`
+      and the correct pattern already used in `UncommittedPanel.test.tsx`).
+      Fixed the one test literal; no type or backend change needed.
 - [x] Add Storybook (or similar, if there's something better) for viewing and refining UI components. Added ladle.
 - [x] Search feature for the git graph. A magnifier button in the history
       toolbar (and ⌘/Ctrl+F) opens a floating search panel at the top-right of

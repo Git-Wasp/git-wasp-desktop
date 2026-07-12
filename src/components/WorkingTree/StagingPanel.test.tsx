@@ -116,7 +116,7 @@ describe("StagingPanel stash changes", () => {
       status: {
         staged: [],
         unstaged: [],
-        untracked: [{ path: "new.ts", originalPath: null, status: "Untracked" }],
+        untracked: [{ path: "new.ts", originalPath: null, status: "Added" }],
       },
     });
     render(<StagingPanel />);

@@ -58,6 +58,7 @@ built yet; **(Phase 6)** are from the polish/hardening phase.
 - [ ] Implement rustfmt on save + pre-commit hook
 - [ ] Consider implementing a CSP for the frontend (bear in mind we need to support data img or find alternative for user icons)
 - [ ] Add ability to open a repo from the commandline e.g. `gitwasp .` to open current directory, `gitwasp /path/to/repo` to open a repo at a different path
+- [ ] Add git hooks for commit and push. Commit for linting/formatting consistency, and push to run tests.
 
 ## General UX
 
@@ -69,8 +70,6 @@ built yet; **(Phase 6)** are from the polish/hardening phase.
 - [ ] Consider a "conventional commits" config option. If enabled, this provides a dropdown for suitable conventional commit prefixes for commit messages (e.g. fix:, ux:, chore:, etc.). Discuss and plan value and implementation before we change any code.
 - [ ] Graph highlight inconsistencies - the "uncommitted changes" doesn't highlight consistently with other rows - when hovering (and it's not selected) the graph node doesn't have background highlighting like the rest of the row. Some elements have borders and other don't, which leads to inconsistent horizontal "feel". Make the bars have consistent borders, consistent highlighting, and perhaps some "glow" on hover and selected states.
 - [ ] Add min width to branch pills. Ensure that when rendered pills overflow the available horizontal width that the UX is better e.g. "[branch] [other-branch] 2 more..."
-- [ ] Failing tests on main: Error: src/components/WorkingTree/StagingPanel.test.tsx(119,59): error TS2322: Type '"Untracked"' is not assignable to type 'StatusCode'. beforeBuildCommand `npm run build:web` failed with exit code 2
-       Error beforeBuildCommand `npm run build:web` failed with exit code 2 Error: Command "npm ["run","tauri","build","--","--target","aarch64-apple-darwin","--no-bundle"]" failed with exit code 1
 - [ ] PR editor view doesn't fill the viewport - could be wider
 - [ ] Auto-theme switching. Allow user to choose a "default dark" and a "default light" theme and switch between them automatically when the OS theme is "light" or "dark"
 - [ ] On MacOS, the app logo seems larger than other apps' logos. Is this an issue on our end, or is it a Tauri issue?
