@@ -124,6 +124,24 @@ const GraphRow = memo(function GraphRow({
           ? "var(--color-graph-head-row-bg)"
           : "transparent";
 
+  // Hover/selected border: a real border-top/border-bottom on the row root,
+  // not a box-shadow. box-sizing: border-box (global reset) keeps the row's
+  // rendered height fixed, and — unlike a box-shadow — a real border is
+  // painted outside the content box, so it can never be hidden behind a
+  // cell's own opaque `cellBg` sitting on top of it (that was the previous
+  // bug: only the graph column, which has no opaque DOM cell under the
+  // frozen canvas, showed the border, reading as "a border around the
+  // commit dots and nowhere else"). It's also the same crisp-filled-pixel
+  // technique as the canvas's border (useCommitGraph's fillRect, replacing
+  // its previous centred `stroke()`), which is what keeps the two aligned —
+  // a canvas stroke and a CSS box-shadow don't reliably rasterise to the
+  // same pixel row.
+  const rowBorderColor = selected
+    ? "var(--color-accent-primary)"
+    : hovered
+      ? "color-mix(in srgb, var(--color-accent-primary) 70%, transparent)"
+      : null;
+
   const renderCell = (col: GraphColumn) => {
     switch (col.kind) {
       case "commit":
@@ -169,7 +187,10 @@ const GraphRow = memo(function GraphRow({
         // Hairline separator between rows (data-column half; the canvas draws the
         // matching line across the graph column). box-sizing: border-box keeps
         // the row height fixed, so this can't drift row geometry off the canvas.
-        borderBottom: "1px solid var(--color-graph-row-divider)",
+        // Always present (transparent top when not hovered/selected) so toggling
+        // the accent colour in/out never shifts row geometry by a pixel.
+        borderTop: `1px solid ${rowBorderColor ?? "transparent"}`,
+        borderBottom: `1px solid ${rowBorderColor ?? "var(--color-graph-row-divider)"}`,
       }}
     >
       {columns.flatMap((col) => {

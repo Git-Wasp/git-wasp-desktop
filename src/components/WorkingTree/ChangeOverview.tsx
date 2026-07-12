@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { overviewMarks, type DiffRow, type OverviewColor, type OverviewLane } from "../../lib/lineDiff";
+import { paneLabelStyle } from "./paneLabelStyle";
 
 // A GitKraken-style overview strip mapping the file's changes onto the full
 // height. In side-by-side view it splits into two lanes — the left lane carries
@@ -32,6 +33,8 @@ export function ChangeOverview({
   split = false,
   viewport,
   onScrollTo,
+  onWheelScroll,
+  showHeaderSpacer = false,
 }: {
   rows: DiffRow[];
   /** Two lanes (side-by-side view); otherwise a single combined lane. */
@@ -42,6 +45,16 @@ export function ChangeOverview({
   /** Scroll the diff to `topFraction` (desired thumb-top as a fraction of the
    *  content height). Called on click and while dragging the thumb. */
   onScrollTo?: (topFraction: number) => void;
+  /** Scroll the diff by a wheel event's raw `deltaY` (pixels), so hovering the
+   *  strip and scrolling behaves like hovering the editor itself — not just
+   *  click/drag. Absent (or nothing to scroll) leaves wheel events to bubble
+   *  as normal. */
+  onWheelScroll?: (deltaY: number) => void;
+  /** Split view's panes carry a "Parent"/"This commit" heading above their
+   *  scrollable content (see `paneLabelStyle`); when set, an invisible spacer
+   *  of the same height pushes the track down to match, so its 0%/100% line
+   *  up with where the tracked content actually starts/ends. */
+  showHeaderSpacer?: boolean;
 }) {
   const total = rows.length || 1;
   const marks = useMemo(() => overviewMarks(rows), [rows]);
@@ -103,6 +116,14 @@ export function ChangeOverview({
     e.preventDefault();
   };
 
+  // No preventDefault: the strip has no scrollable ancestor of its own for the
+  // browser to scroll natively, and React attaches wheel listeners passively
+  // (preventDefault there is a silent no-op that only logs a warning).
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (!onWheelScroll || !showThumb) return;
+    onWheelScroll(e.deltaY);
+  };
+
   const marker = (rowIndex: number, color: OverviewColor) => (
     <div
       key={`${rowIndex}-${color}`}
@@ -132,48 +153,56 @@ export function ChangeOverview({
   );
 
   return (
-    <div
-      ref={stripRef}
-      onMouseDown={handleMouseDown}
-      data-testid="change-overview"
-      title="Changes overview — drag or click to scroll"
-      style={{
-        position: "relative",
-        display: "flex",
-        gap: split ? 1 : 0,
-        width: split ? LANE_WIDTH * 2 + 1 : LANE_WIDTH,
-        flexShrink: 0,
-        background: "var(--color-bg-elevated)",
-        borderLeft: "1px solid var(--color-border-subtle)",
-        cursor: onScrollTo ? "pointer" : "default",
-        touchAction: "none",
-      }}
-    >
-      {split ? (
-        <>
-          {lane("left")}
-          {lane("right")}
-        </>
-      ) : (
-        lane("both")
+    <div style={{ display: "flex", flexDirection: "column", width: split ? LANE_WIDTH * 2 + 1 : LANE_WIDTH, flexShrink: 0 }}>
+      {showHeaderSpacer && (
+        <div data-testid="overview-header-spacer" aria-hidden style={{ ...paneLabelStyle, visibility: "hidden" }}>
+          {" "}
+        </div>
       )}
-      {showThumb && (
-        <div
-          data-testid="overview-thumb"
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            top: `${vpTop * 100}%`,
-            height: `${thumbHeight * 100}%`,
-            background: "var(--color-overview-thumb)",
-            border: "1px solid var(--color-border-strong)",
-            borderRadius: 2,
-            // The container owns the pointer interaction; the thumb is visual only.
-            pointerEvents: "none",
-          }}
-        />
-      )}
+      <div
+        ref={stripRef}
+        onMouseDown={handleMouseDown}
+        onWheel={handleWheel}
+        data-testid="change-overview"
+        title="Changes overview — drag or click to scroll"
+        style={{
+          position: "relative",
+          display: "flex",
+          flex: 1,
+          minHeight: 0,
+          gap: split ? 1 : 0,
+          background: "var(--color-bg-elevated)",
+          borderLeft: "1px solid var(--color-border-subtle)",
+          cursor: onScrollTo ? "pointer" : "default",
+          touchAction: "none",
+        }}
+      >
+        {split ? (
+          <>
+            {lane("left")}
+            {lane("right")}
+          </>
+        ) : (
+          lane("both")
+        )}
+        {showThumb && (
+          <div
+            data-testid="overview-thumb"
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              top: `${vpTop * 100}%`,
+              height: `${thumbHeight * 100}%`,
+              background: "var(--color-overview-thumb)",
+              border: "1px solid var(--color-border-strong)",
+              borderRadius: 2,
+              // The container owns the pointer interaction; the thumb is visual only.
+              pointerEvents: "none",
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }

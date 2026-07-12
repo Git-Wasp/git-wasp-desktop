@@ -304,10 +304,12 @@ export function AuthorCell({ node }: { node: GraphNode }) {
   // Subscribe to the resolved avatar URL directly — the selector re-runs when
   // the store settles a photo, swapping the initials fallback for the image.
   // Photos are preferred; initials-on-lane-colour otherwise.
-  const url = useAvatarStore((s) => (node.isWorkingTree ? null : s.getUrl(node.authorEmail)));
+  const url = useAvatarStore((s) => (node.isWorkingTree || node.isStash ? null : s.getUrl(node.authorEmail)));
 
-  // No author on the uncommitted-changes row — a dashed placeholder + em dash.
-  if (node.isWorkingTree) {
+  // No author tracked for the uncommitted-changes row or a stash entry (the
+  // backend leaves author fields empty for stashes) — a dashed placeholder +
+  // em dash, rather than the "?" initials fallback.
+  if (node.isWorkingTree || node.isStash) {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", overflow: "hidden" }}>
         <span
@@ -413,7 +415,7 @@ export function DateCell({ node }: { node: GraphNode }) {
         whiteSpace: "nowrap",
       }}
     >
-      {node.isWorkingTree ? "Now" : formatRelativeDate(node.authorTimestamp)}
+      {node.isWorkingTree ? "Now" : node.isStash ? "—" : formatRelativeDate(node.authorTimestamp)}
     </span>
   );
 }

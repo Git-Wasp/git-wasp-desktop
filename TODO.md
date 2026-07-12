@@ -58,25 +58,27 @@ built yet; **(Phase 6)** are from the polish/hardening phase.
 - [ ] Implement rustfmt on save + pre-commit hook
 - [ ] Consider implementing a CSP for the frontend (bear in mind we need to support data img or find alternative for user icons)
 - [ ] Add ability to open a repo from the commandline e.g. `gitwasp .` to open current directory, `gitwasp /path/to/repo` to open a repo at a different path
+- [ ] Add git hooks for commit and push. Commit for linting/formatting consistency, and push to run tests.
 
 ## General UX
 
-- [ ] The "radar style" highlight on the commit graph for the currently checked out commit is not correctly centred when in "comfortable" or "compact" mode (but is correct when is "cozy" mode). NOTE: This is the confirming clue: the offset now follows whichever density wasn't most recently freshly mounted, not a specific mode. That's the signature of a CSS-animation reference-box staleness bug — when React updates an already-animating element's width/height in place (same DOM node, since there's no key forcing a remount), WebKit doesn't always correctly re-resolve the translate(-50%,-50%) percentage basis against the new box size mid-animation. My isolated test never exercised this because each box there was created once, never resized while already animating.Root cause found. Let me remove the debug instrumentation and write a failing test that encodes the fix (the pulse element must remount — not just restyle — when density changes), then implement it. Ran out of credit mid-fix. Test written using TDD but unexpectedly not failing. See worktree "fix+graph-head-pulse-centering"
-- [ ] The new translucent scroll highlight bar in the diff gutter should be "scrollable" like a scrollbar - currently it's only "draggable"
-- [ ] Update "author" entry for stashes - in the git graph view don't show a "question mark in a circle" or a date, just show dashes for those columns instead of default values (the date shows 1 Jan 1970 - unix epoch)
+- [ ] Change default font. Don't want "Inter" - it's an AI dead giveaway and we want this app to feel more professional. Let's update the font list to have some additional font choices NOT including Inter and NOT including Georgia. I want modern sans-serif fonts that don't have licensing restrictions.
+- [ ] Don't show "HEAD" pill - it's currently included with the branch / tag pills and feels unnecessary
 - [ ] Include section in settings to view open source packages used. Perhaps an "about" section that also includes the app version, it's latest commit, a link to the repo etc.?
 - [ ] Add a "notifications" button (bell) to the top menu bar. When notifications are fired (currently toasts) append a notification to a floating panel that opens from the right when clicking the "notifications" icon. Allow notifications to be dismissed one at a time or all at once. Notifications should have scope - either to a repo or global. If per-repo, the repo name should be shown in the notification details. All notifications should include a timestamp.
 - [ ] Add "pin" functionality to left-hand sidebar panels that allow "pinning" a branch to the top, pinning a remote branch to the top, or pinning a recent repo to the top. The pinned items should persist between restarts. Pinning should be via a "pin" icon shown on hover - if not already pinned, the icon only shows on hover. If already pinned a solid pin icon is shown when not hovering, and changes to an "unfilled" pin icon on hover. A pinned item can be unpinned by clicking the pin icon again. Pinned items appear at the top. Give more spacing around the existing buttons at the top of this panel too (prune / new branch)
 - [ ] Add an integrated terminal that can be shown by clicking a button above the graph view. Should open automatically in the directory that contains the currently opened git repo.
 - [ ] Improve toast design. Add icons (e.g. info, warning, error) in the right colour, add a "title" as well as the text
 - [ ] Consider a "conventional commits" config option. If enabled, this provides a dropdown for suitable conventional commit prefixes for commit messages (e.g. fix:, ux:, chore:, etc.). Discuss and plan value and implementation before we change any code.
-- [ ] Graph highlight inconsistencies - the "uncommitted changes" doesn't highlight consistently with other rows - when hovering (and it's not selected) the graph node doesn't have background highlighting like the rest of the row. Some elements have borders and other don't, which leads to inconsistent horizontal "feel". Make the bars have consistent borders, consistent highlighting, and perhaps some "glow" on hover and selected states.
+- [ ] Add min width to branch pills. Ensure that when rendered pills overflow the available horizontal width that the UX is better e.g. "[branch] [other-branch] 2 more..."
 - [ ] PR editor view doesn't fill the viewport - could be wider
 - [ ] Auto-theme switching. Allow user to choose a "default dark" and a "default light" theme and switch between them automatically when the OS theme is "light" or "dark"
 - [ ] On MacOS, the app logo seems larger than other apps' logos. Is this an issue on our end, or is it a Tauri issue?
 - [ ] Click "interactivity" on elements such as buttons, "ellipsis" menu buttons etc (something _like_ Material Design) that makes user interactions with elements obvious
 - [ ] Update stashes sidebar menu so that buttons are removed and the buttons' functionality is in a menu triggered by an "ellipsis" menu. Add a "view" option to the menu - choosing this option should select the stash in the commit graph and scroll the viewport to it automatically.
 - [ ] Use GitHub URLs to get avatars rather than gravatar.com. URL path should be `https://github.com/{user}.png` with optional size (e.g. `?size=50`). Same efficiencies and caching should be honoured.
+- [ ] Ladle - it works, but it looks **terrible** compared to what I'm used to with storybook. Can ladle be made to look good, or can we switch to storybook instead.
+- [ ] Consider building in a "todo list" capability with statuses like "todo", "doing", "done" to track small items of work per repository from in the app (rather than having to use github issues). Might be a terrible idea. 
 
 ## Other issues
 

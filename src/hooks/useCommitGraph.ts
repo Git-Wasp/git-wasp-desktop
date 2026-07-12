@@ -163,11 +163,26 @@ export function useCommitGraph(
     viewport.nodes.forEach((node, localRow) => {
       const rowTop = localRow * rowHeight;
 
-      // Per-commit highlight band behind the row.
-      if (!node.isWorkingTree) {
-        ctx.fillStyle = nodeBg;
-        ctx.fillRect(0, rowTop + 1, cssW, rowHeight - 2);
-      }
+      // Background bands + the hover/selected border are drawn at reduced
+      // alpha for focus-mode-muted rows (off the focused branch's line — every
+      // stash row always qualifies, since a stash is never on-line), mirroring
+      // the DOM cells' independent `.graph-row-muted` opacity class. Without
+      // this, only the DOM side dimmed and the canvas band/border stayed full
+      // strength, so muted rows (stashes especially, since they're *always*
+      // muted whenever focus mode is on) looked like a different colour from
+      // every other row instead of just a dimmer version of the same one. The
+      // row divider is drawn outside this scope, matching the DOM row's own
+      // `borderBottom` (on the row, not a muted cell) staying full strength.
+      const baseAlpha = nodeMuted(node) ? mutedAlpha : 1;
+      ctx.save();
+      ctx.globalAlpha = baseAlpha;
+
+      // Per-commit highlight band behind the row — including the working-tree
+      // row, which used to be excluded here even though its DOM cells (author,
+      // message, etc.) always got the equivalent background; that mismatch
+      // made the highlight look like it stopped short at the graph column.
+      ctx.fillStyle = nodeBg;
+      ctx.fillRect(0, rowTop + 1, cssW, rowHeight - 2);
 
       // Stronger row band by priority — selection > search match > hover > HEAD
       // (matches the DOM cell background in GraphRow). A subtle hover band cues
@@ -175,10 +190,10 @@ export function useCommitGraph(
       const isSelected = selection.range.has(node.oid);
       const isMatched = !isSelected && isMatch(node);
       const isHovered = !isSelected && !isMatched && hoveredOid != null && node.oid === hoveredOid;
-      if (isMatched && !node.isWorkingTree) {
+      if (isMatched) {
         ctx.fillStyle = matchBg;
         ctx.fillRect(0, rowTop, cssW, rowHeight);
-      } else if (isHovered && !node.isWorkingTree) {
+      } else if (isHovered) {
         ctx.fillStyle = hoverBg;
         ctx.fillRect(0, rowTop, cssW, rowHeight);
       } else if (node.isHead && !node.isWorkingTree && !isSelected) {
@@ -192,6 +207,25 @@ export function useCommitGraph(
         ctx.fillRect(0, rowTop, cssW, rowHeight);
       }
 
+      // Hover/selected border, matching the DOM row's real border-top/-bottom
+      // (see GraphRow's `rowBorderColor`) pixel-for-pixel so the canvas
+      // (graph column) and DOM (data columns) read as one continuous bar
+      // instead of two independently-coloured halves. A filled 1px rect —
+      // the same technique as the row-divider hairline just below — not a
+      // centred `stroke()`: a canvas stroke and a DOM border/box-shadow don't
+      // reliably rasterise to the same pixel row, which showed up as the
+      // graph-column and data-column borders looking visibly offset from
+      // each other. Deliberately no `shadowBlur`/glow — a soft glow around
+      // this line looked heavier on the canvas side than the plain DOM
+      // border, and the plain crisp line reads consistently on its own.
+      if (isSelected || isHovered) {
+        ctx.globalAlpha = baseAlpha * (isSelected ? 0.9 : 0.7);
+        ctx.fillStyle = selectionAccent;
+        ctx.fillRect(0, rowTop, cssW, 1);
+        ctx.fillRect(0, rowTop + rowHeight - 1, cssW, 1);
+        ctx.globalAlpha = baseAlpha;
+      }
+
       // Accent border down the inner edge of the graph background, only on the
       // currently checked-out (HEAD) commit's row — a clear "you are here" edge.
       if (node.isHead && !node.isWorkingTree) {
@@ -199,9 +233,12 @@ export function useCommitGraph(
         ctx.fillRect(cssW - 2, rowTop, 2, rowHeight);
       }
 
+      ctx.restore();
+
       // Hairline row divider at the bottom edge (a single line between rows, so
       // adjacent rows never double it up). Drawn before edges/dots so the lane
-      // lines and markers stay on top.
+      // lines and markers stay on top. Outside the muted-alpha scope above,
+      // matching the DOM row's own borderBottom (on the row, not a muted cell).
       ctx.fillStyle = rowDivider;
       ctx.fillRect(0, rowTop + rowHeight - 1, cssW, 1);
     });

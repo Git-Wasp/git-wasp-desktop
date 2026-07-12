@@ -626,6 +626,135 @@ description. See TODO.md for work still outstanding.
 
 ## General UX
 
+- [x] The "radar style" highlight on the commit graph for the currently checked out commit is not correctly centred when in "comfortable" or "compact" mode (but is correct when is "cozy" mode). NOTE: This is the confirming clue: the offset now follows whichever density wasn't most recently freshly mounted, not a specific mode. That's the signature of a CSS-animation reference-box staleness bug — when React updates an already-animating element's width/height in place (same DOM node, since there's no key forcing a remount), WebKit doesn't always correctly re-resolve the translate(-50%,-50%) percentage basis against the new box size mid-animation. My isolated test never exercised this because each box there was created once, never resized while already animating.Root cause found. Let me remove the debug instrumentation and write a failing test that encodes the fix (the pulse element must remount — not just restyle — when density changes), then implement it. Ran out of credit mid-fix. Test written using TDD but unexpectedly not failing. See worktree "fix+graph-head-pulse-centering"
+- [x] Graph highlight inconsistencies - the "uncommitted changes" row didn't
+      highlight consistently with other rows: on hover (unselected) the graph
+      column had no background band, though the DOM data cells (author,
+      message, etc.) always did. Root cause: `useCommitGraph`'s canvas row-band
+      pass explicitly excluded `isWorkingTree` from the base band, the hover
+      band, and the search-match band, while `GraphRow`'s DOM cell background
+      never had that exclusion — the highlight looked like it stopped short at
+      the graph column on that one row. Removed the `!node.isWorkingTree`
+      guards so it now bands consistently like every other row. Also added a
+      consistent hover/selected border+glow, replicated pixel-for-pixel in
+      both surfaces so they read as one continuous bar rather than two
+      independently-coloured halves: the DOM row root gets a `boxShadow`
+      (`inset` top/bottom border + a soft outer glow, `--color-accent-primary`,
+      stronger for selected than hover) and the canvas draws a matching
+      stroked top/bottom border with `ctx.shadowBlur`/`shadowColor` at the
+      same row bounds. Tests added in `CommitGraph.test.tsx` (hover and
+      selected row box-shadow); canvas drawing itself has no dedicated tests
+      (consistent with the rest of `useCommitGraph.ts` — jsdom has no real
+      canvas backend, so the hook early-returns there).
+      **Follow-up from user testing** — two more inconsistencies surfaced
+      once the above landed: (1) hovering showed the accent border only
+      around the commit dots, not across the rest of the row; (2) hovering a
+      stash row showed a border in a visibly different colour, and stash
+      rows' background looked different from other rows generally. Root
+      causes: (1) the border+glow was a `box-shadow` on the row's own root
+      div — each cell paints its own *opaque* `background` on top of the
+      row, which hid an `inset` shadow everywhere except the graph column
+      (no opaque DOM cell sits under the frozen canvas there, so only that
+      slice showed through — reading as "a border around the dots and
+      nowhere else"). Fixed by moving the border+glow to a dedicated overlay
+      div (`data-testid="row-glow"`, `pointerEvents: "none"`) rendered
+      *last* so it paints on top of every cell instead of underneath, and
+      switching to inset-only shadows (no outward blur, which would bleed
+      asymmetrically into whichever absolutely-positioned sibling row
+      happens to paint on top of it). (2) Focus-mode's "off-branch" dimming
+      (`.graph-row-muted`, on by default) is applied per DOM cell, but the
+      canvas's Pass 1 row-band/border drawing never respected it at all — so
+      a muted row (every stash row always qualifies, since a stash is never
+      on the focused branch's line) showed dim DOM cells against a
+      full-strength canvas band/border, which is what read as "a different
+      colour" once semi-transparent cells let the border blend through, and
+      "a different background" more generally. `useCommitGraph` now wraps
+      each row's Pass 1 drawing in the same muted alpha the DOM cells get
+      (row divider excluded, matching the DOM row's own `borderBottom`
+      staying full strength regardless of cell muting); the new glow overlay
+      also picks up the `graph-row-muted` class. Tests extended in
+      `CommitGraph.test.tsx` for the overlay (present, non-intercepting,
+      correct box-shadow per state).
+      **Second follow-up** — a screenshot showed the top/bottom border
+      visibly offset between the graph column and the data columns (a couple
+      of px, "jarring"). Root cause: the border was a canvas `stroke()`
+      (centred on the path, at `rowTop + 0.5`) on one side and a DOM
+      `box-shadow` (`inset 0 1px 0 …`) on the other — a canvas stroke and a
+      CSS box-shadow don't reliably rasterise to the same pixel row (AA/DPR
+      rounding differs between the two rendering pipelines), so the two
+      "1px" lines landed on different physical pixels. Fixed by switching
+      both sides to the same *filled-rect* technique already used (and
+      already proven to align) by the plain row-divider hairline: the DOM
+      border is now a real `border-top`/`border-bottom` on the row root
+      (`rowBorderColor`) instead of a box-shadow — a real border also can't
+      be hidden behind a cell's own opaque background, unlike a box-shadow —
+      and the canvas draws two `ctx.fillRect` 1px bars instead of a centred
+      `stroke()`, at the exact same `rowTop` / `rowTop + rowHeight - 1`
+      coordinates the row-divider itself uses. `shadowBlur` on the canvas
+      fill (and the DOM overlay's separate inset glow) still adds a soft
+      glow around the crisp bar without disturbing its own edge — the glow
+      is diffuse by design, so a slight blur mismatch there is fine; it was
+      only the hard-edged border that needed pixel-exact alignment. Tests
+      updated in `CommitGraph.test.tsx` to check the row root's own
+      `borderTop`/`borderBottom` (previously checked the overlay's
+      box-shadow, which no longer carries the border).
+      **Third follow-up** — even pixel-aligned, the border still read as
+      subtly heavier at the commit dot than along the rest of the row.
+      Root cause: canvas's `shadowBlur` was applied directly on the border
+      `fillRect`, reinforcing that crisp line right at its own edge — the
+      DOM border has no such reinforcement (its glow is the separate,
+      diffuse overlay elsewhere in the box, not concentrated on the border
+      itself), so the same nominal 1px line read as two different weights.
+      Dropped `shadowBlur`/`shadowColor` from the canvas border draw
+      entirely, leaving a plain crisp fill on both sides; the glow stays
+      purely ambient (DOM overlay's inset shadow; canvas's own row-band
+      fill) rather than reinforcing the edge.
+      **Fourth follow-up** — decided the glow wasn't worth the complexity it
+      kept costing (three follow-ups just to make it read consistently) and
+      dropped it outright. Removed `GraphRow`'s `rowGlow`/overlay div
+      entirely (the border it doesn't touch — `rowBorderColor` — stays);
+      the row highlight is now just the background band + the (now
+      consistently pixel-aligned, equal-weight) border, on both canvas and
+      DOM. Tests for the overlay removed from `CommitGraph.test.tsx`.
+- [x] The new translucent scroll highlight bar in the diff gutter should be
+      "scrollable" like a scrollbar - currently it's only "draggable". Added
+      `onWheel` handling to `ChangeOverview`'s track: hovering the strip and
+      scrolling the mouse wheel now forwards `deltaY` to a new
+      `onWheelScroll` prop (no-op when there's nothing to scroll or no
+      handler wired), wired in `StageFileEditor` to a `scrollByDelta` that
+      nudges each live CodeMirror pane's `scrollDOM.scrollTop` by that pixel
+      delta (mirrors `scrollToFraction`'s per-view loop used by click/drag).
+      Follow-up from the same conversation: in split view the panes carry a
+      "Parent"/"This commit" heading (`paneLabelStyle`) above their scrollable
+      content, so the overview strip — previously a sibling spanning the full
+      row height — sat visually "higher" than the content it tracks. Fixed by
+      giving `ChangeOverview` an optional `showHeaderSpacer` prop that renders
+      an invisible spacer reusing `paneLabelStyle` (moved to a small shared
+      `paneLabelStyle.ts` to avoid a circular import between the two
+      components) above the actual track, so its 0%/100% line up with the
+      editor's real scrollable viewport; only enabled in split mode, where the
+      heading exists. Tests: wheel forwarding (and the "nothing to scroll"
+      no-op case) and header-spacer presence/absence in `ChangeOverview.test.tsx`.
+- [x] Update "author" entry for stashes - in the git graph view don't show a
+      "question mark in a circle" or a date, just show dashes for those
+      columns instead of default values (the date shows 1 Jan 1970 - unix
+      epoch). Pure frontend fix — the backend already flags stash rows via
+      `GraphNode.isStash` and deliberately leaves author/timestamp empty/zero
+      for them (`layout.rs`), no backend change needed. `AuthorCell` and
+      `DateCell` (`columns.tsx`) now treat `isStash` the same as
+      `isWorkingTree`: a dashed avatar placeholder + em dash instead of the
+      "?" initials fallback (`initials("")` → "?") and the unix-epoch date.
+      Tests added in `columns.test.tsx`.
+- [x] Failing tests on main: `StagingPanel.test.tsx(119,59): error TS2322: Type
+      '"Untracked"' is not assignable to type 'StatusCode'`, breaking
+      `npm run build:web` (and so the Tauri build). Root cause: the test's mock
+      untracked entry used `status: "Untracked"`, a value the real backend
+      never produces there — `StatusCode` (`workingTree.ts`, mirroring the Rust
+      enum in `working_tree/mod.rs`) is only `Added | Modified | Deleted |
+      Renamed`; untracked files are represented by being in the `untracked`
+      array with status `Added` (confirmed against `get_working_tree_status`
+      and the correct pattern already used in `UncommittedPanel.test.tsx`).
+      Fixed the one test literal; no type or backend change needed.
 - [x] Add Storybook (or similar, if there's something better) for viewing and refining UI components. Added ladle.
 - [x] Search feature for the git graph. A magnifier button in the history
       toolbar (and ⌘/Ctrl+F) opens a floating search panel at the top-right of

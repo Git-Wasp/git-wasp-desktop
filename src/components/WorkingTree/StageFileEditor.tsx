@@ -26,6 +26,7 @@ import {
 } from "../../lib/lineDiff";
 import { stageGutter, setStagedLines } from "./stageGutter";
 import { ChangeOverview } from "./ChangeOverview";
+import { paneLabelStyle } from "./paneLabelStyle";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { SegmentedControl } from "../ui/SegmentedControl";
@@ -141,13 +142,6 @@ const paneTheme = EditorView.theme({
 // Read-only panes still track a cursor, so clicking a line highlights it.
 const activeLineExtensions = [highlightActiveLine(), highlightActiveLineGutter()];
 
-const paneLabelStyle: React.CSSProperties = {
-  padding: "var(--space-1) var(--space-2)",
-  fontSize: "var(--font-size-sm)",
-  fontWeight: 500,
-  color: "var(--color-text-secondary)",
-  borderBottom: "1px solid var(--color-border-subtle)",
-};
 
 // A checkerboard so transparent regions of the image read as transparent (not a
 // flat fill that could be mistaken for the image's own background).
@@ -725,6 +719,16 @@ export function StageFileEditor({
     }
   }, [liveViews]);
 
+  // Scroll the live pane(s) by a wheel event's raw pixel delta — hovering the
+  // overview strip and scrolling behaves like hovering the editor itself.
+  const scrollByDelta = useCallback((deltaY: number) => {
+    for (const view of liveViews()) {
+      const { scrollHeight, clientHeight, scrollTop } = view.scrollDOM;
+      const max = scrollHeight - clientHeight;
+      view.scrollDOM.scrollTop = Math.min(max, Math.max(0, scrollTop + deltaY));
+    }
+  }, [liveViews]);
+
   // Re-measure when the diff, view mode, or wrap changes (after the editors lay
   // out) and on window resize, so the thumb reflects the true visible fraction.
   useEffect(() => {
@@ -1040,6 +1044,8 @@ export function StageFileEditor({
             split={viewMode === "split"}
             viewport={viewport}
             onScrollTo={scrollToFraction}
+            onWheelScroll={scrollByDelta}
+            showHeaderSpacer={viewMode === "split"}
           />
         </div>
       )}
