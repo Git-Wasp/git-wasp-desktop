@@ -215,17 +215,19 @@ export function useCommitGraph(
       // centred `stroke()`: a canvas stroke and a DOM border/box-shadow don't
       // reliably rasterise to the same pixel row, which showed up as the
       // graph-column and data-column borders looking visibly offset from
-      // each other. `shadowBlur` still adds a soft glow around the crisp
-      // bar without disturbing its own edge.
+      // each other. No `shadowBlur` here — it was reinforcing this crisp
+      // line right at its own edge, with nothing equivalent on the DOM
+      // border (which has no blur of its own; only the separate, diffuse
+      // overlay glow does), so the two ends of the same bar read as
+      // different weights. The glow stays purely ambient (the overlay's
+      // inset shadow, canvas's own row-band fill) rather than reinforcing
+      // the border itself.
       if (isSelected || isHovered) {
-        ctx.save();
-        ctx.shadowColor = selectionAccent;
-        ctx.shadowBlur = isSelected ? 6 : 3;
         ctx.globalAlpha = baseAlpha * (isSelected ? 0.9 : 0.7);
         ctx.fillStyle = selectionAccent;
         ctx.fillRect(0, rowTop, cssW, 1);
         ctx.fillRect(0, rowTop + rowHeight - 1, cssW, 1);
-        ctx.restore();
+        ctx.globalAlpha = baseAlpha;
       }
 
       // Accent border down the inner edge of the graph background, only on the

@@ -698,6 +698,17 @@ description. See TODO.md for work still outstanding.
       updated in `CommitGraph.test.tsx` to check the row root's own
       `borderTop`/`borderBottom` (previously checked the overlay's
       box-shadow, which no longer carries the border).
+      **Third follow-up** — even pixel-aligned, the border still read as
+      subtly heavier at the commit dot than along the rest of the row.
+      Root cause: canvas's `shadowBlur` was applied directly on the border
+      `fillRect`, reinforcing that crisp line right at its own edge — the
+      DOM border has no such reinforcement (its glow is the separate,
+      diffuse overlay elsewhere in the box, not concentrated on the border
+      itself), so the same nominal 1px line read as two different weights.
+      Dropped `shadowBlur`/`shadowColor` from the canvas border draw
+      entirely, leaving a plain crisp fill on both sides; the glow stays
+      purely ambient (DOM overlay's inset shadow; canvas's own row-band
+      fill) rather than reinforcing the edge.
 - [x] The new translucent scroll highlight bar in the diff gutter should be
       "scrollable" like a scrollbar - currently it's only "draggable". Added
       `onWheel` handling to `ChangeOverview`'s track: hovering the strip and
