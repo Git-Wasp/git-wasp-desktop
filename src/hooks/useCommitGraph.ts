@@ -163,6 +163,20 @@ export function useCommitGraph(
     viewport.nodes.forEach((node, localRow) => {
       const rowTop = localRow * rowHeight;
 
+      // Background bands + the hover/selected border+glow are drawn at reduced
+      // alpha for focus-mode-muted rows (off the focused branch's line — every
+      // stash row always qualifies, since a stash is never on-line), mirroring
+      // the DOM cells' independent `.graph-row-muted` opacity class. Without
+      // this, only the DOM side dimmed and the canvas band/border stayed full
+      // strength, so muted rows (stashes especially, since they're *always*
+      // muted whenever focus mode is on) looked like a different colour from
+      // every other row instead of just a dimmer version of the same one. The
+      // row divider is drawn outside this scope, matching the DOM row's own
+      // `borderBottom` (on the row, not a muted cell) staying full strength.
+      const baseAlpha = nodeMuted(node) ? mutedAlpha : 1;
+      ctx.save();
+      ctx.globalAlpha = baseAlpha;
+
       // Per-commit highlight band behind the row — including the working-tree
       // row, which used to be excluded here even though its DOM cells (author,
       // message, etc.) always got the equivalent background; that mismatch
@@ -193,16 +207,15 @@ export function useCommitGraph(
         ctx.fillRect(0, rowTop, cssW, rowHeight);
       }
 
-      // Hover/selected border + glow, matching the DOM row's box-shadow
-      // (CommitGraph's GraphRow) pixel-for-pixel so the canvas (graph column)
-      // and DOM (data columns) read as one continuous highlighted bar instead
-      // of two independently-coloured halves.
+      // Hover/selected border + glow, matching the DOM row's overlay (see
+      // GraphRow's `rowGlow`) pixel-for-pixel so the canvas (graph column) and
+      // DOM (data columns) read as one continuous highlighted bar instead of
+      // two independently-coloured halves.
       if (isSelected || isHovered) {
-        ctx.save();
         ctx.strokeStyle = selectionAccent;
         ctx.shadowColor = selectionAccent;
         ctx.shadowBlur = isSelected ? 8 : 4;
-        ctx.globalAlpha = isSelected ? 0.9 : 0.55;
+        ctx.globalAlpha = baseAlpha * (isSelected ? 0.9 : 0.55);
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(0, rowTop + 0.5);
@@ -210,7 +223,6 @@ export function useCommitGraph(
         ctx.moveTo(0, rowTop + rowHeight - 0.5);
         ctx.lineTo(cssW, rowTop + rowHeight - 0.5);
         ctx.stroke();
-        ctx.restore();
       }
 
       // Accent border down the inner edge of the graph background, only on the
@@ -220,9 +232,12 @@ export function useCommitGraph(
         ctx.fillRect(cssW - 2, rowTop, 2, rowHeight);
       }
 
+      ctx.restore();
+
       // Hairline row divider at the bottom edge (a single line between rows, so
       // adjacent rows never double it up). Drawn before edges/dots so the lane
-      // lines and markers stay on top.
+      // lines and markers stay on top. Outside the muted-alpha scope above,
+      // matching the DOM row's own borderBottom (on the row, not a muted cell).
       ctx.fillStyle = rowDivider;
       ctx.fillRect(0, rowTop + rowHeight - 1, cssW, 1);
     });

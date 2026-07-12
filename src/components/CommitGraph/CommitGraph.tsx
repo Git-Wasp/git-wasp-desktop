@@ -124,15 +124,21 @@ const GraphRow = memo(function GraphRow({
           ? "var(--color-graph-head-row-bg)"
           : "transparent";
 
-  // Hover/selected border + glow on the row itself (not per cell), so it
-  // spans the full row width in one declaration — matched pixel-for-pixel by
-  // the canvas's own border+glow on the graph column (useCommitGraph) so the
-  // two surfaces read as one continuous bar rather than stopping at the
-  // graph-column edge.
+  // Hover/selected border + glow, matched pixel-for-pixel by the canvas's own
+  // border+glow on the graph column (useCommitGraph) so the two surfaces read
+  // as one continuous bar. Drawn on a dedicated overlay (see below) rendered
+  // *after* the cells, not as a box-shadow on the row root: each cell paints
+  // its own opaque `cellBg` on top of the row, which would otherwise hide an
+  // inset shadow on the row itself (only the graph column, which has no
+  // opaque DOM cell under the canvas, showed it — looking like the border
+  // stopped at the commit dot). Inset-only (no outward blur) so it can't
+  // bleed into the row above/below — these rows are absolutely-positioned
+  // siblings, and an outward glow would get inconsistently clipped by
+  // whichever neighbour paints on top of it.
   const rowGlow = selected
-    ? "inset 0 1px 0 var(--color-accent-primary), inset 0 -1px 0 var(--color-accent-primary), 0 0 6px 1px color-mix(in srgb, var(--color-accent-primary) 45%, transparent)"
+    ? "inset 0 1px 0 var(--color-accent-primary), inset 0 -1px 0 var(--color-accent-primary), inset 0 0 6px 0 color-mix(in srgb, var(--color-accent-primary) 55%, transparent)"
     : hovered
-      ? "inset 0 1px 0 color-mix(in srgb, var(--color-accent-primary) 55%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--color-accent-primary) 55%, transparent)"
+      ? "inset 0 1px 0 color-mix(in srgb, var(--color-accent-primary) 55%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--color-accent-primary) 55%, transparent), inset 0 0 4px 0 color-mix(in srgb, var(--color-accent-primary) 30%, transparent)"
       : "none";
 
   const renderCell = (col: GraphColumn) => {
@@ -181,7 +187,6 @@ const GraphRow = memo(function GraphRow({
         // matching line across the graph column). box-sizing: border-box keeps
         // the row height fixed, so this can't drift row geometry off the canvas.
         borderBottom: "1px solid var(--color-graph-row-divider)",
-        boxShadow: rowGlow,
       }}
     >
       {columns.flatMap((col) => {
@@ -226,6 +231,14 @@ const GraphRow = memo(function GraphRow({
       {!graphOnRight && (
         <div data-cell="filler" style={{ flex: "1 1 0", minWidth: 0, height: "100%", background: cellBg }} />
       )}
+      {/* Border+glow overlay, last so it paints on top of every cell's own
+          opaque background (see the comment on `rowGlow` above). */}
+      <div
+        data-testid="row-glow"
+        aria-hidden
+        className={muted ? "graph-row-muted" : undefined}
+        style={{ position: "absolute", inset: 0, pointerEvents: "none", boxShadow: rowGlow }}
+      />
     </div>
   );
 });

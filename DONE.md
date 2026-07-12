@@ -646,6 +646,35 @@ description. See TODO.md for work still outstanding.
       selected row box-shadow); canvas drawing itself has no dedicated tests
       (consistent with the rest of `useCommitGraph.ts` — jsdom has no real
       canvas backend, so the hook early-returns there).
+      **Follow-up from user testing** — two more inconsistencies surfaced
+      once the above landed: (1) hovering showed the accent border only
+      around the commit dots, not across the rest of the row; (2) hovering a
+      stash row showed a border in a visibly different colour, and stash
+      rows' background looked different from other rows generally. Root
+      causes: (1) the border+glow was a `box-shadow` on the row's own root
+      div — each cell paints its own *opaque* `background` on top of the
+      row, which hid an `inset` shadow everywhere except the graph column
+      (no opaque DOM cell sits under the frozen canvas there, so only that
+      slice showed through — reading as "a border around the dots and
+      nowhere else"). Fixed by moving the border+glow to a dedicated overlay
+      div (`data-testid="row-glow"`, `pointerEvents: "none"`) rendered
+      *last* so it paints on top of every cell instead of underneath, and
+      switching to inset-only shadows (no outward blur, which would bleed
+      asymmetrically into whichever absolutely-positioned sibling row
+      happens to paint on top of it). (2) Focus-mode's "off-branch" dimming
+      (`.graph-row-muted`, on by default) is applied per DOM cell, but the
+      canvas's Pass 1 row-band/border drawing never respected it at all — so
+      a muted row (every stash row always qualifies, since a stash is never
+      on the focused branch's line) showed dim DOM cells against a
+      full-strength canvas band/border, which is what read as "a different
+      colour" once semi-transparent cells let the border blend through, and
+      "a different background" more generally. `useCommitGraph` now wraps
+      each row's Pass 1 drawing in the same muted alpha the DOM cells get
+      (row divider excluded, matching the DOM row's own `borderBottom`
+      staying full strength regardless of cell muting); the new glow overlay
+      also picks up the `graph-row-muted` class. Tests extended in
+      `CommitGraph.test.tsx` for the overlay (present, non-intercepting,
+      correct box-shadow per state).
 - [x] The new translucent scroll highlight bar in the diff gutter should be
       "scrollable" like a scrollbar - currently it's only "draggable". Added
       `onWheel` handling to `ChangeOverview`'s track: hovering the strip and
