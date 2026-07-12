@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { StagingPanel } from "./StagingPanel";
 import { useWorkingTreeStore } from "../../stores/workingTreeStore";
+import { useStashStore } from "../../stores/stashStore";
+import { useToastStore } from "../../stores/toastStore";
 import type { WorkingTreeStatus } from "../../types/workingTree";
 
 const status: WorkingTreeStatus = {
@@ -80,5 +82,46 @@ describe("StagingPanel row menu", () => {
     fireEvent.click(screen.getByText("Cancel"));
     expect(useWorkingTreeStore.getState().deleteFile).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
+describe("StagingPanel stash changes", () => {
+  it("stashes all changes and toasts on success", async () => {
+    const stashCreate = vi.fn().mockResolvedValue(undefined);
+    const success = vi.fn();
+    useStashStore.setState({ create: stashCreate });
+    useToastStore.setState({ success });
+
+    render(<StagingPanel />);
+    // The button sits before "Stage all" in the Changes header.
+    fireEvent.click(screen.getByText("Stash changes"));
+
+    expect(stashCreate).toHaveBeenCalledWith();
+    await vi.waitFor(() => expect(success).toHaveBeenCalledWith("Stashed changes"));
+  });
+
+  it("surfaces a stash failure as an error toast", async () => {
+    useStashStore.setState({ create: vi.fn().mockRejectedValue("nothing to stash") });
+    const error = vi.fn();
+    useToastStore.setState({ error });
+
+    render(<StagingPanel />);
+    fireEvent.click(screen.getByText("Stash changes"));
+
+    await vi.waitFor(() => expect(error).toHaveBeenCalled());
+  });
+
+  it("hides the stash button when only untracked files are present (nothing git will stash)", () => {
+    useWorkingTreeStore.setState({
+      status: {
+        staged: [],
+        unstaged: [],
+        untracked: [{ path: "new.ts", originalPath: null, status: "Untracked" }],
+      },
+    });
+    render(<StagingPanel />);
+    expect(screen.queryByText("Stash changes")).not.toBeInTheDocument();
+    // Stage all still shows for the untracked file.
+    expect(screen.getByText("Stage all")).toBeInTheDocument();
   });
 });

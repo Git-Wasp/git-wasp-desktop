@@ -63,7 +63,6 @@ built yet; **(Phase 6)** are from the polish/hardening phase.
 ## General UX
 
 - [ ] Include section in settings to view open source packages used. Perhaps an "about" section that also includes the version, it's latest commit, a link to the repo etc.?
-- [ ] Add a "stash changes" button before "Stage all" in the right-hand sidebar when viewing uncommitted files. Remove the "Stash changes" button from the sidebar.
 - [ ] Add a "notifications" button (bell) to the top menu bar. When notifications are fired (currently toasts) append a notification to a floating panel that opens from the right when clicking the "notifications" icon. Allow notifications to be dismissed one at a time or all at once. Notifications should have scope - either to a repo or global. If per-repo, the repo name should be shown in the notification details. All notifications should include a timestamp.
 - [ ] Add "pin" functionality to left-hand sidebar panels that allow "pinning" a branch to the top, pinning a remote branch to the top, or pinning a recent repo to the top. The pinned items should persist between restarts. Pinning should be via a "pin" icon shown on hover - if not already pinned, the icon only shows on hover. If already pinned a solid pin icon is shown when not hovering, and changes to an "unfilled" pin icon on hover. A pinned item can be unpinned by clicking the pin icon again. Pinned items appear at the top. Give more spacing around the existing buttons at the top of this panel too (prune / new branch)
 - [ ] Add an integrated terminal that can be shown by clicking a button above the graph view. Should open automatically in the directory that contains the currently opened git repo.
@@ -71,6 +70,10 @@ built yet; **(Phase 6)** are from the polish/hardening phase.
 - [ ] Consider a "conventional commits" config option. If enabled, this provides a dropdown for suitable conventional commit prefixes for commit messages (e.g. fix:, ux:, chore:, etc.). Discuss and plan value and implementation before we change any code.
 - [ ] Graph highlight inconsistencies - the "uncommitted changes" doesn't highlight consistently with other rows - when hovering (and it's not selected) the graph node doesn't have background highlighting like the rest of the row.
 - [ ] PR editor view doesn't fill the viewport - could be wider
+- [ ] Auto-theme switching. Allow user to choose a "default dark" and a "default light" theme and switch between them automatically when the OS theme is "light" or "dark"
+- [ ] On MacOS, the app logo seems larger than other apps' logos. Is this an issue on our end, or is it a Tauri issue?
+- [ ] Click "interactivity" on elements such as buttons, "ellipsis" menu buttons etc (something _like_ Material Design) that makes user interactions with elements obvious
+- [ ] Update stashes sidebar menu so that buttons are removed and the buttons' functionality is in a menu triggered by an "ellipsis" menu
 
 ## Other issues
 

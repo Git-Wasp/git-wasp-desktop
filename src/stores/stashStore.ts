@@ -10,7 +10,8 @@ import { useWorkingTreeStore } from "./workingTreeStore";
  * reloads on its own triggers.
  */
 interface StashStore {
-  create: (message: string) => Promise<void>;
+  /** Stash the working tree. Pass a name, or omit for git's default message. */
+  create: (message?: string) => Promise<void>;
   pop: (index: number) => Promise<void>;
   drop: (index: number) => Promise<void>;
   rename: (index: number, message: string) => Promise<void>;
@@ -24,8 +25,8 @@ async function refreshAfterStash() {
 }
 
 export const useStashStore = create<StashStore>(() => ({
-  create: async (message: string) => {
-    await invoke("stash_save_cmd", { message });
+  create: async (message?: string) => {
+    await invoke("stash_save_cmd", { message: message ?? null });
     await refreshAfterStash();
   },
   pop: async (index: number) => {

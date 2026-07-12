@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useWorkingTreeStore } from "../../stores/workingTreeStore";
+import { useStashStore } from "../../stores/stashStore";
+import { useToastStore } from "../../stores/toastStore";
 import { CommitForm } from "./CommitForm";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
@@ -182,6 +184,19 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
   const stageAll = () => changes.forEach((e) => stageFile(e.path));
   const unstageAll = () => staged.forEach((e) => unstageFile(e.path));
 
+  // Stash all tracked changes (staged + unstaged). Untracked files aren't
+  // stashed, so the button is offered only when there's something git will
+  // actually stash — otherwise the backend would report "nothing to stash".
+  const stashable = staged.length > 0 || (status?.unstaged?.length ?? 0) > 0;
+  const stashChanges = async () => {
+    try {
+      await useStashStore.getState().create();
+      useToastStore.getState().success("Stashed changes");
+    } catch (e) {
+      useToastStore.getState().error(String(e), { title: "Stash failed" });
+    }
+  };
+
   return (
     <div
       style={{
@@ -206,10 +221,19 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
           title="Changes"
           count={changes.length}
           action={
-            changes.length > 0 ? (
-              <Button size="sm" onClick={stageAll}>
-                Stage all
-              </Button>
+            stashable || changes.length > 0 ? (
+              <div style={{ display: "flex", gap: "var(--space-2)" }}>
+                {stashable && (
+                  <Button size="sm" variant="secondary" onClick={stashChanges}>
+                    Stash changes
+                  </Button>
+                )}
+                {changes.length > 0 && (
+                  <Button size="sm" onClick={stageAll}>
+                    Stage all
+                  </Button>
+                )}
+              </div>
             ) : undefined
           }
         />

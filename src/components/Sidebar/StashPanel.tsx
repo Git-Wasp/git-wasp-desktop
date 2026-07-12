@@ -48,17 +48,6 @@ export function StashPanel() {
     }
   };
 
-  const handleStash = async () => {
-    setLoading(true);
-    try {
-      const status = await invoke<WorkingTreeStatus>("stash_save_cmd", { message: null });
-      useWorkingTreeStore.setState({ status });
-      await reload();
-    } finally {
-      setLoading(false);
-    }
-  };
-
   if (stashes.length === 0) return null;
 
   return (
@@ -67,11 +56,6 @@ export function StashPanel() {
       title="Stashes"
       resizable
       defaultHeight={140}
-      action={
-        <Button size="sm" onClick={handleStash} disabled={loading}>
-          Stash
-        </Button>
-      }
     >
       {stashes.map((s) => (
         <div

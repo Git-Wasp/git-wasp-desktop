@@ -195,6 +195,23 @@ description. See TODO.md for work still outstanding.
 
 ## Working tree & committing
 
+- [x] Add a "Stash changes" button before "Stage all" in the right-hand staging
+      panel when viewing uncommitted files; remove the "Stash" button from the
+      sidebar. — The Changes panel header now shows **Stash changes** (secondary)
+      before **Stage all**. It one-click stashes all *tracked* changes via
+      `stashStore.create()` (message omitted → git's default "WIP" message, matching
+      the old sidebar button) and toasts "Stashed changes" (or a "Stash failed"
+      error). The button is offered only when there's something git will actually
+      stash (staged or unstaged tracked changes) — untracked-only working trees
+      don't show it, since `stash_save` doesn't include untracked files and would
+      error "nothing to stash". `stashStore.create` now takes an optional message
+      (`create(message?)` → `message ?? null`), so the graph's named-stash prompt
+      still works unchanged. The sidebar `StashPanel` lost its header "Stash"
+      action button (and the now-dead `handleStash`); it still lists stashes with
+      apply/pop/drop and only renders when stashes exist. Tests: StagingPanel stash
+      success toast + error toast + button hidden for untracked-only (3); existing
+      suites green (frontend 667).
+
 - [x] Support "fast forwarding" e.g. fast forward main to the current checked-out
       commit, and stop the detached-HEAD footgun (main pulled on the remote, local
       main not updated, committed onto a bare "HEAD", then couldn't push). Two
