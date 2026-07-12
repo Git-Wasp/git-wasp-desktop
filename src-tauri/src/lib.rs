@@ -95,6 +95,7 @@ pub fn run() {
             commands::commit::create_commit,
             commands::commit::revert_commit,
             commands::commit::amend_commit_message,
+            commands::commit::squash_commits,
             commands::commit::get_head_commit_info,
             commands::commit::get_commit_identity,
             commands::commit::get_identity_config,

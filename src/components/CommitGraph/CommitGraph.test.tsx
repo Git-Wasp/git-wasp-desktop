@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { CommitGraph } from "./CommitGraph";
-import { useGraphStore } from "../../stores/graphStore";
+import { useGraphStore, type SelectMode } from "../../stores/graphStore";
 import { useRepoStore } from "../../stores/repoStore";
 import { useGithubStore } from "../../stores/githubStore";
 import { useToastStore } from "../../stores/toastStore";
@@ -47,14 +47,14 @@ const makeViewport = (): GraphViewport => ({
 });
 
 const writeText = vi.fn();
-let selectCommit: ReturnType<typeof vi.fn<(oid: string, extend: boolean) => void>>;
+let selectCommit: ReturnType<typeof vi.fn<(oid: string, mode?: SelectMode) => void>>;
 
 beforeEach(() => {
   vi.clearAllMocks();
   // jsdom has no canvas backend; the graph hook early-returns on a null context.
   HTMLCanvasElement.prototype.getContext = vi.fn(() => null) as never;
   Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
-  selectCommit = vi.fn<(oid: string, extend: boolean) => void>();
+  selectCommit = vi.fn<(oid: string, mode?: SelectMode) => void>();
   useGraphStore.setState({
     viewport: makeViewport(),
     selection: { anchor: null, focus: null, range: new Set() },
@@ -85,6 +85,7 @@ beforeEach(() => {
     checkoutCommit: vi.fn().mockResolvedValue(undefined),
     createTag: vi.fn().mockResolvedValue(undefined),
     revertCommit: vi.fn().mockResolvedValue(null),
+    squashCommits: vi.fn().mockResolvedValue("c".repeat(40)),
     fastForwardBranch: vi.fn().mockResolvedValue(undefined),
     listFastForwardableBranches: vi.fn().mockResolvedValue([]),
   });
@@ -114,8 +115,20 @@ describe("CommitGraph columns", () => {
     const onCommitSelect = vi.fn();
     render(<CommitGraph onCommitSelect={onCommitSelect} />);
     fireEvent.click(screen.getByText("second commit"));
-    expect(selectCommit).toHaveBeenCalledWith("b".repeat(40), false);
+    expect(selectCommit).toHaveBeenCalledWith("b".repeat(40), "replace");
     expect(onCommitSelect).toHaveBeenCalled();
+  });
+
+  it("range-selects on shift-click and toggles on cmd/ctrl-click", () => {
+    render(<CommitGraph />);
+    fireEvent.click(screen.getByText("second commit"), { shiftKey: true });
+    expect(selectCommit).toHaveBeenCalledWith("b".repeat(40), "range");
+
+    fireEvent.click(screen.getByText("second commit"), { metaKey: true });
+    expect(selectCommit).toHaveBeenCalledWith("b".repeat(40), "toggle");
+
+    fireEvent.click(screen.getByText("first commit"), { ctrlKey: true });
+    expect(selectCommit).toHaveBeenCalledWith("a".repeat(40), "toggle");
   });
 
   it("highlights a commit row on hover and clears it on leave", () => {
@@ -372,6 +385,85 @@ describe("CommitGraph context menu", () => {
     expect(writeText).toHaveBeenCalledWith("a".repeat(40));
   });
 
+  it("copies the commit message (summary plus body)", () => {
+    useGraphStore.setState({
+      viewport: {
+        totalCount: 1,
+        offset: 0,
+        nodes: [node({ oid: "a".repeat(40), summary: "the subject", body: "the body", row: 0 })],
+      },
+    });
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("the subject"));
+    fireEvent.click(screen.getByText("Copy message"));
+    expect(writeText).toHaveBeenCalledWith("the subject\n\nthe body");
+  });
+
+  it("does not offer squash for a discontiguous multi-selection", () => {
+    // Three commits loaded; select the outer two (gap in the middle).
+    useGraphStore.setState({
+      viewport: {
+        totalCount: 3,
+        offset: 0,
+        nodes: [
+          node({ oid: "a".repeat(40), summary: "first commit", isHead: true, row: 0 }),
+          node({ oid: "b".repeat(40), summary: "second commit", row: 1 }),
+          node({ oid: "c".repeat(40), summary: "third commit", row: 2 }),
+        ],
+      },
+      selection: {
+        anchor: "a".repeat(40),
+        focus: "c".repeat(40),
+        range: new Set(["a".repeat(40), "c".repeat(40)]),
+      },
+    });
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("third commit"));
+    expect(screen.queryByText(/Squash/)).toBeNull();
+  });
+
+  it("does not offer squash for a single-commit selection", () => {
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("first commit"));
+    expect(screen.queryByText(/Squash/)).toBeNull();
+  });
+
+  it("offers squash when several commits are selected and keeps the selection", () => {
+    const aOid = "a".repeat(40);
+    const bOid = "b".repeat(40);
+    useGraphStore.setState({
+      selection: { anchor: aOid, focus: bOid, range: new Set([aOid, bOid]) },
+    });
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("second commit"));
+
+    expect(screen.getByText(/Squash 2 commits/)).toBeInTheDocument();
+    // Right-clicking within the multi-selection must not collapse it.
+    expect(selectCommit).not.toHaveBeenCalled();
+  });
+
+  it("squashes the selected commits with the edited message", async () => {
+    const aOid = "a".repeat(40);
+    const bOid = "b".repeat(40);
+    const squashCommits = vi.fn().mockResolvedValue("c".repeat(40));
+    useRepoStore.setState({ squashCommits });
+    useGraphStore.setState({
+      selection: { anchor: aOid, focus: bOid, range: new Set([aOid, bOid]) },
+    });
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("second commit"));
+    fireEvent.click(screen.getByText(/Squash 2 commits/));
+
+    // The dialog opens pre-filled with the joined message (oldest first).
+    const textarea = screen.getByRole("textbox", { name: "Squash commit message" });
+    fireEvent.change(textarea, { target: { value: "combined message" } });
+    fireEvent.click(screen.getByRole("button", { name: /^squash$/i }));
+
+    await waitFor(() =>
+      expect(squashCommits).toHaveBeenCalledWith([aOid, bOid], "combined message"),
+    );
+  });
+
   it("creates and checks out a new branch at the commit", async () => {
     render(<CommitGraph />);
     fireEvent.contextMenu(screen.getByText("second commit"));
@@ -596,7 +688,7 @@ describe("CommitGraph stash", () => {
     render(<CommitGraph onCommitSelect={onCommitSelect} />);
     fireEvent.click(screen.getByText("WIP on main: experiment"));
     // Selected by its (real) stash commit oid, single-select (no range for a stash).
-    expect(selectCommit).toHaveBeenCalledWith("c".repeat(40), false);
+    expect(selectCommit).toHaveBeenCalledWith("c".repeat(40), "replace");
     expect(onCommitSelect).toHaveBeenCalled();
   });
 

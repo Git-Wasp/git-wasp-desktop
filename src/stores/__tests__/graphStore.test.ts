@@ -125,7 +125,7 @@ describe("graphStore", () => {
 
   it("selectCommit sets anchor, focus, range, and selectedOid", () => {
     useGraphStore.setState({ viewport: makeViewport() });
-    useGraphStore.getState().selectCommit("bbb", false);
+    useGraphStore.getState().selectCommit("bbb", "replace");
 
     const { selection, selectedOid } = useGraphStore.getState();
     expect(selectedOid).toBe("bbb");
@@ -134,20 +134,66 @@ describe("graphStore", () => {
     expect(selection.range.size).toBe(1);
   });
 
-  it("selectCommit with extend=true selects range between anchor and focus", () => {
+  it("selectCommit defaults to replace when no mode is given", () => {
+    useGraphStore.setState({ viewport: makeViewport() });
+    useGraphStore.getState().selectCommit("bbb");
+    expect(useGraphStore.getState().selection.range).toEqual(new Set(["bbb"]));
+  });
+
+  it("selectCommit with range mode selects between anchor and focus", () => {
     const vp = makeViewport();
     useGraphStore.setState({ viewport: vp });
 
     // Select first commit as anchor.
-    useGraphStore.getState().selectCommit("aaa", false);
+    useGraphStore.getState().selectCommit("aaa", "replace");
     // Shift-click last commit — should select all three.
-    useGraphStore.getState().selectCommit("ccc", true);
+    useGraphStore.getState().selectCommit("ccc", "range");
 
     const { selection } = useGraphStore.getState();
     expect(selection.range.has("aaa")).toBe(true);
     expect(selection.range.has("bbb")).toBe(true);
     expect(selection.range.has("ccc")).toBe(true);
     expect(selection.range.size).toBe(3);
+  });
+
+  it("selectCommit toggle adds and removes individual commits (discontiguous)", () => {
+    useGraphStore.setState({ viewport: makeViewport() });
+
+    // Cmd-click aaa then ccc — a discontiguous pair (bbb left out).
+    useGraphStore.getState().selectCommit("aaa", "toggle");
+    useGraphStore.getState().selectCommit("ccc", "toggle");
+    let { selection, selectedOid } = useGraphStore.getState();
+    expect(selection.range).toEqual(new Set(["aaa", "ccc"]));
+    // The last-clicked commit becomes the anchor/primary.
+    expect(selection.anchor).toBe("ccc");
+    expect(selectedOid).toBe("ccc");
+
+    // Cmd-click ccc again to remove it; aaa remains and inherits the roles.
+    useGraphStore.getState().selectCommit("ccc", "toggle");
+    ({ selection, selectedOid } = useGraphStore.getState());
+    expect(selection.range).toEqual(new Set(["aaa"]));
+    expect(selection.anchor).toBe("aaa");
+    expect(selectedOid).toBe("aaa");
+  });
+
+  it("selectCommit toggle clears the selection when the last commit is removed", () => {
+    useGraphStore.setState({ viewport: makeViewport() });
+    useGraphStore.getState().selectCommit("bbb", "toggle");
+    useGraphStore.getState().selectCommit("bbb", "toggle");
+
+    const { selection, selectedOid } = useGraphStore.getState();
+    expect(selection.range.size).toBe(0);
+    expect(selection.anchor).toBeNull();
+    expect(selectedOid).toBeNull();
+  });
+
+  it("range mode extends from a toggle-selected anchor", () => {
+    useGraphStore.setState({ viewport: makeViewport() });
+    // Toggle bbb (becomes anchor), then shift-click ccc → bbb..ccc.
+    useGraphStore.getState().selectCommit("bbb", "toggle");
+    useGraphStore.getState().selectCommit("ccc", "range");
+
+    expect(useGraphStore.getState().selection.range).toEqual(new Set(["bbb", "ccc"]));
   });
 
   it("refresh re-fetches the last requested range", async () => {
@@ -191,7 +237,7 @@ describe("graphStore", () => {
   it("selectWorkingTree highlights the working-tree row and clears the commit selection", () => {
     useGraphStore.setState({ viewport: makeViewport() });
     // Start with a commit selected (e.g. HEAD).
-    useGraphStore.getState().selectCommit("bbb", false);
+    useGraphStore.getState().selectCommit("bbb", "replace");
 
     useGraphStore.getState().selectWorkingTree();
 
@@ -226,7 +272,7 @@ describe("graphStore", () => {
 
   it("clearSelection resets to empty", () => {
     useGraphStore.setState({ viewport: makeViewport() });
-    useGraphStore.getState().selectCommit("aaa", false);
+    useGraphStore.getState().selectCommit("aaa", "replace");
     useGraphStore.getState().clearSelection();
 
     const { selection, selectedOid } = useGraphStore.getState();
@@ -242,7 +288,7 @@ describe("graphStore", () => {
       scrollToRow: 5,
       nodesByRow: new Map([[0, makeNode(0, "aaa")]]),
     });
-    useGraphStore.getState().selectCommit("aaa", false);
+    useGraphStore.getState().selectCommit("aaa", "replace");
 
     useGraphStore.getState().reset();
 

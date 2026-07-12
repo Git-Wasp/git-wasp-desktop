@@ -50,7 +50,8 @@ built yet; **(Phase 6)** are from the polish/hardening phase.
 
 ## Engineering & tooling
 
-- [ ] Add Storybook for viewing and refining UI components
+- [ ] Add Storybook (or similar, if there's something better) for viewing and refining UI components
+- [ ] Determine a versioning mechanism (commit hash, semantic versioning, etc.). Implement it and link it to release process.
 - [ ] GitHub Actions release workflow — tag-triggered matrix, artifacts to Release (Phase 6)
 - [ ] `cargo-deny` / licence audit in CI (Phase 6)
 - [ ] Error-handling audit — every git failure surfaces a clear, actionable message (Phase 6)
@@ -61,14 +62,15 @@ built yet; **(Phase 6)** are from the polish/hardening phase.
 
 ## General UX
 
-- [ ] Include section in settings to view open source packages used?
-- [ ] Add ability to select multiple "unpushed" commits on the same branch and squash them.
-- [ ] Add a "stash changes" button before "Stage all" when viewing uncommitted files. Remove the "Stash changes" button from the sidebar.
+- [ ] Include section in settings to view open source packages used. Perhaps an "about" section that also includes the version, it's latest commit, a link to the repo etc.?
+- [ ] Add a "stash changes" button before "Stage all" in the right-hand sidebar when viewing uncommitted files. Remove the "Stash changes" button from the sidebar.
 - [ ] Add a "notifications" button (bell) to the top menu bar. When notifications are fired (currently toasts) append a notification to a floating panel that opens from the right when clicking the "notifications" icon. Allow notifications to be dismissed one at a time or all at once. Notifications should have scope - either to a repo or global. If per-repo, the repo name should be shown in the notification details. All notifications should include a timestamp.
-- [ ] Add "pin" functionality to sidebar panels that allow "pinning" a branch to the top, pinning a remote branch to the top, or pinning a recent repo to the top. The pinned items should persist between restarts. Pinning should be via a "pin" icon shown on hover - if not already pinned, the icon only shows on hover. If already pinned a solid pin icon is shown when not hovering, and changes to an "unfilled" pin icon on hover. A pinned item can be unpinned by clicking the pin icon again. Pinned items appear at the top. Give more spacing around the existing buttons at the top of this panel too (prune / new branch)
+- [ ] Add "pin" functionality to left-hand sidebar panels that allow "pinning" a branch to the top, pinning a remote branch to the top, or pinning a recent repo to the top. The pinned items should persist between restarts. Pinning should be via a "pin" icon shown on hover - if not already pinned, the icon only shows on hover. If already pinned a solid pin icon is shown when not hovering, and changes to an "unfilled" pin icon on hover. A pinned item can be unpinned by clicking the pin icon again. Pinned items appear at the top. Give more spacing around the existing buttons at the top of this panel too (prune / new branch)
 - [ ] Add an integrated terminal that can be shown by clicking a button above the graph view. Should open automatically in the directory that contains the currently opened git repo.
 - [ ] Improve toast design. Add icons (e.g. info, warning, error) in the right colour, add a "title" as well as the text
 - [ ] Consider a "conventional commits" config option. If enabled, this provides a dropdown for suitable conventional commit prefixes for commit messages (e.g. fix:, ux:, chore:, etc.). Discuss and plan value and implementation before we change any code.
+- [ ] Graph highlight inconsistencies - the "uncommitted changes" doesn't highlight consistently with other rows - when hovering (and it's not selected) the graph node doesn't have background highlighting like the rest of the row.
+- [ ] PR editor view doesn't fill the viewport - could be wider
 
 ## Other issues
 
@@ -137,6 +139,11 @@ built yet; **(Phase 6)** are from the polish/hardening phase.
 - [ ] Fix all rust formatting/clippy
 - [ ] Architectural review of entire backend
 - [ ] Architectural review of entire frontend
+- [ ] Performance review of frontend
+- [ ] Performance review of backend
 - [ ] Removal of unnecessary implementation detail tests (did we take TDD too far?)
 - [ ] Remove comments that litter the codebase. "Public" functions should be documented according to language standards (ts / rust) but inline comments are included too frequently and are a maintenance burden.
 - [ ] Internationalisation. Tokenize strings, and allow users to change language. Initial supported languages to include British English, American English, and Dutch.
+- [ ] Rewrite README.md
+- [ ] Remove TODO.md and DONE.md
+- [ ] Rewrite CLAUDE.md based on "final" (v1.0.0) implementation

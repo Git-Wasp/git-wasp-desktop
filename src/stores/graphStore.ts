@@ -19,6 +19,14 @@ interface Selection {
   range: Set<string>;
 }
 
+/**
+ * How a commit click updates the selection:
+ * - `replace` — plain click: select just this commit.
+ * - `range` — shift-click: select the contiguous run from the anchor to here.
+ * - `toggle` — cmd/ctrl-click: add or remove this commit, leaving the rest.
+ */
+export type SelectMode = "replace" | "range" | "toggle";
+
 // Persisted "focus current branch" view preference. On by default: the graph
 // keeps the checked-out branch and its ancestors coloured and mutes everything
 // else. Persisted to localStorage so it survives reloads.
@@ -159,7 +167,7 @@ interface GraphStore {
   setColumnOrder: (variant: GraphVariant, order: DataColumn[]) => void;
   fetchViewport: (offset: number, limit: number) => Promise<void>;
   refresh: () => Promise<void>;
-  selectCommit: (oid: string, extend: boolean) => void;
+  selectCommit: (oid: string, mode?: SelectMode) => void;
   selectWorkingTree: () => void;
   revealCommit: (oid: string) => Promise<void>;
   revealHead: () => Promise<void>;
@@ -354,11 +362,40 @@ export const useGraphStore = create<GraphStore>((set, get) => {
     if (searchOpen && searchQuery.trim()) await get().runSearch(searchQuery);
   },
 
-  selectCommit: (oid: string, extend: boolean) => {
-    const { viewport, selection } = get();
+  selectCommit: (oid: string, mode: SelectMode = "replace") => {
+    const { viewport, selection, selectedOid } = get();
     if (!viewport) return;
 
-    if (!extend) {
+    if (mode === "toggle") {
+      // Cmd/Ctrl-click: add or remove this commit without disturbing the rest.
+      const range = new Set(selection.range);
+      if (range.has(oid)) {
+        range.delete(oid);
+        if (range.size === 0) {
+          set({ selection: emptySelection(), selectedOid: null });
+          return;
+        }
+        // Removing the anchor/primary hands those roles to a surviving member so
+        // a following shift-click still has an anchor to extend from.
+        const last = [...range][range.size - 1];
+        const anchor = selection.anchor && range.has(selection.anchor) ? selection.anchor : last;
+        set({
+          selection: { anchor, focus: anchor, range },
+          selectedOid: selectedOid && range.has(selectedOid) ? selectedOid : last,
+        });
+        return;
+      }
+      // Adding: the clicked commit becomes the new anchor/primary (standard
+      // list-selection behaviour) while keeping everything already selected.
+      range.add(oid);
+      set({
+        selection: { anchor: oid, focus: oid, range },
+        selectedOid: oid,
+      });
+      return;
+    }
+
+    if (mode === "replace") {
       set({
         selection: { anchor: oid, focus: oid, range: new Set([oid]) },
         selectedOid: oid,
@@ -366,6 +403,7 @@ export const useGraphStore = create<GraphStore>((set, get) => {
       return;
     }
 
+    // mode === "range": shift-click extends the contiguous run from the anchor.
     const anchorOid = selection.anchor ?? oid;
     const anchorNode = viewport.nodes.find((n) => n.oid === anchorOid);
     const focusNode = viewport.nodes.find((n) => n.oid === oid);

@@ -119,6 +119,23 @@ describe("repoStore", () => {
     expect(useRepoStore.getState().currentRepo).toEqual(updatedRepo);
   });
 
+  it("squashCommits invokes squash_commits then refreshes the tree and branches", async () => {
+    const newOid = "c".repeat(40);
+    mockByCommand({
+      squash_commits: newOid,
+      refresh_working_tree: { staged: [], unstaged: [], untracked: [] },
+      list_branches: [],
+    });
+
+    const oids = ["a".repeat(40), "b".repeat(40)];
+    const result = await useRepoStore.getState().squashCommits(oids, "combined");
+
+    expect(mockInvoke).toHaveBeenCalledWith("squash_commits", { oids, message: "combined" });
+    expect(mockInvoke).toHaveBeenCalledWith("refresh_working_tree");
+    expect(mockInvoke).toHaveBeenCalledWith("list_branches");
+    expect(result).toBe(newOid);
+  });
+
   it("checkoutBranch offers auto-stash on the sentinel and retries with autoStash on confirm", async () => {
     const updatedRepo = { name: "r", path: "/p", headBranch: "feature" };
     mockInvoke.mockRejectedValueOnce(AUTO_STASH_SENTINEL); // first attempt blocked

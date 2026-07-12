@@ -149,6 +149,49 @@ description. See TODO.md for work still outstanding.
       tag…" to the **sidebar local-branch row menu** (the gap): it prompts for a name
       and tags the branch tip via the existing `createTag`, then refreshes the graph
       so the new tag pill appears. Sidebar test added.
+- [x] Add ability to select multiple "unpushed" commits on the same branch and
+      squash them. — the graph already supported range selection (shift-click),
+      so right-clicking within a multi-commit selection now offers "Squash N
+      commits…". Scope is **tip-anchored**: the selection must include the branch
+      tip (HEAD) and form a contiguous, unpushed, non-merge first-parent run.
+      Backend `squash_commits(oids, message)` (`working_tree::squash_commits`)
+      validates all that (≥2 commits, none pushed, none a merge, contiguous,
+      includes the tip — each with a clear error), then creates one commit on the
+      oldest's parent with the **tip's tree** and the **oldest commit's author**
+      (committer = current identity) and moves the branch ref onto it. Because the
+      result keeps the tip's tree, the working tree and index are left untouched
+      (uncommitted changes are safe) and the op can't conflict — so it's a single
+      atomic command like amend/revert, not an `OperationRunner` flow. Refactored
+      `head_commit_is_pushed` onto a new shared `commit_is_pushed(repo, oid)`
+      helper. Frontend: right-click no longer collapses an existing multi-selection;
+      a `SquashDialog` (textarea pre-filled with the selected messages joined
+      oldest-first, git-style; Cmd/Ctrl+Enter to confirm) collects the final
+      message; `repoStore.squashCommits` invokes and runs the combined refresh
+      (`refreshAll` + `loadBranches`). Pure `buildSquashPlan` helper orders oids
+      newest-first and builds the default message. Tests: backend 8 (combine,
+      author kept, working-tree untouched, and refusals for pushed / non-contiguous
+      / tip-not-selected / merge / <2); frontend `buildSquashPlan` (3), `SquashDialog`
+      (4), CommitGraph menu integration (4), repoStore wiring (1).
+- [x] Commit-selection UX polish (follow-up to squash). Three changes:
+      (1) **Cmd/Ctrl-click to toggle individual commits.** `selectCommit`'s
+      boolean `extend` became a `SelectMode` (`"replace" | "range" | "toggle"`);
+      the row click maps plain → replace, shift → range, meta/ctrl → toggle
+      (`e.metaKey || e.ctrlKey`, so macOS Ctrl-click stays a right-click). Toggle
+      adds/removes a single commit from the `range` Set (already discontiguous-
+      capable) and reassigns anchor/primary sensibly (clicked commit becomes the
+      new anchor; removing the anchor hands the role to a survivor; emptying the
+      set clears it). (2) **Squash gated to contiguous runs** now that
+      discontiguous selection is possible: `buildSquashPlan` returns null unless
+      the selected commits form an unbroken slice of the row-ordered commit
+      sequence (stash/working-tree rows don't count as gaps), so the menu item
+      only appears for squashable selections. (3) **No text-highlighting in the
+      graph** — `user-select: none` on the graph container (form controls like the
+      squash textarea still select fine) — plus a new **"Copy message"** context
+      item (summary + body, via the shared `commitFullMessage` helper) so nothing
+      is lost by disabling text selection. Tests: graphStore toggle add/remove/
+      clear/default/anchor-extend (5); `buildSquashPlan` discontiguous + stash-gap
+      (2); CommitGraph shift/cmd/ctrl mapping, discontiguous-no-squash, copy-message
+      (3).
 
 ## Working tree & committing
 

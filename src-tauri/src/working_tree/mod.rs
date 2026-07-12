@@ -803,6 +803,21 @@ pub fn revert_commit(
     Ok(Some(new_oid.to_string()))
 }
 
+/// True if `oid` is reachable from any remote-tracking branch, meaning the
+/// commit has already been pushed (so rewriting it would rewrite shared history).
+pub fn commit_is_pushed(repo: &Repository, oid: git2::Oid) -> anyhow::Result<bool> {
+    for branch in repo.branches(Some(git2::BranchType::Remote))? {
+        let (branch, _) = branch?;
+        if let Some(target) = branch.get().target() {
+            // The remote contains `oid` if its tip *is* `oid` or descends from it.
+            if target == oid || repo.graph_descendant_of(target, oid)? {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
 /// True if HEAD is reachable from any remote-tracking branch, meaning the commit
 /// has already been pushed. Returns false for an unborn branch (no HEAD yet).
 pub fn head_commit_is_pushed(repo: &Repository) -> anyhow::Result<bool> {
@@ -810,17 +825,103 @@ pub fn head_commit_is_pushed(repo: &Repository) -> anyhow::Result<bool> {
         Ok(head) => head.peel_to_commit().context("HEAD is not a commit")?.id(),
         Err(_) => return Ok(false),
     };
+    commit_is_pushed(repo, head_oid)
+}
 
-    for branch in repo.branches(Some(git2::BranchType::Remote))? {
-        let (branch, _) = branch?;
-        if let Some(target) = branch.get().target() {
-            // The remote contains HEAD if its tip *is* HEAD or descends from it.
-            if target == head_oid || repo.graph_descendant_of(target, head_oid)? {
-                return Ok(true);
-            }
+/// Squash a contiguous run of unpushed commits at the tip of the current branch
+/// into a single commit. The selection must include the branch tip (HEAD) and
+/// form an unbroken first-parent chain down from it; none may be a merge commit
+/// and none may have been pushed. The squashed commit keeps the tip's tree — so
+/// the working tree and index are left untouched (nothing is checked out) — and
+/// the oldest commit's author, while the committer is the current identity.
+/// The current branch ref is moved to the new commit. Returns its oid.
+pub fn squash_commits(repo: &Repository, oids: &[String], message: &str) -> anyhow::Result<String> {
+    if oids.len() < 2 {
+        anyhow::bail!("Select at least two commits to squash.");
+    }
+
+    let mut ids = Vec::with_capacity(oids.len());
+    for s in oids {
+        ids.push(git2::Oid::from_str(s).context("invalid commit oid")?);
+    }
+    let selected: std::collections::HashSet<git2::Oid> = ids.iter().copied().collect();
+    if selected.len() != ids.len() {
+        anyhow::bail!("Duplicate commits in selection.");
+    }
+
+    // None of the selected commits may be a merge or already pushed.
+    for &id in &ids {
+        let commit = repo.find_commit(id).context("commit not found")?;
+        if commit.parent_count() > 1 {
+            anyhow::bail!("Cannot squash a merge commit.");
+        }
+        if commit_is_pushed(repo, id)? {
+            anyhow::bail!("Cannot squash commits that have already been pushed to a remote.");
         }
     }
-    Ok(false)
+
+    // Tip-anchored: the newest selected commit must be the branch tip (HEAD).
+    let head_ref = repo.head().context("no commit to squash")?;
+    let tip = head_ref.peel_to_commit().context("HEAD is not a commit")?;
+    if !selected.contains(&tip.id()) {
+        anyhow::bail!(
+            "Squash must include the latest commit on the branch — select down from the branch tip."
+        );
+    }
+
+    // Walk first-parent from the tip, consuming the selection. Every step must
+    // stay within the set until all are consumed; that proves the selection is a
+    // contiguous, linear run. The last commit reached is the oldest.
+    let mut remaining = selected.clone();
+    remaining.remove(&tip.id());
+    let mut oldest = tip.id();
+    let mut cur = tip.clone();
+    while !remaining.is_empty() {
+        let parent = cur.parent(0).map_err(|_| {
+            anyhow::anyhow!("Selected commits must be consecutive on the same branch.")
+        })?;
+        if !remaining.remove(&parent.id()) {
+            anyhow::bail!("Selected commits must be consecutive on the same branch.");
+        }
+        oldest = parent.id();
+        cur = parent;
+    }
+
+    // The parent of the oldest selected commit becomes the squash's parent (None
+    // when the run reaches the root commit, producing a new root commit).
+    let oldest_commit = repo.find_commit(oldest).context("commit not found")?;
+    let base = oldest_commit.parent(0).ok();
+    let parents: Vec<&git2::Commit> = base.iter().collect();
+
+    let tree = tip.tree().context("failed to read tip tree")?;
+    let author = oldest_commit.author();
+    let committer = repo.signature().context(
+        "Git user identity not configured. Set user.name and user.email in your .gitconfig.",
+    )?;
+
+    // Create the squashed commit detached from any ref, then move the branch onto
+    // it. Its tree matches the old tip, so the working tree and index are left
+    // exactly as they were.
+    let new_oid = repo
+        .commit(None, &author, &committer, message, &tree, &parents)
+        .context("failed to create squashed commit")?;
+
+    let reflog = format!("squash: {} commits", ids.len());
+    if head_ref.is_branch() {
+        let name = head_ref.name().context("branch reference has no name")?;
+        repo.reference(name, new_oid, true, &reflog)
+            .context("failed to update branch to squashed commit")?;
+    } else {
+        repo.set_head_detached(new_oid)
+            .context("failed to move HEAD to squashed commit")?;
+    }
+
+    log::info!(
+        target: "git",
+        "squash: {} commits -> {new_oid}",
+        ids.len()
+    );
+    Ok(new_oid.to_string())
 }
 
 /// Details of the tip commit, or `None` on an unborn branch. Used to prefill and
@@ -1481,6 +1582,145 @@ mod tests {
         // Message unchanged.
         let head = repo.head().unwrap().peel_to_commit().unwrap();
         assert_eq!(head.message().unwrap(), "pushed commit");
+    }
+
+    /// Write, stage and commit a file, returning the new commit oid.
+    fn commit_file(repo: &Repository, dir: &TempDir, name: &str, content: &str) -> String {
+        write_and_stage(repo, dir, name, content);
+        create_commit(repo, name).unwrap()
+    }
+
+    /// Build a base commit plus three tip commits c1 -> c2 -> c3 (HEAD). Returns
+    /// (base, c1, c2, c3).
+    fn repo_with_chain(dir: &TempDir, repo: &Repository) -> (String, String, String, String) {
+        let base = commit_file(repo, dir, "base.txt", "base\n");
+        let c1 = commit_file(repo, dir, "a.txt", "a\n");
+        let c2 = commit_file(repo, dir, "b.txt", "b\n");
+        let c3 = commit_file(repo, dir, "c.txt", "c\n");
+        (base, c1, c2, c3)
+    }
+
+    #[test]
+    fn squash_combines_tip_commits_into_one() {
+        let (dir, repo) = init_repo();
+        let (base, c1, c2, c3) = repo_with_chain(&dir, &repo);
+        let tip_tree = repo.find_commit(c3.parse().unwrap()).unwrap().tree_id();
+
+        let new_oid = squash_commits(&repo, &[c3, c2, c1], "squashed").unwrap();
+
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        assert_eq!(head.id().to_string(), new_oid);
+        assert_eq!(head.message().unwrap(), "squashed");
+        // Sits directly on the base, keeps the tip's tree, and is the only commit
+        // above the base now.
+        assert_eq!(head.parent_id(0).unwrap().to_string(), base);
+        assert_eq!(head.tree_id(), tip_tree);
+    }
+
+    #[test]
+    fn squash_keeps_the_oldest_commits_author() {
+        let (dir, repo) = init_repo();
+        let base = commit_file(&repo, &dir, "base.txt", "base\n");
+        let _ = base;
+
+        // Oldest of the run authored by Alice; the rest by the default identity.
+        write_and_stage(&repo, &dir, "a.txt", "a\n");
+        let alice = Signature::now("Alice", "alice@example.com").unwrap();
+        let tree = {
+            let tree_id = repo.index().unwrap().write_tree().unwrap();
+            repo.find_tree(tree_id).unwrap()
+        };
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        let c1 = repo
+            .commit(Some("HEAD"), &alice, &alice, "a", &tree, &[&parent])
+            .unwrap()
+            .to_string();
+        let c2 = commit_file(&repo, &dir, "b.txt", "b\n");
+
+        squash_commits(&repo, &[c2, c1], "squashed").unwrap();
+
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        assert_eq!(head.author().name().unwrap(), "Alice");
+    }
+
+    #[test]
+    fn squash_refuses_when_any_commit_is_pushed() {
+        let (dir, repo) = init_repo();
+        let (_base, c1, c2, c3) = repo_with_chain(&dir, &repo);
+        // The oldest of the run is on the remote.
+        mark_pushed(&repo, c1.parse().unwrap());
+
+        let err = squash_commits(&repo, &[c3, c2, c1], "squashed").unwrap_err();
+        assert!(err.to_string().contains("pushed"), "got: {err}");
+    }
+
+    #[test]
+    fn squash_refuses_a_non_contiguous_selection() {
+        let (dir, repo) = init_repo();
+        let (_base, c1, _c2, c3) = repo_with_chain(&dir, &repo);
+        // c3 (tip) and c1, skipping c2 — not consecutive.
+        let err = squash_commits(&repo, &[c3, c1], "squashed").unwrap_err();
+        assert!(err.to_string().contains("consecutive"), "got: {err}");
+    }
+
+    #[test]
+    fn squash_refuses_when_tip_not_selected() {
+        let (dir, repo) = init_repo();
+        let (_base, c1, c2, _c3) = repo_with_chain(&dir, &repo);
+        // c1 and c2 are contiguous but exclude the branch tip c3.
+        let err = squash_commits(&repo, &[c2, c1], "squashed").unwrap_err();
+        assert!(err.to_string().contains("latest commit"), "got: {err}");
+    }
+
+    #[test]
+    fn squash_refuses_a_merge_commit() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "a.txt", "1\n");
+        let c1 = create_commit(&repo, "c1").unwrap();
+        write_and_stage(&repo, &dir, "b.txt", "2\n");
+        create_commit(&repo, "c2").unwrap();
+
+        // Fabricate a 2-parent (merge) commit at HEAD.
+        let sig = Signature::now("Test", "test@test.com").unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        let other = repo.find_commit(c1.parse().unwrap()).unwrap();
+        let tree = head.tree().unwrap();
+        let merge = repo
+            .commit(Some("HEAD"), &sig, &sig, "merge", &tree, &[&head, &other])
+            .unwrap()
+            .to_string();
+
+        let err = squash_commits(&repo, &[merge, c1], "squashed").unwrap_err();
+        assert!(err.to_string().contains("merge"), "got: {err}");
+    }
+
+    #[test]
+    fn squash_refuses_fewer_than_two_commits() {
+        let (dir, repo) = init_repo();
+        let (_base, _c1, _c2, c3) = repo_with_chain(&dir, &repo);
+        let err = squash_commits(&repo, &[c3], "squashed").unwrap_err();
+        assert!(err.to_string().contains("at least two"), "got: {err}");
+    }
+
+    #[test]
+    fn squash_leaves_the_working_tree_untouched() {
+        let (dir, repo) = init_repo();
+        let (_base, c1, c2, c3) = repo_with_chain(&dir, &repo);
+        // A dirty, unstaged edit that must survive the squash.
+        fs::write(dir.path().join("dirty.txt"), "wip\n").unwrap();
+
+        squash_commits(&repo, &[c3, c2, c1], "squashed").unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dir.path().join("dirty.txt")).unwrap(),
+            "wip\n"
+        );
+        // Only the untracked edit shows as changed — the squash didn't touch
+        // tracked files.
+        let status = get_working_tree_status(&repo).unwrap();
+        assert_eq!(status.staged.len(), 0);
+        assert_eq!(status.unstaged.len(), 0);
+        assert_eq!(status.untracked.len(), 1);
     }
 
     #[test]

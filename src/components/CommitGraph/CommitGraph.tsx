@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useGraphStore } from "../../stores/graphStore";
+import { useGraphStore, type SelectMode } from "../../stores/graphStore";
 import { useRepoStore } from "../../stores/repoStore";
 import { useGithubStore } from "../../stores/githubStore";
 import { useMergeStore } from "../../stores/mergeStore";
@@ -17,6 +17,8 @@ import { usePersistedWidth } from "../../lib/usePersistedWidth";
 import { runMerge } from "./dragDrop";
 import { useGraphDragDrop } from "./useGraphDragDrop";
 import { MergeConfirmDialog } from "./MergeConfirmDialog";
+import { SquashDialog } from "./SquashDialog";
+import { buildSquashPlan, commitFullMessage } from "./squash";
 import { GraphSearch } from "./GraphSearch";
 import { GraphSkeleton } from "./GraphSkeleton";
 import { AuthorCell, BranchCell, DateCell, HashCell, MessageCell } from "./columns";
@@ -95,7 +97,7 @@ const GraphRow = memo(function GraphRow({
   currentBranch: string | null;
   isTagOnRemote: (name: string) => boolean;
   pillHandlers: PillHandlers;
-  onRowClick: (node: GraphNode, shiftKey: boolean) => void;
+  onRowClick: (node: GraphNode, mods: { shift: boolean; toggle: boolean }) => void;
   onRowContextMenu: (e: React.MouseEvent, node: GraphNode) => void;
   hovered: boolean;
   // Highlight the row as a search match (a warm band behind the cells).
@@ -151,7 +153,7 @@ const GraphRow = memo(function GraphRow({
       data-oid={node.oid}
       data-head-row={isHeadRow ? "true" : undefined}
       data-muted={muted ? "true" : undefined}
-      onClick={(e) => onRowClick(node, e.shiftKey)}
+      onClick={(e) => onRowClick(node, { shift: e.shiftKey, toggle: e.metaKey || e.ctrlKey })}
       onContextMenu={(e) => onRowContextMenu(e, node)}
       onMouseEnter={() => onRowHover(node.oid)}
       onMouseLeave={() => onRowHover(null)}
@@ -264,6 +266,7 @@ export function CommitGraph({
     checkoutCommit,
     createTag,
     revertCommit,
+    squashCommits,
     fastForwardBranch,
     listFastForwardableBranches,
   } = useRepoStore();
@@ -285,6 +288,7 @@ export function CommitGraph({
   // fetched from the backend when the menu opens so we only offer valid moves.
   const [ffBranches, setFfBranches] = useState<string[]>([]);
   const [prompt, setPrompt] = useState<PromptState | null>(null);
+  const [squash, setSquash] = useState<{ oids: string[]; message: string } | null>(null);
   const [tagDelete, setTagDelete] = useState<{ name: string; onRemote: boolean } | null>(null);
   // The row the pointer is over, for a subtle hover highlight. Stable setter, so
   // memoized rows only re-render when their own hovered flag flips.
@@ -475,7 +479,7 @@ export function CommitGraph({
   );
 
   const handleRowClick = useCallback(
-    (node: GraphNode, shiftKey: boolean) => {
+    (node: GraphNode, mods: { shift: boolean; toggle: boolean }) => {
       // Swallow the click that ends a drag so it doesn't also select.
       if (drag.consumeClick()) return;
       if (node.isWorkingTree) {
@@ -488,8 +492,15 @@ export function CommitGraph({
       // A stash node is a real commit (its `oid` is the stash commit); select it
       // like a commit so the detail panel shows its changes vs its base — i.e.
       // the stash commit diffed against its first parent (right-click still drives
-      // the pop/rename/delete actions). Range-select doesn't apply to a stash.
-      selectCommit(node.oid, node.isStash ? false : shiftKey);
+      // the pop/rename/delete actions). Range/toggle-select don't apply to a stash.
+      const mode: SelectMode = node.isStash
+        ? "replace"
+        : mods.toggle
+          ? "toggle"
+          : mods.shift
+            ? "range"
+            : "replace";
+      selectCommit(node.oid, mode);
       onCommitSelect?.();
     },
     [drag, selectCommit, selectWorkingTree, onViewChanges, onCommitSelect],
@@ -501,7 +512,13 @@ export function CommitGraph({
       // The working-tree and stash rows get their own menus; they aren't real
       // commits, so don't select them as one.
       if (!node.isWorkingTree && !node.isStash) {
-        selectCommit(node.oid, false);
+        // Right-clicking a commit that's already part of a multi-commit
+        // selection keeps that selection (so "Squash N commits" stays offered);
+        // otherwise it collapses to just this commit.
+        const inMultiSelection = selection.range.size > 1 && selection.range.has(node.oid);
+        if (!inMultiSelection) {
+          selectCommit(node.oid, "replace");
+        }
         // Resolve which branches can fast-forward to this commit; the menu items
         // appear once it lands (clears first so a stale list can't linger).
         setFfBranches([]);
@@ -511,7 +528,7 @@ export function CommitGraph({
       }
       setMenu({ x: e.clientX, y: e.clientY, node });
     },
-    [selectCommit, listFastForwardableBranches],
+    [selectCommit, listFastForwardableBranches, selection.range],
   );
 
   const runStashOp = async (op: () => Promise<void>, success: string) => {
@@ -560,6 +577,15 @@ export function CommitGraph({
     }
   };
 
+  const runSquash = async (message: string) => {
+    if (!squash) return;
+    const count = squash.oids.length;
+    await squashCommits(squash.oids, message);
+    setSquash(null);
+    setMenu(null);
+    toastSuccess(`Squashed ${count} commits into one`);
+  };
+
   const commitUrl = (oid: string): string | null =>
     remoteInfo ? `https://${remoteInfo.host}/${remoteInfo.owner}/${remoteInfo.repo}/commit/${oid}` : null;
 
@@ -595,10 +621,27 @@ export function CommitGraph({
       }
       const items: MenuItem[] = [
         { label: "Checkout this commit", onSelect: () => runBranchOp(() => checkoutCommit(node.oid)) },
+      ];
+
+      // When this commit is part of a multi-commit selection, offer to squash the
+      // run into one. The backend enforces the real constraints (contiguous,
+      // unpushed, includes the branch tip) and reports a clear error otherwise.
+      if (viewport && selection.range.size > 1 && selection.range.has(node.oid)) {
+        const plan = buildSquashPlan(viewport.nodes, selection.range);
+        if (plan) {
+          items.push({
+            label: `Squash ${plan.oids.length} commits…`,
+            onSelect: () => setSquash(plan),
+          });
+        }
+      }
+
+      items.push(
         { separator: true },
         { label: "Copy commit hash", onSelect: () => copy(node.oid) },
         { label: "Copy short hash", onSelect: () => copy(node.shortOid) },
-      ];
+        { label: "Copy message", onSelect: () => copy(commitFullMessage(node)) },
+      );
       const url = commitUrl(node.oid);
       if (url) {
         items.push({ label: "Copy link to commit", onSelect: () => copy(url) });
@@ -690,7 +733,7 @@ export function CommitGraph({
       return items;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [checkoutBranch, deleteBranch, checkoutCommit, remoteInfo, currentRepo, operationStatus.kind, startMerge, isTagOnRemote, ffBranches, fastForwardBranch],
+    [checkoutBranch, deleteBranch, checkoutCommit, remoteInfo, currentRepo, operationStatus.kind, startMerge, isTagOnRemote, ffBranches, fastForwardBranch, viewport, selection.range],
   );
 
   const handlePromptConfirm = async (value: string) => {
@@ -819,7 +862,7 @@ export function CommitGraph({
   );
 
   return (
-    <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--color-graph-bg, var(--color-bg-app))" }}>
+    <div style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--color-graph-bg, var(--color-bg-app))", userSelect: "none", WebkitUserSelect: "none" }}>
       {searchOpen && <GraphSearch />}
       {/* Column header. The graph header cell is frozen; the data header cells
           live in a clip that mirrors the body's horizontal scroll. */}
@@ -997,6 +1040,15 @@ export function CommitGraph({
 
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} items={buildMenuItems(menu.node)} onClose={() => setMenu(null)} />
+      )}
+
+      {squash && (
+        <SquashDialog
+          count={squash.oids.length}
+          initialMessage={squash.message}
+          onConfirm={runSquash}
+          onCancel={() => setSquash(null)}
+        />
       )}
 
       {tagDelete && (

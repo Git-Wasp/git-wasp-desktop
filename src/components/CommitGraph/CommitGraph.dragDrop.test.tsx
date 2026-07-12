@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { CommitGraph } from "./CommitGraph";
-import { useGraphStore } from "../../stores/graphStore";
+import { useGraphStore, type SelectMode } from "../../stores/graphStore";
 import { useRepoStore } from "../../stores/repoStore";
 import type { GraphNode, GraphViewport } from "../../types/graph";
 
@@ -34,12 +34,12 @@ const viewport: GraphViewport = {
   ],
 };
 
-let selectCommit: ReturnType<typeof vi.fn<(oid: string, extend: boolean) => void>>;
+let selectCommit: ReturnType<typeof vi.fn<(oid: string, mode?: SelectMode) => void>>;
 
 beforeEach(() => {
   vi.clearAllMocks();
   HTMLCanvasElement.prototype.getContext = vi.fn(() => null) as never;
-  selectCommit = vi.fn<(oid: string, extend: boolean) => void>();
+  selectCommit = vi.fn<(oid: string, mode?: SelectMode) => void>();
   useGraphStore.setState({
     viewport,
     selection: { anchor: null, focus: null, range: new Set() },

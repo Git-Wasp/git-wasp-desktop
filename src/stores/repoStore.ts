@@ -54,6 +54,9 @@ interface RepoStore {
    *  the inverse is left as unstaged working-tree changes. Returns the new
    *  commit oid (or null when not committed). */
   revertCommit: (oid: string, autoCommit: boolean) => Promise<string | null>;
+  /** Squash a contiguous run of unpushed commits — which must include the branch
+   *  tip — into a single commit with `message`. Returns the new commit oid. */
+  squashCommits: (oids: string[], message: string) => Promise<string>;
   createBranch: (name: string, startPoint?: string) => Promise<void>;
   /** Advance local `branch` to `target` (a commit oid) when it's a fast-forward.
    *  Moves the branch pointer without checking it out unless it's current. */
@@ -203,6 +206,16 @@ export const useRepoStore = create<RepoStore>((set, get) => {
       // viewport (a single status scan rather than two).
       await useWorkingTreeStore.getState().refreshAll();
       return result;
+    },
+
+    squashCommits: async (oids: string[], message: string) => {
+      const newOid = await invoke<string>("squash_commits", { oids, message });
+      // HEAD/the branch tip moved; refresh the graph and branch list together.
+      // The working tree is untouched by a squash, but refreshAll is the single
+      // combined refresh used elsewhere and keeps the dirty count consistent.
+      await useWorkingTreeStore.getState().refreshAll();
+      await get().loadBranches();
+      return newOid;
     },
 
     createBranch: async (name: string, startPoint?: string) => {
