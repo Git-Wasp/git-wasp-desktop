@@ -163,7 +163,7 @@ export function useCommitGraph(
     viewport.nodes.forEach((node, localRow) => {
       const rowTop = localRow * rowHeight;
 
-      // Background bands + the hover/selected border+glow are drawn at reduced
+      // Background bands + the hover/selected border are drawn at reduced
       // alpha for focus-mode-muted rows (off the focused branch's line — every
       // stash row always qualifies, since a stash is never on-line), mirroring
       // the DOM cells' independent `.graph-row-muted` opacity class. Without
@@ -215,13 +215,9 @@ export function useCommitGraph(
       // centred `stroke()`: a canvas stroke and a DOM border/box-shadow don't
       // reliably rasterise to the same pixel row, which showed up as the
       // graph-column and data-column borders looking visibly offset from
-      // each other. No `shadowBlur` here — it was reinforcing this crisp
-      // line right at its own edge, with nothing equivalent on the DOM
-      // border (which has no blur of its own; only the separate, diffuse
-      // overlay glow does), so the two ends of the same bar read as
-      // different weights. The glow stays purely ambient (the overlay's
-      // inset shadow, canvas's own row-band fill) rather than reinforcing
-      // the border itself.
+      // each other. Deliberately no `shadowBlur`/glow — a soft glow around
+      // this line looked heavier on the canvas side than the plain DOM
+      // border, and the plain crisp line reads consistently on its own.
       if (isSelected || isHovered) {
         ctx.globalAlpha = baseAlpha * (isSelected ? 0.9 : 0.7);
         ctx.fillStyle = selectionAccent;

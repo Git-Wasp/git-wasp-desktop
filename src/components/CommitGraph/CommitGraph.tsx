@@ -142,15 +142,6 @@ const GraphRow = memo(function GraphRow({
       ? "color-mix(in srgb, var(--color-accent-primary) 70%, transparent)"
       : null;
 
-  // Soft ambient glow — kept separate from the border above (see the
-  // dedicated overlay below) since it's diffuse by design, so any minor
-  // canvas/DOM blur mismatch is imperceptible, unlike a hard-edged border.
-  const rowGlow = selected
-    ? "inset 0 0 6px 0 color-mix(in srgb, var(--color-accent-primary) 55%, transparent)"
-    : hovered
-      ? "inset 0 0 4px 0 color-mix(in srgb, var(--color-accent-primary) 30%, transparent)"
-      : "none";
-
   const renderCell = (col: GraphColumn) => {
     switch (col.kind) {
       case "commit":
@@ -244,15 +235,6 @@ const GraphRow = memo(function GraphRow({
       {!graphOnRight && (
         <div data-cell="filler" style={{ flex: "1 1 0", minWidth: 0, height: "100%", background: cellBg }} />
       )}
-      {/* Glow overlay (the border itself lives on the row root — see
-          `rowBorderColor` above), last so it paints on top of every cell's
-          own opaque background rather than underneath it. */}
-      <div
-        data-testid="row-glow"
-        aria-hidden
-        className={muted ? "graph-row-muted" : undefined}
-        style={{ position: "absolute", inset: 0, pointerEvents: "none", boxShadow: rowGlow }}
-      />
     </div>
   );
 });

@@ -709,6 +709,13 @@ description. See TODO.md for work still outstanding.
       entirely, leaving a plain crisp fill on both sides; the glow stays
       purely ambient (DOM overlay's inset shadow; canvas's own row-band
       fill) rather than reinforcing the edge.
+      **Fourth follow-up** — decided the glow wasn't worth the complexity it
+      kept costing (three follow-ups just to make it read consistently) and
+      dropped it outright. Removed `GraphRow`'s `rowGlow`/overlay div
+      entirely (the border it doesn't touch — `rowBorderColor` — stays);
+      the row highlight is now just the background band + the (now
+      consistently pixel-aligned, equal-weight) border, on both canvas and
+      DOM. Tests for the overlay removed from `CommitGraph.test.tsx`.
 - [x] The new translucent scroll highlight bar in the diff gutter should be
       "scrollable" like a scrollbar - currently it's only "draggable". Added
       `onWheel` handling to `ChangeOverview`'s track: hovering the strip and
