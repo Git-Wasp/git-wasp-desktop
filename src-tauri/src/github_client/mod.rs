@@ -393,6 +393,60 @@ pub fn aggregate_ci_status(runs: &[GhCheckRun]) -> CiStatus {
     CiStatus::Success
 }
 
+/// Per-PR round trips (check-runs + reviews) are independent, so they're
+/// issued concurrently rather than in a sequential loop — 50 open PRs used to
+/// mean 101 sequential round-trips (seconds of latency, an easy route to
+/// secondary rate limiting). Capped at `MAX_CONCURRENT_PR_FETCHES` in-flight
+/// requests via a semaphore so a large PR list doesn't fire everything at
+/// once.
+const MAX_CONCURRENT_PR_FETCHES: usize = 8;
+
+async fn fetch_ci_status(
+    client: &reqwest::Client,
+    base: &str,
+    owner: &str,
+    repo: &str,
+    sha: &str,
+    token: &str,
+) -> CiStatus {
+    match client
+        .get(format!(
+            "{base}/repos/{owner}/{repo}/commits/{sha}/check-runs?per_page=100"
+        ))
+        .bearer_auth(token)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+    {
+        Ok(resp) => match resp.json::<CheckRunsResponse>().await {
+            Ok(parsed) => aggregate_ci_status(&parsed.check_runs),
+            Err(_) => CiStatus::None,
+        },
+        Err(_) => CiStatus::None,
+    }
+}
+
+async fn fetch_approval_count(
+    client: &reqwest::Client,
+    base: &str,
+    owner: &str,
+    repo: &str,
+    pr_number: u64,
+    token: &str,
+) -> u32 {
+    let reviews: Vec<GhReview> = match client
+        .get(format!("{base}/repos/{owner}/{repo}/pulls/{pr_number}/reviews"))
+        .bearer_auth(token)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+    {
+        Ok(resp) => resp.json::<Vec<GhReview>>().await.unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
+    reviews.iter().filter(|r| r.state == "APPROVED").count() as u32
+}
+
 pub async fn list_pull_requests(
     base: &str,
     owner: &str,
@@ -412,42 +466,35 @@ pub async fn list_pull_requests(
         .context("list PRs request failed")?;
     let prs: Vec<GhPr> = github_json(response, "pull requests").await?;
 
-    let mut result = Vec::new();
-    for pr in prs {
-        let sha = &pr.head.sha;
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_PR_FETCHES));
+    let mut join_set = tokio::task::JoinSet::new();
+    for (index, pr) in prs.into_iter().enumerate() {
+        let client = client.clone();
+        let base = base.to_string();
+        let owner = owner.to_string();
+        let repo = repo.to_string();
+        let token = token.to_string();
+        let semaphore = semaphore.clone();
+        join_set.spawn(async move {
+            let _permit = semaphore.acquire_owned().await.expect("semaphore closed");
+            let ci_status = fetch_ci_status(&client, &base, &owner, &repo, &pr.head.sha, &token).await;
+            let approval_count =
+                fetch_approval_count(&client, &base, &owner, &repo, pr.number, &token).await;
+            (index, pr, ci_status, approval_count)
+        });
+    }
 
-        let ci_status = match client
-            .get(format!(
-                "{base}/repos/{owner}/{repo}/commits/{sha}/check-runs?per_page=100"
-            ))
-            .bearer_auth(token)
-            .header("Accept", "application/vnd.github+json")
-            .send()
-            .await
-        {
-            Ok(resp) => match resp.json::<CheckRunsResponse>().await {
-                Ok(parsed) => aggregate_ci_status(&parsed.check_runs),
-                Err(_) => CiStatus::None,
-            },
-            Err(_) => CiStatus::None,
-        };
+    let mut indexed = Vec::new();
+    while let Some(joined) = join_set.join_next().await {
+        indexed.push(joined.expect("PR fetch task panicked"));
+    }
+    // JoinSet completion order isn't input order — restore it so PR listing
+    // stays deterministic (matching GitHub's own ordering) across runs.
+    indexed.sort_by_key(|(index, ..)| *index);
 
-        let reviews: Vec<GhReview> = match client
-            .get(format!(
-                "{base}/repos/{owner}/{repo}/pulls/{}/reviews",
-                pr.number
-            ))
-            .bearer_auth(token)
-            .header("Accept", "application/vnd.github+json")
-            .send()
-            .await
-        {
-            Ok(resp) => resp.json::<Vec<GhReview>>().await.unwrap_or_default(),
-            Err(_) => Vec::new(),
-        };
-        let approval_count = reviews.iter().filter(|r| r.state == "APPROVED").count() as u32;
-
-        result.push(PullRequest {
+    Ok(indexed
+        .into_iter()
+        .map(|(_, pr, ci_status, approval_count)| PullRequest {
             number: pr.number,
             title: pr.title,
             author: pr
@@ -459,9 +506,8 @@ pub async fn list_pull_requests(
             url: pr.html_url,
             ci_status,
             approval_count,
-        });
-    }
-    Ok(result)
+        })
+        .collect())
 }
 
 /// Turn GitHub's opaque "Resource not accessible by integration" 403 into an
@@ -912,6 +958,64 @@ mod tests {
         assert_eq!(prs[0].number, 42);
         assert_eq!(prs[0].ci_status, CiStatus::Success);
         assert_eq!(prs[0].approval_count, 1);
+    }
+
+    #[tokio::test]
+    async fn list_pull_requests_fetches_check_runs_and_reviews_concurrently() {
+        // N PRs, each with a delayed check-runs/reviews mock. If the fetches
+        // are still sequential, total wall time scales with N * delay; if
+        // concurrent, it stays close to one round-trip's delay regardless of N.
+        const N: u64 = 8;
+        const DELAY_MS: u64 = 60;
+
+        let server = httpmock::MockServer::start();
+        let pr_bodies: Vec<_> = (0..N)
+            .map(|i| {
+                serde_json::json!({
+                    "number": i,
+                    "title": format!("PR {i}"),
+                    "user": { "login": "mike" },
+                    "head": { "ref": format!("feat/{i}"), "sha": format!("sha{i}") },
+                    "base": { "ref": "main", "sha": "def456" },
+                    "html_url": format!("https://github.com/mike/gitclient/pull/{i}")
+                })
+            })
+            .collect();
+        server.mock(|when, then| {
+            when.method(httpmock::Method::GET)
+                .path("/repos/mike/gitclient/pulls");
+            then.status(200).json_body(serde_json::json!(pr_bodies));
+        });
+        for i in 0..N {
+            server.mock(|when, then| {
+                when.method(httpmock::Method::GET)
+                    .path(format!("/repos/mike/gitclient/commits/sha{i}/check-runs"));
+                then.status(200)
+                    .delay(std::time::Duration::from_millis(DELAY_MS))
+                    .json_body(serde_json::json!({ "check_runs": [] }));
+            });
+            server.mock(|when, then| {
+                when.method(httpmock::Method::GET)
+                    .path(format!("/repos/mike/gitclient/pulls/{i}/reviews"));
+                then.status(200)
+                    .delay(std::time::Duration::from_millis(DELAY_MS))
+                    .json_body(serde_json::json!([]));
+            });
+        }
+
+        let started = std::time::Instant::now();
+        let prs = list_pull_requests(&server.base_url(), "mike", "gitclient", "test-token")
+            .await
+            .unwrap();
+        let elapsed = started.elapsed();
+
+        assert_eq!(prs.len(), N as usize);
+        assert!(
+            elapsed < std::time::Duration::from_millis(N * DELAY_MS),
+            "expected concurrent fetches to finish well under {}ms (sequential worst case), took {:?}",
+            N * DELAY_MS,
+            elapsed
+        );
     }
 
     #[test]
