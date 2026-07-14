@@ -20,9 +20,13 @@ pub fn stash_save(repo: &mut Repository, message: Option<&str>) -> anyhow::Resul
         "Git user identity not configured. Set user.name and user.email in your .gitconfig.",
     )?;
     let msg = message.unwrap_or("WIP");
-    let oid = repo
-        .stash_save(&sig, msg, None)
-        .context("nothing to stash — working tree is clean")?;
+    let oid = repo.stash_save(&sig, msg, None).map_err(|e| {
+        if e.code() == git2::ErrorCode::NotFound {
+            anyhow::anyhow!("nothing to stash — working tree is clean")
+        } else {
+            anyhow::Error::new(e).context("failed to save stash")
+        }
+    })?;
     let base_oid = repo
         .find_commit(oid)
         .ok()
@@ -189,6 +193,24 @@ mod tests {
         stash_save(&mut repo, Some("my stash")).unwrap();
         let content = fs::read_to_string(dir.path().join("file.txt")).unwrap();
         assert_eq!(normalise(&content), "original\n");
+    }
+
+    #[test]
+    fn stash_save_does_not_mislabel_a_lock_contention_error_as_nothing_to_stash() {
+        // A stray index.lock (simulating a concurrent git process holding the
+        // lock) makes repo.stash_save fail for a reason that has nothing to do
+        // with a clean working tree — there IS something to stash here.
+        let (dir, mut repo) = init_repo();
+        commit_file(&repo, &dir, "file.txt", "original\n");
+        fs::write(dir.path().join("file.txt"), "changed\n").unwrap();
+        fs::write(dir.path().join(".git").join("index.lock"), "").unwrap();
+
+        let err = stash_save(&mut repo, None).unwrap_err().to_string();
+
+        assert!(
+            !err.contains("working tree is clean"),
+            "a lock-contention failure must not be mislabeled as a clean tree: {err}"
+        );
     }
 
     #[test]
