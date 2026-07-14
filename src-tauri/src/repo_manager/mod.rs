@@ -97,8 +97,7 @@ fn now_millis() -> u64 {
 /// resolves to one tab.
 fn repo_info(repo: &Repository) -> RepoInfo {
     let path = repo
-        .path()
-        .parent()
+        .workdir()
         .and_then(|p| p.to_str())
         .unwrap_or("")
         .to_string();
@@ -1117,6 +1116,43 @@ mod tests {
         assert!(result.is_ok(), "{:?}", result.err());
         let info = result.unwrap();
         assert!(!info.name.is_empty());
+    }
+
+    #[test]
+    fn repo_info_uses_the_actual_workdir_for_a_linked_worktree() {
+        let (main_dir, repo) = make_git_repo_with_commit();
+        let head = repo.head().unwrap().peel_to_commit().unwrap().id();
+        let worktree_dir = tempfile::tempdir().unwrap();
+        // Register a linked worktree via the git CLI (git2's worktree support
+        // doesn't cover the checkout step conveniently here); its gitdir will
+        // be <main>/.git/worktrees/wt.
+        let output = std::process::Command::new("git")
+            .args([
+                "worktree",
+                "add",
+                "--detach",
+                worktree_dir.path().to_str().unwrap(),
+                &head.to_string(),
+            ])
+            .current_dir(main_dir.path())
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git worktree add failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        drop(repo);
+
+        let wt_repo = git2::Repository::open(worktree_dir.path()).unwrap();
+        let info = repo_info(&wt_repo);
+
+        assert_eq!(
+            std::fs::canonicalize(&info.path).unwrap(),
+            std::fs::canonicalize(worktree_dir.path()).unwrap(),
+            "repo_info's path must be the worktree's actual working directory, \
+             not .git/worktrees/<name> (repo.path()'s parent for a linked worktree)"
+        );
     }
 
     #[test]
