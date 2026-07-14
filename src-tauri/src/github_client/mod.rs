@@ -141,7 +141,12 @@ async fn start_device_flow_at(url: &str) -> anyhow::Result<DeviceFlowInit> {
         .text()
         .await
         .context("failed to read device code response body")?;
-    debug!("device code response: status={status} body={body}");
+    // Never log the raw body: it carries `device_code`, the credential used
+    // to poll for the access token during its ~15-minute window. The
+    // token-poll path nearby gets this right (logs a boolean only); the
+    // parsed summary below (user_code/verification_uri/interval/expires_in)
+    // is the safe substitute.
+    debug!("device code response received: status={status}");
     let resp: DeviceCodeResponse = serde_json::from_str(&body).with_context(|| {
         format!("failed to parse device code response (status {status}): {body}")
     })?;
