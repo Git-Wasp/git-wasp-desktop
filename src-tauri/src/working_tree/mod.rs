@@ -526,7 +526,7 @@ pub fn discard_file(repo: &Repository, path: &str) -> anyhow::Result<WorkingTree
     if in_head {
         let mut co = git2::build::CheckoutBuilder::new();
         co.force().path(path);
-        repo.checkout_head(Some(&mut co))
+        repo.checkout_index(None, Some(&mut co))
             .with_context(|| format!("failed to discard: {path}"))?;
     } else {
         // Untracked: delete from disk
@@ -1356,6 +1356,28 @@ mod tests {
         discard_file(&repo, "file.txt").unwrap();
         let content = fs::read_to_string(dir.path().join("file.txt")).unwrap();
         assert_eq!(normalise(&content), "original\n");
+    }
+
+    #[test]
+    fn discard_file_preserves_staged_content_when_discarding_unstaged_edits() {
+        // Stage a careful partial change, then make a further *unstaged* edit
+        // on top, then discard. Only the unstaged edit should be lost — the
+        // staged version must survive (this is what `git checkout -- <path>`
+        // does: restore the working tree from the index, not from HEAD).
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "file.txt", "original\n");
+        make_initial_commit(&repo);
+
+        write_and_stage(&repo, &dir, "file.txt", "staged change\n");
+        fs::write(dir.path().join("file.txt"), "unstaged scribble\n").unwrap();
+
+        discard_file(&repo, "file.txt").unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dir.path().join("file.txt")).unwrap(),
+            "staged change\n",
+            "discard must restore from the index, not wipe staged work back to HEAD"
+        );
     }
 
     #[test]
