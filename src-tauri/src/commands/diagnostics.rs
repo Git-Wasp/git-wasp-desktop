@@ -49,10 +49,49 @@ pub fn open_log_dir(app: AppHandle) -> Result<(), String> {
 /// file log captures both sides. Callers should never pass PII.
 #[tauri::command]
 pub fn frontend_log(level: String, message: String) {
+    let message = sanitize_log_message(&message);
     match level.as_str() {
         "error" => log::error!(target: "frontend", "{message}"),
         "warn" => log::warn!(target: "frontend", "{message}"),
         "debug" => log::debug!(target: "frontend", "{message}"),
         _ => log::info!(target: "frontend", "{message}"),
+    }
+}
+
+const MAX_FRONTEND_LOG_LEN: usize = 2048;
+
+/// Strips embedded newlines (which could forge fake log lines in the shared
+/// diagnostics file users share for support) and caps length, so a single
+/// runaway frontend log call can't blow up the log file.
+fn sanitize_log_message(message: &str) -> String {
+    let mut s: String = message.chars().filter(|c| *c != '\n' && *c != '\r').collect();
+    if s.len() > MAX_FRONTEND_LOG_LEN {
+        s.truncate(MAX_FRONTEND_LOG_LEN);
+        s.push_str("…[truncated]");
+    }
+    s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_log_message_strips_embedded_newlines() {
+        let out = sanitize_log_message("line one\nFAKE ERROR forged line\r\nline two");
+        assert!(!out.contains('\n'));
+        assert!(!out.contains('\r'));
+    }
+
+    #[test]
+    fn sanitize_log_message_caps_length() {
+        let long = "x".repeat(10_000);
+        let out = sanitize_log_message(&long);
+        assert!(out.len() <= MAX_FRONTEND_LOG_LEN + "…[truncated]".len());
+    }
+
+    #[test]
+    fn sanitize_log_message_leaves_short_single_line_messages_untouched() {
+        assert_eq!(sanitize_log_message("normal message"), "normal message");
     }
 }
