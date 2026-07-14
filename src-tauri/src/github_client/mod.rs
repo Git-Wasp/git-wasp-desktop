@@ -425,9 +425,15 @@ async fn fetch_ci_status(
     {
         Ok(resp) => match resp.json::<CheckRunsResponse>().await {
             Ok(parsed) => aggregate_ci_status(&parsed.check_runs),
-            Err(_) => CiStatus::None,
+            Err(e) => {
+                warn!("failed to parse check-runs for {sha}: {e}");
+                CiStatus::None
+            }
         },
-        Err(_) => CiStatus::None,
+        Err(e) => {
+            warn!("failed to fetch check-runs for {sha}: {e}");
+            CiStatus::None
+        }
     }
 }
 
@@ -446,8 +452,17 @@ async fn fetch_approval_count(
         .send()
         .await
     {
-        Ok(resp) => resp.json::<Vec<GhReview>>().await.unwrap_or_default(),
-        Err(_) => Vec::new(),
+        Ok(resp) => match resp.json::<Vec<GhReview>>().await {
+            Ok(r) => r,
+            Err(e) => {
+                warn!("failed to parse reviews for PR #{pr_number}: {e}");
+                Vec::new()
+            }
+        },
+        Err(e) => {
+            warn!("failed to fetch reviews for PR #{pr_number}: {e}");
+            Vec::new()
+        }
     };
     reviews.iter().filter(|r| r.state == "APPROVED").count() as u32
 }
