@@ -758,26 +758,25 @@ fn inject_stashes(repo: &Repository, nodes: Vec<GraphNode>) -> Vec<GraphNode> {
 
 /// Counts changed files in the working tree (modified/staged/untracked,
 /// excluding ignored) — the badge count for the working-tree graph node.
-/// Find the graph row of a commit by OID, matching the ordering used by
-/// `compute_layout` (HEAD revwalk, topological + time sort, offset by the
-/// synthetic working-tree node when the tree is dirty). Returns `None` if the
-/// commit isn't reachable from HEAD (so it has no row in the graph).
-pub fn find_commit_row(repo: &Repository, oid_str: &str) -> anyhow::Result<Option<usize>> {
-    // Build the same full layout the viewport uses (which embeds stash nodes, so
-    // a commit's row reflects any stashes spliced in above it), then look up the
-    // commit's position. The working-tree node (row 0 when dirty) shifts every
-    // commit down by one, mirroring `slice_viewport`.
-    let full = build_full_layout(repo)?;
-    let head_id = repo.head().ok().and_then(|h| h.target());
-    let wip_offset = if head_id.is_some() && changed_file_count(repo) > 0 {
+/// Find the graph row of a commit by OID from the cached layout, matching the
+/// ordering `slice_viewport`/`search_cache` use (HEAD revwalk order, offset by
+/// the synthetic working-tree node when the tree is dirty). Returns `None` if
+/// the commit isn't reachable from HEAD, or the cache hasn't been built yet —
+/// callers should refresh the cache (`compute_layout_cached`) first.
+pub fn find_commit_row(cache: &Option<GraphCache>, oid_str: &str) -> Option<usize> {
+    let cache = cache.as_ref()?;
+    // Mirrors search_nodes' wip_offset condition exactly, so a row returned
+    // here always agrees with what search_graph/slice_viewport would draw.
+    let wip_offset = if !cache.nodes.is_empty() && cache.change_count > 0 {
         1
     } else {
         0
     };
-    Ok(full
+    cache
+        .nodes
         .iter()
         .position(|n| n.oid == oid_str)
-        .map(|i| i + wip_offset))
+        .map(|i| i + wip_offset)
 }
 
 /// Find commits matching `query` in the cached layout: a case-insensitive
@@ -942,11 +941,38 @@ mod tests {
             .unwrap();
         let c3 = make_commit(&repo, "third", &[&c2]);
 
+        let mut cache = None;
+        compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+
         // Newest first: third is row 0, first is row 2.
-        assert_eq!(find_commit_row(&repo, &c3.to_string()).unwrap(), Some(0));
+        assert_eq!(find_commit_row(&cache, &c3.to_string()), Some(0));
+        assert_eq!(find_commit_row(&cache, &c1.id().to_string()), Some(2));
+    }
+
+    #[test]
+    fn find_commit_row_returns_none_for_an_empty_cache() {
+        assert_eq!(find_commit_row(&None, "deadbeef"), None);
+    }
+
+    #[test]
+    fn find_commit_row_reads_from_the_cache_without_rebuilding() {
+        // Populate the cache once, then mutate the repo (add a commit) without
+        // refreshing the cache. If find_commit_row rebuilds the layout from the
+        // repo instead of reading the cache, it would see the new commit; since
+        // it must read the stale cache, the new commit has no row.
+        let (_dir, repo) = init_repo();
+        let c1 = repo.find_commit(make_commit(&repo, "first", &[])).unwrap();
+
+        let mut cache = None;
+        compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+
+        let c2 = make_commit(&repo, "second", &[&c1]);
+
+        assert_eq!(find_commit_row(&cache, &c1.id().to_string()), Some(0));
         assert_eq!(
-            find_commit_row(&repo, &c1.id().to_string()).unwrap(),
-            Some(2)
+            find_commit_row(&cache, &c2.to_string()),
+            None,
+            "a commit added after the cache was built must not be found in the stale cache"
         );
     }
 
@@ -1095,13 +1121,16 @@ mod tests {
             .find(|n| n.summary == "first")
             .map(|n| n.oid.clone())
             .unwrap();
-        let before = find_commit_row(&repo, &root).unwrap();
+        let mut cache = None;
+        compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+        let before = find_commit_row(&cache, &root);
 
         std::fs::write(dir.path().join("f.txt"), "dirty\n").unwrap();
         crate::stash::stash_save(&mut repo, Some("WIP")).unwrap();
         // The stash sits above its base (HEAD), which is above the root, so the
-        // root shifts down by one.
-        let after = find_commit_row(&repo, &root).unwrap();
+        // root shifts down by one. Refresh the cache (stash fingerprint changed).
+        compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+        let after = find_commit_row(&cache, &root);
         assert_eq!(after, before.map(|r| r + 1));
     }
 
@@ -1110,7 +1139,9 @@ mod tests {
         let (_dir, repo) = init_repo();
         make_commit(&repo, "only", &[]);
         let missing = "0".repeat(40);
-        assert_eq!(find_commit_row(&repo, &missing).unwrap(), None);
+        let mut cache = None;
+        compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+        assert_eq!(find_commit_row(&cache, &missing), None);
     }
 
     #[test]
@@ -1140,7 +1171,9 @@ mod tests {
         assert!(summaries.contains(&"third"));
         // The ahead commit is reachable by find_commit_row too (so reveal/scroll
         // works), and the two walks agree on its position.
-        let row = find_commit_row(&repo, &c3.to_string()).unwrap();
+        let mut cache = None;
+        compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+        let row = find_commit_row(&cache, &c3.to_string());
         assert_eq!(
             row,
             Some(0),
@@ -1186,8 +1219,10 @@ mod tests {
         assert_eq!(wt.lane, head.lane);
         assert_eq!(wt.parents, vec![head.oid.clone()]);
         assert_eq!(viewport.head_row, Some(head.row));
+        let mut cache = None;
+        compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
         assert_eq!(
-            find_commit_row(&repo, &c1.id().to_string()).unwrap(),
+            find_commit_row(&cache, &c1.id().to_string()),
             Some(head.row)
         );
         // Commits ahead of HEAD still sit above it, unchanged.
