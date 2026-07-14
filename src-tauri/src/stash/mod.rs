@@ -68,6 +68,16 @@ pub fn stash_list(repo: &mut Repository) -> anyhow::Result<Vec<StashEntry>> {
 /// with the new message and drop the original — note this moves the renamed
 /// stash to the top (stash@{0}). Uses the `git` CLI (the sanctioned fallback for
 /// gaps in git2; `git stash store` has no libgit2 equivalent).
+///
+/// For every index but 0, store runs *before* drop: storing the same commit
+/// under a new message while the original entry still exists is safe (it just
+/// writes a new reflog entry), so if store fails the original is untouched —
+/// no window where the stash exists nowhere. Index 0 can't use that ordering:
+/// `git stash store` is a true no-op (exit 0, no new reflog entry) when the
+/// given oid already equals the *current* stash@{0}, which is exactly the case
+/// when renaming the top entry — so drop must run first there to force a real
+/// store afterward, keeping the (documented, narrow) failure window for that
+/// one case.
 pub fn stash_rename(repo: &mut Repository, index: usize, message: &str) -> anyhow::Result<()> {
     let oid = {
         let entries = stash_list(repo)?;
@@ -80,30 +90,44 @@ pub fn stash_rename(repo: &mut Repository, index: usize, message: &str) -> anyho
     let workdir = repo
         .workdir()
         .context("bare repositories have no working tree")?;
-    // Drop the entry first, then re-store the same commit with the new message —
-    // storing it while it's still the current stash@{0} is a no-op that adds no
-    // reflog entry. The commit object survives the drop, so re-storing is safe.
-    let drop = std::process::Command::new("git")
-        .args(["stash", "drop", &format!("stash@{{{index}}}")])
-        .current_dir(workdir)
-        .output()
-        .context("failed to run git stash drop")?;
-    if !drop.status.success() {
-        anyhow::bail!(
-            "git stash drop failed: {}",
-            String::from_utf8_lossy(&drop.stderr).trim()
-        );
-    }
-    let store = std::process::Command::new("git")
-        .args(["stash", "store", "-m", message, &oid])
-        .current_dir(workdir)
-        .output()
-        .context("failed to run git stash store")?;
-    if !store.status.success() {
-        anyhow::bail!(
-            "git stash store failed: {}",
-            String::from_utf8_lossy(&store.stderr).trim()
-        );
+
+    let run_store = || -> anyhow::Result<()> {
+        let store = std::process::Command::new("git")
+            .args(["stash", "store", "-m", message, &oid])
+            .current_dir(workdir)
+            .output()
+            .context("failed to run git stash store")?;
+        if !store.status.success() {
+            anyhow::bail!(
+                "git stash store failed: {}",
+                String::from_utf8_lossy(&store.stderr).trim()
+            );
+        }
+        Ok(())
+    };
+    let run_drop = |target_index: usize| -> anyhow::Result<()> {
+        let drop = std::process::Command::new("git")
+            .args(["stash", "drop", &format!("stash@{{{target_index}}}")])
+            .current_dir(workdir)
+            .output()
+            .context("failed to run git stash drop")?;
+        if !drop.status.success() {
+            anyhow::bail!(
+                "git stash drop failed: {}",
+                String::from_utf8_lossy(&drop.stderr).trim()
+            );
+        }
+        Ok(())
+    };
+
+    if index == 0 {
+        run_drop(0)?;
+        run_store()?;
+    } else {
+        run_store()?;
+        // The store above pushed a new stash@{0} referencing the same commit,
+        // shifting the original up to stash@{index + 1}.
+        run_drop(index + 1)?;
     }
     Ok(())
 }
@@ -228,5 +252,37 @@ mod tests {
         assert!(entries[0].message.contains("new name"));
         // Same underlying stash commit — no data lost in the rename.
         assert_eq!(entries[0].oid, original_oid);
+    }
+
+    #[test]
+    fn stash_rename_keeps_exactly_one_entry_per_stash_when_renaming_a_non_top_entry() {
+        // Renaming stash@{1} (not the top of the stack) exercises the index
+        // arithmetic: `git stash store` always inserts at stash@{0}, so the
+        // entry being renamed shifts by one *regardless* of which index it
+        // started at. If that shift is miscounted, the rename either drops the
+        // wrong entry (losing a stash) or leaves a duplicate behind.
+        let (dir, mut repo) = init_repo();
+        commit_file(&repo, &dir, "file.txt", "original\n");
+        fs::write(dir.path().join("file.txt"), "older change\n").unwrap();
+        stash_save(&mut repo, Some("older stash")).unwrap();
+        fs::write(dir.path().join("file.txt"), "newer change\n").unwrap();
+        stash_save(&mut repo, Some("newer stash")).unwrap();
+
+        // stash@{0} = "newer stash", stash@{1} = "older stash".
+        let older_oid = stash_list(&mut repo).unwrap()[1].oid.clone();
+
+        stash_rename(&mut repo, 1, "renamed older stash").unwrap();
+
+        let entries = stash_list(&mut repo).unwrap();
+        assert_eq!(entries.len(), 2, "no stash should be lost or duplicated");
+        assert!(
+            entries.iter().any(|e| e.oid == older_oid
+                && e.message.contains("renamed older stash")),
+            "the renamed entry must keep its original commit and carry the new message"
+        );
+        assert!(
+            entries.iter().any(|e| e.message.contains("newer stash")),
+            "the untouched stash must survive unchanged"
+        );
     }
 }
