@@ -633,17 +633,37 @@ fn build_hunk_patch(
     hunk_index: usize,
     kind: DiffKind,
 ) -> anyhow::Result<String> {
-    let hunks = match kind {
-        DiffKind::Unstaged => crate::diff_engine::get_unstaged_diff(repo, path)?.hunks,
-        DiffKind::Staged => crate::diff_engine::get_staged_diff(repo, path)?.hunks,
+    let (hunks, old_side_is_new_file) = match kind {
+        DiffKind::Unstaged => (crate::diff_engine::get_unstaged_diff(repo, path)?.hunks, false),
+        DiffKind::Staged => {
+            let no_head_entry = repo
+                .head()
+                .ok()
+                .and_then(|h| h.peel_to_tree().ok())
+                .map(|t| t.get_path(Path::new(path)).is_err())
+                .unwrap_or(true);
+            (
+                crate::diff_engine::get_staged_diff(repo, path)?.hunks,
+                no_head_entry,
+            )
+        }
     };
     let hunk = hunks
         .into_iter()
         .find(|h| h.index == hunk_index)
         .ok_or_else(|| anyhow::anyhow!("hunk index {hunk_index} out of range"))?;
 
-    // Build minimal unified diff patch: file header + single hunk
-    let patch = format!("--- a/{path}\n+++ b/{path}\n{}", hunk.content);
+    // Build minimal unified diff patch: file header + single hunk. A staged
+    // diff whose file has no HEAD entry is an add — the "old" side is
+    // /dev/null, matching real `git diff --cached` output, so a reversing
+    // `git apply --cached --reverse` removes the index entry instead of
+    // leaving a staged empty blob.
+    let old_header = if old_side_is_new_file {
+        "--- /dev/null".to_string()
+    } else {
+        format!("--- a/{path}")
+    };
+    let patch = format!("{old_header}\n+++ b/{path}\n{}", hunk.content);
     Ok(patch)
 }
 
@@ -2126,4 +2146,30 @@ mod tests {
             .mode;
         assert_eq!(mode_before, mode_after);
     }
+
+    #[test]
+    fn unstage_hunk_on_a_newly_staged_all_add_file_removes_the_index_entry() {
+        let (dir, repo) = init_repo();
+        make_initial_commit(&repo);
+        write_and_stage(&repo, &dir, "new.txt", "line1\nline2\n");
+
+        let hunks = crate::diff_engine::get_staged_diff(&repo, "new.txt")
+            .unwrap()
+            .hunks;
+        assert_eq!(hunks.len(), 1);
+        unstage_hunk(&repo, "new.txt", 0).unwrap();
+
+        // `unstage_hunk` shells out to `git apply`, which rewrites `.git/index`
+        // on disk directly; force a re-read so this repo handle's cached Index
+        // object (opened earlier by `write_and_stage`/`get_staged_diff`) picks
+        // up that external change instead of asserting on a stale snapshot.
+        let mut index = repo.index().unwrap();
+        index.read(true).unwrap();
+        assert!(
+            index.get_path(Path::new("new.txt"), 0).is_none(),
+            "unstaging every line of a newly-added file must remove the index entry \
+             entirely, matching `git restore --staged`, not leave a staged empty blob"
+        );
+    }
 }
+
