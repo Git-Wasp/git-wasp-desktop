@@ -175,7 +175,9 @@ impl RepoManager {
             .collect();
         let mut config = self.config_lock()?;
         config.set_session(open_paths, active);
-        let _ = config.save();
+        if let Err(e) = config.save() {
+            log::error!(target: "config", "failed to persist session: {e}");
+        }
         Ok(())
     }
 
@@ -274,7 +276,9 @@ impl RepoManager {
     pub fn remove_recent(&self, path: &str) -> anyhow::Result<Vec<RepoEntry>> {
         let mut config = self.config_lock()?;
         config.remove_recent(Path::new(path));
-        let _ = config.save();
+        if let Err(e) = config.save() {
+            log::error!(target: "config", "failed to persist recent-repos removal: {e}");
+        }
         Ok(config.recent_repos.clone())
     }
 
@@ -614,7 +618,9 @@ impl RepoManager {
     pub fn set_active_theme(&self, id: Option<&str>) -> anyhow::Result<()> {
         let mut config = self.config_lock()?;
         config.active_theme = id.map(|s| s.to_string());
-        let _ = config.save();
+        if let Err(e) = config.save() {
+            log::error!(target: "config", "failed to persist active theme: {e}");
+        }
         Ok(())
     }
 
