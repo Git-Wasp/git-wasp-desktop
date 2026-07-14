@@ -365,6 +365,7 @@ pub fn get_stage_file_contents(
     path: &str,
     staged: bool,
 ) -> anyhow::Result<StageFileContents> {
+    crate::path_guard::validate_repo_relative(path)?;
     let workdir = repo
         .workdir()
         .context("bare repository has no working directory")?;
@@ -1856,6 +1857,13 @@ mod tests {
         assert_eq!(c.head_content, "a\nb\nc\n");
         assert_eq!(c.worktree_content, "a\nB\nc\n");
         assert!(!c.is_binary);
+    }
+
+    #[test]
+    fn get_stage_file_contents_rejects_paths_escaping_the_repo() {
+        let (_dir, repo) = init_repo();
+        make_initial_commit(&repo);
+        assert!(get_stage_file_contents(&repo, "../../../etc/passwd", false).is_err());
     }
 
     #[test]
