@@ -29,7 +29,16 @@ pub(crate) fn diag_log(line: &str) {
 pub struct GraphCache {
     key: CacheKey,
     /// All commits, newest-first; `row` equals the index. No working-tree node.
+    /// Each node's `edges` holds only its *own* topology events (primary
+    /// continuation, merge, branch, stash) — O(1) per node. "Other lane passes
+    /// straight through this row" edges are *not* stored here; see `lane_spans`.
     nodes: Vec<GraphNode>,
+    /// Compact record of every lane's "occupied but not the row's own commit"
+    /// runs, replacing what used to be a `GraphEdge::Straight` stored on every
+    /// row a lane passed through unchanged — see [`compact_pass_through_edges`].
+    /// `slice_viewport` re-expands the spans overlapping a requested range back
+    /// into per-row `GraphEdge`s on the fly.
+    lane_spans: Vec<LaneSpan>,
     change_count: u32,
     /// Absolute graph row of the HEAD commit (tip of the checked-out branch),
     /// including the working-tree node's offset when the tree is dirty. Sent to
@@ -37,6 +46,23 @@ pub struct GraphCache {
     /// HEAD's dot wherever it sits (other branches may be ahead of HEAD, so HEAD
     /// is often not the topmost row).
     head_row: Option<usize>,
+}
+
+/// A lane's contiguous "occupied by a commit that isn't this row's own" run —
+/// i.e. what used to be a `GraphEdge::Straight` repeated on every row in
+/// [`start_row`, `end_row`]. One `LaneSpan` replaces up to thousands of
+/// per-row `GraphEdge`s for a lane that stays reserved (waiting for a distant
+/// parent) across a long stretch of unrelated history — the O(rows × lanes)
+/// memory the review flagged. See [`compact_pass_through_edges`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LaneSpan {
+    lane: usize,
+    color_index: usize,
+    on_head_line: bool,
+    /// Inclusive row range (indices into the cached `nodes`, i.e. before the
+    /// working-tree offset `slice_viewport` applies).
+    start_row: usize,
+    end_row: usize,
 }
 
 #[derive(PartialEq)]
@@ -95,8 +121,10 @@ fn refs_fingerprint(repo: &Repository) -> u64 {
 }
 
 /// Lay out the entire HEAD-reachable history. Expensive (one full revwalk + lane
-/// assignment); only called on a cache miss.
-fn build_full_layout(repo: &Repository) -> anyhow::Result<Vec<GraphNode>> {
+/// assignment); only called on a cache miss. Returns the laid-out nodes (with
+/// pass-through edges already compacted out — see [`compact_pass_through_edges`])
+/// plus the `LaneSpan`s that replace them.
+fn build_full_layout(repo: &Repository) -> anyhow::Result<(Vec<GraphNode>, Vec<LaneSpan>)> {
     let started = Instant::now();
     let head_id = repo.head().ok().and_then(|h| h.target());
     let label_map = build_label_map(repo);
@@ -107,7 +135,14 @@ fn build_full_layout(repo: &Repository) -> anyhow::Result<Vec<GraphNode>> {
 
     let reachable = head_reachable_set(&commits, head_id);
     let nodes = assign_lanes(&commits, &label_map, head_id, &reachable);
-    let nodes = inject_stashes(repo, nodes);
+    let mut nodes = inject_stashes(repo, nodes);
+    // Run strictly after assign_lanes/inject_stashes have finished — both are
+    // free to keep producing full per-row pass-through edges internally
+    // (inject_stashes' own splice logic depends on reading them from
+    // `node.edges` to know which lanes to carry across a stash splice); this
+    // is a pure post-processing pass over their already-correct, already
+    // row-renumbered output, so it can't disturb that logic.
+    let lane_spans = compact_pass_through_edges(&mut nodes);
     log_full_build(
         repo,
         &commits,
@@ -115,7 +150,82 @@ fn build_full_layout(repo: &Repository) -> anyhow::Result<Vec<GraphNode>> {
         walk_ms,
         started.elapsed().as_millis(),
     );
-    Ok(nodes)
+    Ok((nodes, lane_spans))
+}
+
+/// Strips "another lane passes straight through this row" edges out of
+/// `nodes` (kept: each node's own primary-continuation edge plus any
+/// merge/branch/stash edges — all O(1) per node, real topology events) and
+/// returns them as compact [`LaneSpan`]s instead. A lane reserved for a
+/// distant parent and left waiting across, say, 10,000 unrelated rows used to
+/// mean 10,000 `GraphEdge`s held in the cache forever; here it becomes one
+/// `LaneSpan`. `slice_viewport` reconstructs the per-row edges for whichever
+/// rows a request actually needs.
+///
+/// A pass-through edge is `kind == Straight` with `src_lane != node.lane` (the
+/// row's *own* continuation edge always has `src_lane == node.lane`, so it's
+/// never touched here).
+fn compact_pass_through_edges(nodes: &mut [GraphNode]) -> Vec<LaneSpan> {
+    struct Open {
+        color_index: usize,
+        on_head_line: bool,
+        start_row: usize,
+        end_row: usize,
+    }
+
+    let mut open: HashMap<usize, Open> = HashMap::new();
+    let mut spans: Vec<LaneSpan> = Vec::new();
+
+    for (row, node) in nodes.iter_mut().enumerate() {
+        let own_lane = node.lane;
+        let mut kept = Vec::with_capacity(node.edges.len());
+        for edge in node.edges.drain(..) {
+            if !(matches!(edge.kind, EdgeKind::Straight) && edge.src_lane != own_lane) {
+                kept.push(edge);
+                continue;
+            }
+            let lane = edge.src_lane;
+            let extends = open.get(&lane).is_some_and(|o| {
+                o.color_index == edge.color_index
+                    && o.on_head_line == edge.on_head_line
+                    && o.end_row + 1 == row
+            });
+            if extends {
+                open.get_mut(&lane).unwrap().end_row = row;
+            } else {
+                if let Some(o) = open.remove(&lane) {
+                    spans.push(LaneSpan {
+                        lane,
+                        color_index: o.color_index,
+                        on_head_line: o.on_head_line,
+                        start_row: o.start_row,
+                        end_row: o.end_row,
+                    });
+                }
+                open.insert(
+                    lane,
+                    Open {
+                        color_index: edge.color_index,
+                        on_head_line: edge.on_head_line,
+                        start_row: row,
+                        end_row: row,
+                    },
+                );
+            }
+        }
+        node.edges = kept;
+    }
+    for (lane, o) in open {
+        spans.push(LaneSpan {
+            lane,
+            color_index: o.color_index,
+            on_head_line: o.on_head_line,
+            start_row: o.start_row,
+            end_row: o.end_row,
+        });
+    }
+    spans.sort_by_key(|s| s.start_row);
+    spans
 }
 
 /// Emit a one-line structural snapshot of the repo whenever the full layout is
@@ -165,6 +275,7 @@ fn log_full_build(
 /// (`head_row`) so the renderer can reach it even when HEAD isn't in the slice.
 fn slice_viewport(
     full: &[GraphNode],
+    lane_spans: &[LaneSpan],
     change_count: u32,
     head_pos: Option<usize>,
     offset: usize,
@@ -185,8 +296,28 @@ fn slice_viewport(
     let commit_end = (offset + limit).saturating_sub(wip_offset).min(full.len());
     let mut commit_nodes: Vec<GraphNode> =
         full.get(commit_start..commit_end).unwrap_or(&[]).to_vec();
+    // Spans overlapping this slice's row range at all, so the per-row check
+    // below doesn't have to scan every span in the whole cached history.
+    let relevant_spans: Vec<&LaneSpan> = lane_spans
+        .iter()
+        .filter(|s| s.start_row < commit_end && s.end_row >= commit_start)
+        .collect();
     for (i, node) in commit_nodes.iter_mut().enumerate() {
-        node.row = commit_start + i + wip_offset;
+        let row = commit_start + i;
+        node.row = row + wip_offset;
+        // Re-expand the pass-through edges compacted out of the cache (see
+        // `compact_pass_through_edges`) for this specific row.
+        for span in &relevant_spans {
+            if span.start_row <= row && row <= span.end_row {
+                node.edges.push(GraphEdge {
+                    src_lane: span.lane,
+                    dst_lane: span.lane,
+                    color_index: span.color_index,
+                    kind: EdgeKind::Straight,
+                    on_head_line: span.on_head_line,
+                });
+            }
+        }
     }
 
     let mut nodes: Vec<GraphNode> = Vec::new();
@@ -214,10 +345,17 @@ pub fn compute_layout(
     offset: usize,
     limit: usize,
 ) -> anyhow::Result<GraphViewport> {
-    let full = build_full_layout(repo)?;
+    let (full, lane_spans) = build_full_layout(repo)?;
     let change_count = changed_file_count(repo);
     let head_pos = full.iter().position(|n| n.is_head);
-    Ok(slice_viewport(&full, change_count, head_pos, offset, limit))
+    Ok(slice_viewport(
+        &full,
+        &lane_spans,
+        change_count,
+        head_pos,
+        offset,
+        limit,
+    ))
 }
 
 /// Layout that reuses a cached full-history layout while HEAD and refs are
@@ -235,12 +373,13 @@ pub fn compute_layout_cached(
     let key = cache_key(repo);
     let stale = cache.as_ref().map(|c| c.key != key).unwrap_or(true);
     if stale {
-        let nodes = build_full_layout(repo)?;
+        let (nodes, lane_spans) = build_full_layout(repo)?;
         let change_count = changed_file_count(repo);
         let head_row = nodes.iter().position(|n| n.is_head);
         *cache = Some(GraphCache {
             key,
             nodes,
+            lane_spans,
             change_count,
             head_row,
         });
@@ -249,6 +388,7 @@ pub fn compute_layout_cached(
     let cached = cache.as_ref().expect("cache populated above");
     Ok(slice_viewport(
         &cached.nodes,
+        &cached.lane_spans,
         cached.change_count,
         cached.head_row,
         offset,
@@ -758,26 +898,25 @@ fn inject_stashes(repo: &Repository, nodes: Vec<GraphNode>) -> Vec<GraphNode> {
 
 /// Counts changed files in the working tree (modified/staged/untracked,
 /// excluding ignored) — the badge count for the working-tree graph node.
-/// Find the graph row of a commit by OID, matching the ordering used by
-/// `compute_layout` (HEAD revwalk, topological + time sort, offset by the
-/// synthetic working-tree node when the tree is dirty). Returns `None` if the
-/// commit isn't reachable from HEAD (so it has no row in the graph).
-pub fn find_commit_row(repo: &Repository, oid_str: &str) -> anyhow::Result<Option<usize>> {
-    // Build the same full layout the viewport uses (which embeds stash nodes, so
-    // a commit's row reflects any stashes spliced in above it), then look up the
-    // commit's position. The working-tree node (row 0 when dirty) shifts every
-    // commit down by one, mirroring `slice_viewport`.
-    let full = build_full_layout(repo)?;
-    let head_id = repo.head().ok().and_then(|h| h.target());
-    let wip_offset = if head_id.is_some() && changed_file_count(repo) > 0 {
+/// Find the graph row of a commit by OID from the cached layout, matching the
+/// ordering `slice_viewport`/`search_cache` use (HEAD revwalk order, offset by
+/// the synthetic working-tree node when the tree is dirty). Returns `None` if
+/// the commit isn't reachable from HEAD, or the cache hasn't been built yet —
+/// callers should refresh the cache (`compute_layout_cached`) first.
+pub fn find_commit_row(cache: &Option<GraphCache>, oid_str: &str) -> Option<usize> {
+    let cache = cache.as_ref()?;
+    // Mirrors search_nodes' wip_offset condition exactly, so a row returned
+    // here always agrees with what search_graph/slice_viewport would draw.
+    let wip_offset = if !cache.nodes.is_empty() && cache.change_count > 0 {
         1
     } else {
         0
     };
-    Ok(full
+    cache
+        .nodes
         .iter()
         .position(|n| n.oid == oid_str)
-        .map(|i| i + wip_offset))
+        .map(|i| i + wip_offset)
 }
 
 /// Find commits matching `query` in the cached layout: a case-insensitive
@@ -942,11 +1081,38 @@ mod tests {
             .unwrap();
         let c3 = make_commit(&repo, "third", &[&c2]);
 
+        let mut cache = None;
+        compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+
         // Newest first: third is row 0, first is row 2.
-        assert_eq!(find_commit_row(&repo, &c3.to_string()).unwrap(), Some(0));
+        assert_eq!(find_commit_row(&cache, &c3.to_string()), Some(0));
+        assert_eq!(find_commit_row(&cache, &c1.id().to_string()), Some(2));
+    }
+
+    #[test]
+    fn find_commit_row_returns_none_for_an_empty_cache() {
+        assert_eq!(find_commit_row(&None, "deadbeef"), None);
+    }
+
+    #[test]
+    fn find_commit_row_reads_from_the_cache_without_rebuilding() {
+        // Populate the cache once, then mutate the repo (add a commit) without
+        // refreshing the cache. If find_commit_row rebuilds the layout from the
+        // repo instead of reading the cache, it would see the new commit; since
+        // it must read the stale cache, the new commit has no row.
+        let (_dir, repo) = init_repo();
+        let c1 = repo.find_commit(make_commit(&repo, "first", &[])).unwrap();
+
+        let mut cache = None;
+        compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+
+        let c2 = make_commit(&repo, "second", &[&c1]);
+
+        assert_eq!(find_commit_row(&cache, &c1.id().to_string()), Some(0));
         assert_eq!(
-            find_commit_row(&repo, &c1.id().to_string()).unwrap(),
-            Some(2)
+            find_commit_row(&cache, &c2.to_string()),
+            None,
+            "a commit added after the cache was built must not be found in the stale cache"
         );
     }
 
@@ -1026,7 +1192,7 @@ mod tests {
             .find_commit(make_commit(&repo, "match one", &[]))
             .unwrap();
         make_commit(&repo, "match two", &[&c1]);
-        let nodes = build_full_layout(&repo).unwrap();
+        let (nodes, _lane_spans) = build_full_layout(&repo).unwrap();
 
         // Clean tree: newest-first, so "match two" (row 0) precedes "match one".
         let clean = search_nodes(&nodes, 0, "match");
@@ -1044,6 +1210,7 @@ mod tests {
         // commit ("second") sitting above it — this exercises the pass-through.
         let first = build_full_layout(&repo)
             .unwrap()
+            .0
             .into_iter()
             .find(|n| n.summary == "first")
             .unwrap()
@@ -1055,7 +1222,12 @@ mod tests {
         std::fs::write(dir.path().join("f.txt"), "dirty\n").unwrap();
         crate::stash::stash_save(&mut repo, Some("WIP work")).unwrap();
 
-        let nodes = build_full_layout(&repo).unwrap();
+        // Go through the full pipeline (compaction + re-materialization), not
+        // build_full_layout directly, so this observes the real user-visible
+        // edges — build_full_layout's own nodes now hold only each node's
+        // *own* edges (pass-through edges live in LaneSpans until a viewport
+        // request re-expands them; see compact_pass_through_edges).
+        let nodes = compute_layout(&repo, 0, 10).unwrap().nodes;
 
         let base_row = nodes.iter().position(|n| n.oid == first).unwrap();
         let stash = nodes.iter().find(|n| n.is_stash).expect("a stash node");
@@ -1091,17 +1263,21 @@ mod tests {
         // Row of the root commit before stashing.
         let root = build_full_layout(&repo)
             .unwrap()
+            .0
             .iter()
             .find(|n| n.summary == "first")
             .map(|n| n.oid.clone())
             .unwrap();
-        let before = find_commit_row(&repo, &root).unwrap();
+        let mut cache = None;
+        compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+        let before = find_commit_row(&cache, &root);
 
         std::fs::write(dir.path().join("f.txt"), "dirty\n").unwrap();
         crate::stash::stash_save(&mut repo, Some("WIP")).unwrap();
         // The stash sits above its base (HEAD), which is above the root, so the
-        // root shifts down by one.
-        let after = find_commit_row(&repo, &root).unwrap();
+        // root shifts down by one. Refresh the cache (stash fingerprint changed).
+        compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+        let after = find_commit_row(&cache, &root);
         assert_eq!(after, before.map(|r| r + 1));
     }
 
@@ -1110,7 +1286,9 @@ mod tests {
         let (_dir, repo) = init_repo();
         make_commit(&repo, "only", &[]);
         let missing = "0".repeat(40);
-        assert_eq!(find_commit_row(&repo, &missing).unwrap(), None);
+        let mut cache = None;
+        compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+        assert_eq!(find_commit_row(&cache, &missing), None);
     }
 
     #[test]
@@ -1140,7 +1318,9 @@ mod tests {
         assert!(summaries.contains(&"third"));
         // The ahead commit is reachable by find_commit_row too (so reveal/scroll
         // works), and the two walks agree on its position.
-        let row = find_commit_row(&repo, &c3.to_string()).unwrap();
+        let mut cache = None;
+        compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+        let row = find_commit_row(&cache, &c3.to_string());
         assert_eq!(
             row,
             Some(0),
@@ -1186,8 +1366,10 @@ mod tests {
         assert_eq!(wt.lane, head.lane);
         assert_eq!(wt.parents, vec![head.oid.clone()]);
         assert_eq!(viewport.head_row, Some(head.row));
+        let mut cache = None;
+        compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
         assert_eq!(
-            find_commit_row(&repo, &c1.id().to_string()).unwrap(),
+            find_commit_row(&cache, &c1.id().to_string()),
             Some(head.row)
         );
         // Commits ahead of HEAD still sit above it, unchanged.
@@ -1482,6 +1664,90 @@ mod tests {
         assert_eq!(viewport.total_count, 7); // 6 commits + working-tree node
         assert!(viewport.nodes.iter().all(|n| !n.is_working_tree));
         assert_eq!(viewport.nodes[0].row, 2); // rows stay shifted by the WIP node
+    }
+
+    #[test]
+    fn cache_compacts_a_long_lived_lane_into_one_span_not_one_edge_per_row() {
+        // A lane reserved for a distant parent and left waiting across many
+        // unrelated rows used to mean one GraphEdge::Straight stored *per row*
+        // for that lane, forever, in the cache. Build exactly that shape: a
+        // merge whose second parent (`side`) has a far-older timestamp than a
+        // long run of mainline commits, so `side`'s lane sits reserved across
+        // all of them before the walk (newest-first) finally reaches it.
+        let (_dir, repo) = init_repo();
+        let t0 = 1_700_000_000_i64;
+        let root = repo
+            .find_commit(commit_at(&repo, "root", t0, &[], true))
+            .unwrap();
+        let side = repo
+            .find_commit(commit_at(&repo, "side", t0 + 1, &[&root], false))
+            .unwrap();
+
+        const ROWS: usize = 200;
+        let mut parent = root;
+        for i in 0..ROWS {
+            let oid = commit_at(
+                &repo,
+                &format!("mainline {i}"),
+                t0 + 10 + i as i64,
+                &[&parent],
+                true,
+            );
+            parent = repo.find_commit(oid).unwrap();
+        }
+        commit_at(
+            &repo,
+            "merge",
+            t0 + 10 + ROWS as i64 + 1,
+            &[&parent, &side],
+            true,
+        );
+
+        let mut cache = None;
+        compute_layout_cached(&repo, &mut cache, 0, 1).unwrap();
+        let cache = cache.unwrap();
+
+        // Sanity: the layout really does span all these rows (root + side +
+        // ROWS mainline + merge).
+        assert!(cache.nodes.len() >= ROWS + 3);
+        // The whole point: `side`'s lane, reserved across ~ROWS rows, is one
+        // LaneSpan in the cache, not ~ROWS individual GraphEdges.
+        assert!(
+            cache.lane_spans.len() < 10,
+            "expected a small number of LaneSpans, got {}",
+            cache.lane_spans.len()
+        );
+        let long_span = cache
+            .lane_spans
+            .iter()
+            .find(|s| s.end_row - s.start_row + 1 > ROWS / 2);
+        assert!(
+            long_span.is_some(),
+            "expected one LaneSpan covering most of the mainline run"
+        );
+        // And no *cached* node carries anywhere near ROWS pass-through edges —
+        // each node's stored edges are now O(1) (its own parent/merge/branch
+        // edges only); the pass-through data lives in lane_spans instead.
+        let max_edges_per_node = cache.nodes.iter().map(|n| n.edges.len()).max().unwrap_or(0);
+        assert!(
+            max_edges_per_node <= 4,
+            "expected O(1) edges per cached node, got a max of {max_edges_per_node}"
+        );
+
+        // And the materialized viewport (what the frontend actually receives)
+        // still carries the pass-through edge on every row inside that span,
+        // proving compaction didn't drop any real connectivity — only moved
+        // where it's stored until a viewport request asks for it.
+        let mut cache = Some(cache);
+        let viewport = compute_layout_cached(&repo, &mut cache, 50, 1).unwrap();
+        let has_pass_through = viewport.nodes[0]
+            .edges
+            .iter()
+            .any(|e| matches!(e.kind, EdgeKind::Straight) && e.src_lane != viewport.nodes[0].lane);
+        assert!(
+            has_pass_through,
+            "row 50 must still show side's lane passing through after materialization"
+        );
     }
 
     #[test]

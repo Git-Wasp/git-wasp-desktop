@@ -9,6 +9,7 @@ mod graph;
 mod logging;
 mod merge_ops;
 mod operation_runner;
+mod path_guard;
 mod remote_ops;
 mod repo_manager;
 mod stash;

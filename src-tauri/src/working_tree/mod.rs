@@ -365,6 +365,7 @@ pub fn get_stage_file_contents(
     path: &str,
     staged: bool,
 ) -> anyhow::Result<StageFileContents> {
+    crate::path_guard::validate_repo_relative(path)?;
     let workdir = repo
         .workdir()
         .context("bare repository has no working directory")?;
@@ -506,6 +507,7 @@ pub fn stage_file_content(
 }
 
 pub fn discard_file(repo: &Repository, path: &str) -> anyhow::Result<WorkingTreeStatus> {
+    crate::path_guard::validate_repo_relative(path)?;
     let workdir = repo
         .workdir()
         .context("bare repository has no working directory")?;
@@ -524,7 +526,7 @@ pub fn discard_file(repo: &Repository, path: &str) -> anyhow::Result<WorkingTree
     if in_head {
         let mut co = git2::build::CheckoutBuilder::new();
         co.force().path(path);
-        repo.checkout_head(Some(&mut co))
+        repo.checkout_index(None, Some(&mut co))
             .with_context(|| format!("failed to discard: {path}"))?;
     } else {
         // Untracked: delete from disk
@@ -543,14 +545,8 @@ pub fn discard_file(repo: &Repository, path: &str) -> anyhow::Result<WorkingTree
 pub fn delete_file(repo: &Repository, path: &str) -> anyhow::Result<WorkingTreeStatus> {
     // Reject paths that try to escape the working directory. Status-derived paths
     // are always safe repo-relative paths, but never trust one blindly with `rm`.
+    crate::path_guard::validate_repo_relative(path)?;
     let rel = Path::new(path);
-    if rel.is_absolute()
-        || rel
-            .components()
-            .any(|c| c == std::path::Component::ParentDir)
-    {
-        anyhow::bail!("refusing to delete path outside the repository: {path}");
-    }
 
     let workdir = repo
         .workdir()
@@ -637,17 +633,37 @@ fn build_hunk_patch(
     hunk_index: usize,
     kind: DiffKind,
 ) -> anyhow::Result<String> {
-    let hunks = match kind {
-        DiffKind::Unstaged => crate::diff_engine::get_unstaged_diff(repo, path)?.hunks,
-        DiffKind::Staged => crate::diff_engine::get_staged_diff(repo, path)?.hunks,
+    let (hunks, old_side_is_new_file) = match kind {
+        DiffKind::Unstaged => (crate::diff_engine::get_unstaged_diff(repo, path)?.hunks, false),
+        DiffKind::Staged => {
+            let no_head_entry = repo
+                .head()
+                .ok()
+                .and_then(|h| h.peel_to_tree().ok())
+                .map(|t| t.get_path(Path::new(path)).is_err())
+                .unwrap_or(true);
+            (
+                crate::diff_engine::get_staged_diff(repo, path)?.hunks,
+                no_head_entry,
+            )
+        }
     };
     let hunk = hunks
         .into_iter()
         .find(|h| h.index == hunk_index)
         .ok_or_else(|| anyhow::anyhow!("hunk index {hunk_index} out of range"))?;
 
-    // Build minimal unified diff patch: file header + single hunk
-    let patch = format!("--- a/{path}\n+++ b/{path}\n{}", hunk.content);
+    // Build minimal unified diff patch: file header + single hunk. A staged
+    // diff whose file has no HEAD entry is an add — the "old" side is
+    // /dev/null, matching real `git diff --cached` output, so a reversing
+    // `git apply --cached --reverse` removes the index entry instead of
+    // leaving a staged empty blob.
+    let old_header = if old_side_is_new_file {
+        "--- /dev/null".to_string()
+    } else {
+        format!("--- a/{path}")
+    };
+    let patch = format!("{old_header}\n+++ b/{path}\n{}", hunk.content);
     Ok(patch)
 }
 
@@ -1363,6 +1379,28 @@ mod tests {
     }
 
     #[test]
+    fn discard_file_preserves_staged_content_when_discarding_unstaged_edits() {
+        // Stage a careful partial change, then make a further *unstaged* edit
+        // on top, then discard. Only the unstaged edit should be lost — the
+        // staged version must survive (this is what `git checkout -- <path>`
+        // does: restore the working tree from the index, not from HEAD).
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "file.txt", "original\n");
+        make_initial_commit(&repo);
+
+        write_and_stage(&repo, &dir, "file.txt", "staged change\n");
+        fs::write(dir.path().join("file.txt"), "unstaged scribble\n").unwrap();
+
+        discard_file(&repo, "file.txt").unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dir.path().join("file.txt")).unwrap(),
+            "staged change\n",
+            "discard must restore from the index, not wipe staged work back to HEAD"
+        );
+    }
+
+    #[test]
     fn discard_untracked_file_removes_it() {
         let (dir, repo) = init_repo();
         make_initial_commit(&repo);
@@ -1371,6 +1409,28 @@ mod tests {
         assert!(path.exists());
         discard_file(&repo, "untracked.txt").unwrap();
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn discard_file_rejects_paths_escaping_the_repo() {
+        let (_dir, repo) = init_repo();
+        make_initial_commit(&repo);
+        assert!(discard_file(&repo, "../secret.txt").is_err());
+    }
+
+    #[test]
+    fn discard_file_does_not_delete_a_file_outside_the_repo() {
+        // An absolute path resolves to an existing file outside the repo and
+        // must not be deleted, even though it "isn't in HEAD" (the untracked
+        // branch) — this is the shape of the P0-1 arbitrary-delete bug.
+        let (_dir, repo) = init_repo();
+        make_initial_commit(&repo);
+        let outside = TempDir::new().unwrap();
+        let victim = outside.path().join("victim.txt");
+        fs::write(&victim, "do not delete me").unwrap();
+
+        assert!(discard_file(&repo, victim.to_str().unwrap()).is_err());
+        assert!(victim.exists(), "file outside the repo must survive");
     }
 
     #[test]
@@ -1842,6 +1902,13 @@ mod tests {
     }
 
     #[test]
+    fn get_stage_file_contents_rejects_paths_escaping_the_repo() {
+        let (_dir, repo) = init_repo();
+        make_initial_commit(&repo);
+        assert!(get_stage_file_contents(&repo, "../../../etc/passwd", false).is_err());
+    }
+
+    #[test]
     fn stage_contents_split_by_staged_flag_reflects_partial_index() {
         // The editor shows the git-native pair per panel: Staged = HEAD→index,
         // Changes = index→working tree. With one of two edits staged, each view
@@ -2079,4 +2146,30 @@ mod tests {
             .mode;
         assert_eq!(mode_before, mode_after);
     }
+
+    #[test]
+    fn unstage_hunk_on_a_newly_staged_all_add_file_removes_the_index_entry() {
+        let (dir, repo) = init_repo();
+        make_initial_commit(&repo);
+        write_and_stage(&repo, &dir, "new.txt", "line1\nline2\n");
+
+        let hunks = crate::diff_engine::get_staged_diff(&repo, "new.txt")
+            .unwrap()
+            .hunks;
+        assert_eq!(hunks.len(), 1);
+        unstage_hunk(&repo, "new.txt", 0).unwrap();
+
+        // `unstage_hunk` shells out to `git apply`, which rewrites `.git/index`
+        // on disk directly; force a re-read so this repo handle's cached Index
+        // object (opened earlier by `write_and_stage`/`get_staged_diff`) picks
+        // up that external change instead of asserting on a stale snapshot.
+        let mut index = repo.index().unwrap();
+        index.read(true).unwrap();
+        assert!(
+            index.get_path(Path::new("new.txt"), 0).is_none(),
+            "unstaging every line of a newly-added file must remove the index entry \
+             entirely, matching `git restore --staged`, not leave a staged empty blob"
+        );
+    }
 }
+

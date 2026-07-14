@@ -72,22 +72,50 @@ impl AppConfig {
     }
 
     pub fn load() -> Self {
-        let Some(path) = Self::config_path() else {
+        match Self::config_path() {
+            Some(path) => Self::load_from(&path),
+            None => Self::default(),
+        }
+    }
+
+    /// Load config from an explicit path (split out from `load()` for
+    /// testability). On a corrupt/unparseable file, backs it up to
+    /// `<path>.bak` (overwriting any previous backup) before falling back to
+    /// defaults, so a bad write doesn't silently destroy recoverable state —
+    /// the next `save()` would otherwise clobber the only copy of e.g. GHE
+    /// host config with a freshly-defaulted file.
+    fn load_from(path: &Path) -> Self {
+        let Ok(raw) = std::fs::read_to_string(path) else {
             return Self::default();
         };
-        std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+        match serde_json::from_str(&raw) {
+            Ok(config) => config,
+            Err(e) => {
+                log::error!(
+                    target: "config",
+                    "config at {} is unparseable ({e}); backing up and resetting to defaults",
+                    path.display()
+                );
+                let backup_path = path.with_extension("json.bak");
+                if let Err(e) = std::fs::write(&backup_path, &raw) {
+                    log::error!(target: "config", "failed to back up corrupt config: {e}");
+                }
+                Self::default()
+            }
+        }
     }
 
     pub fn save(&self) -> anyhow::Result<()> {
         let path = Self::config_path().ok_or_else(|| anyhow::anyhow!("no config dir"))?;
+        self.save_to(&path)
+    }
+
+    fn save_to(&self, path: &Path) -> anyhow::Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         let json = serde_json::to_string_pretty(self)?;
-        std::fs::write(&path, json)?;
+        std::fs::write(path, json)?;
         Ok(())
     }
 
@@ -124,6 +152,56 @@ mod tests {
         let config = AppConfig::default();
         assert_eq!(config.github_hosts.len(), 1);
         assert_eq!(config.github_hosts[0].base_url, "https://github.com");
+    }
+
+    #[test]
+    fn load_backs_up_an_unparseable_config_instead_of_silently_resetting() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.json");
+        std::fs::write(&config_path, "{ this is not valid json").unwrap();
+
+        let loaded = AppConfig::load_from(&config_path);
+
+        // Falls back to defaults so the app still starts...
+        assert_eq!(loaded.recent_repos.len(), 0);
+        // ...but the broken file is preserved for recovery, not silently kept
+        // where the very next save() would overwrite it with a fresh default.
+        let backup_path = dir.path().join("config.json.bak");
+        assert!(backup_path.exists(), "corrupt config must be backed up");
+        assert_eq!(
+            std::fs::read_to_string(&backup_path).unwrap(),
+            "{ this is not valid json"
+        );
+    }
+
+    #[test]
+    fn load_from_missing_file_returns_defaults_without_backing_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.json");
+
+        let loaded = AppConfig::load_from(&config_path);
+
+        assert_eq!(loaded.recent_repos.len(), 0);
+        assert!(!dir.path().join("config.json.bak").exists());
+    }
+
+    #[test]
+    fn save_to_then_load_from_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.json");
+        let mut config = AppConfig::default();
+        config.add_recent(RepoEntry {
+            path: "/tmp/foo".into(),
+            name: "foo".into(),
+            pinned: false,
+            last_opened: 0,
+        });
+
+        config.save_to(&config_path).unwrap();
+        let loaded = AppConfig::load_from(&config_path);
+
+        assert_eq!(loaded.recent_repos.len(), 1);
+        assert_eq!(loaded.recent_repos[0].name, "foo");
     }
 
     #[test]

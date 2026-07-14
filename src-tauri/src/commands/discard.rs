@@ -5,8 +5,13 @@ use crate::working_tree::{
 };
 use tauri::State;
 
+// Not `async`: every command body below is 100% synchronous git2/fs work with
+// no `.await` points — see commands/graph.rs for the full rationale. Marking
+// these `async` meant each call ran inline on a tokio worker thread behind the
+// single global repos mutex, serialising unrelated commands (e.g. a slow
+// discard blocking a concurrent status poll).
 #[tauri::command]
-pub async fn discard_file(
+pub fn discard_file(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<WorkingTreeStatus, String> {
@@ -17,7 +22,7 @@ pub async fn discard_file(
 }
 
 #[tauri::command]
-pub async fn delete_file(
+pub fn delete_file(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<WorkingTreeStatus, String> {
@@ -28,7 +33,7 @@ pub async fn delete_file(
 }
 
 #[tauri::command]
-pub async fn discard_hunk(
+pub fn discard_hunk(
     path: String,
     hunk_index: usize,
     state: State<'_, AppState>,
@@ -40,7 +45,7 @@ pub async fn discard_hunk(
 }
 
 #[tauri::command]
-pub async fn discard_all(state: State<'_, AppState>) -> Result<WorkingTreeStatus, String> {
+pub fn discard_all(state: State<'_, AppState>) -> Result<WorkingTreeStatus, String> {
     state
         .with_repo(wt_discard_all)
         .map_err(|e| e.to_string())?

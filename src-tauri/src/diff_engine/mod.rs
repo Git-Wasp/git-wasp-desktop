@@ -48,11 +48,10 @@ pub fn get_commit_detail(repo: &Repository, oid_str: &str) -> anyhow::Result<Com
         .diff_tree_to_tree(parent_tree.as_ref(), Some(&commit_tree), Some(&mut opts))
         .context("failed to compute diff")?;
 
-    let stats = diff.stats().context("failed to get diff stats")?;
-    let _ = stats; // used per-file below
-
+    let delta_count = diff.deltas().len();
     let mut changed_files = Vec::new();
-    for delta in diff.deltas() {
+    for idx in 0..delta_count {
+        let delta = diff.get_delta(idx).context("missing delta")?;
         let new_file = delta.new_file();
         let old_file = delta.old_file();
         let path = new_file
@@ -76,12 +75,22 @@ pub fn get_commit_detail(repo: &Repository, oid_str: &str) -> anyhow::Result<Com
             git2::Delta::Copied => FileStatus::Copied,
             _ => FileStatus::Modified,
         };
+        // Per-file stats: Diff::stats() only aggregates across the whole diff,
+        // so pull each file's counts from its own Patch (binary files have no
+        // line-level patch — 0/0 is correct there, not a fallback).
+        let (additions, deletions) = match git2::Patch::from_diff(&diff, idx) {
+            Ok(Some(patch)) => patch
+                .line_stats()
+                .map(|(_, add, del)| (add, del))
+                .unwrap_or((0, 0)),
+            _ => (0, 0),
+        };
         changed_files.push(ChangedFile {
             path,
             old_path,
             status,
-            additions: 0,
-            deletions: 0,
+            additions,
+            deletions,
         });
     }
 
@@ -168,6 +177,7 @@ pub fn get_unstaged_diff(repo: &Repository, path: &str) -> anyhow::Result<FileDi
     let index = repo.index().context("failed to get index")?;
     let mut opts = DiffOptions::new();
     opts.pathspec(path);
+    opts.disable_pathspec_match(true);
     let diff = repo
         .diff_index_to_workdir(Some(&index), Some(&mut opts))
         .context("failed to compute unstaged diff")?;
@@ -183,6 +193,7 @@ pub fn get_staged_diff(repo: &Repository, path: &str) -> anyhow::Result<FileDiff
     let head_tree = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
     let mut opts = DiffOptions::new();
     opts.pathspec(path);
+    opts.disable_pathspec_match(true);
     let diff = repo
         .diff_tree_to_index(head_tree.as_ref(), Some(&index), Some(&mut opts))
         .context("failed to compute staged diff")?;
@@ -231,6 +242,58 @@ mod tests {
         let detail = get_commit_detail(&repo, &oid.to_string()).unwrap();
         assert_eq!(detail.changed_files.len(), 1);
         assert_eq!(detail.changed_files[0].path, "hello.txt");
+    }
+
+    #[test]
+    fn get_commit_detail_reports_real_per_file_addition_deletion_counts() {
+        let (dir, repo, _first_oid) = init_repo_with_file("hello.txt", "line1\nline2\n");
+        fs::write(dir.path().join("hello.txt"), "line1\nline2\nline3\nline4\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("hello.txt")).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let s = sig();
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        let oid = repo
+            .commit(Some("HEAD"), &s, &s, "add two lines", &tree, &[&parent])
+            .unwrap();
+
+        let detail = get_commit_detail(&repo, &oid.to_string()).unwrap();
+
+        assert_eq!(detail.changed_files.len(), 1);
+        assert_eq!(detail.changed_files[0].additions, 2);
+        assert_eq!(detail.changed_files[0].deletions, 0);
+    }
+
+    #[test]
+    fn unstaged_diff_for_a_bracketed_filename_does_not_cross_match_another_file() {
+        // "[id].tsx" is a routine Next.js/SvelteKit filename. `[id]` parses as
+        // an fnmatch character class matching a single 'i' or 'd', so a glob
+        // pathspec of "[id].tsx" can incorrectly match an unrelated file like
+        // "i.tsx" — dangerous for discard_hunk, which builds a fabricated diff
+        // header from whichever file the pathspec resolves to.
+        let (dir, repo, _oid) = init_repo_with_file("i.tsx", "orig\n");
+        {
+            let mut index = repo.index().unwrap();
+            fs::write(dir.path().join("[id].tsx"), "orig\n").unwrap();
+            index.add_path(std::path::Path::new("[id].tsx")).unwrap();
+            index.write().unwrap();
+            let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+            let s = sig();
+            let parent = repo.head().unwrap().peel_to_commit().unwrap();
+            repo.commit(Some("HEAD"), &s, &s, "add bracket file", &tree, &[&parent])
+                .unwrap();
+        }
+        // Modify only "i.tsx"; "[id].tsx" is untouched.
+        fs::write(dir.path().join("i.tsx"), "orig\nmodified\n").unwrap();
+
+        let diff = get_unstaged_diff(&repo, "[id].tsx").unwrap();
+
+        assert_eq!(
+            diff.hunks.len(),
+            0,
+            "a pathspec of '[id].tsx' must not match the unrelated file 'i.tsx'"
+        );
     }
 
     #[test]

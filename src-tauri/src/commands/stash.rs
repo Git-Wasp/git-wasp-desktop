@@ -5,8 +5,10 @@ use crate::stash::{
 use crate::working_tree::{get_working_tree_status, WorkingTreeStatus};
 use tauri::State;
 
+// Not `async`: every command body below is 100% synchronous git2/fs work with
+// no `.await` points — see commands/graph.rs for the full rationale.
 #[tauri::command]
-pub async fn stash_save_cmd(
+pub fn stash_save_cmd(
     message: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<WorkingTreeStatus, String> {
@@ -20,7 +22,7 @@ pub async fn stash_save_cmd(
 }
 
 #[tauri::command]
-pub async fn stash_list_cmd(state: State<'_, AppState>) -> Result<Vec<StashEntry>, String> {
+pub fn stash_list_cmd(state: State<'_, AppState>) -> Result<Vec<StashEntry>, String> {
     state
         .with_repo_mut(|repo| stash_list(repo))
         .map_err(|e| e.to_string())?
@@ -28,7 +30,7 @@ pub async fn stash_list_cmd(state: State<'_, AppState>) -> Result<Vec<StashEntry
 }
 
 #[tauri::command]
-pub async fn stash_apply_cmd(
+pub fn stash_apply_cmd(
     index: usize,
     state: State<'_, AppState>,
 ) -> Result<WorkingTreeStatus, String> {
@@ -42,7 +44,7 @@ pub async fn stash_apply_cmd(
 }
 
 #[tauri::command]
-pub async fn stash_pop_cmd(
+pub fn stash_pop_cmd(
     index: usize,
     state: State<'_, AppState>,
 ) -> Result<WorkingTreeStatus, String> {
@@ -56,7 +58,7 @@ pub async fn stash_pop_cmd(
 }
 
 #[tauri::command]
-pub async fn stash_drop_cmd(
+pub fn stash_drop_cmd(
     index: usize,
     state: State<'_, AppState>,
 ) -> Result<Vec<StashEntry>, String> {
@@ -70,7 +72,7 @@ pub async fn stash_drop_cmd(
 }
 
 #[tauri::command]
-pub async fn stash_rename_cmd(
+pub fn stash_rename_cmd(
     index: usize,
     message: String,
     state: State<'_, AppState>,

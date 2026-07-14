@@ -5,8 +5,10 @@ use crate::repo_manager::AppState;
 use crate::working_tree::{FileDiffHunks, StageFileContents};
 use tauri::State;
 
+// Not `async`: every command body below is 100% synchronous git2/fs work with
+// no `.await` points — see commands/graph.rs for the full rationale.
 #[tauri::command]
-pub async fn get_commit_diff(
+pub fn get_commit_diff(
     oid: String,
     state: State<'_, AppState>,
 ) -> Result<CommitDetail, String> {
@@ -21,7 +23,7 @@ pub async fn get_commit_diff(
 /// `StageFileContents`: `headContent` is the parent side, `worktreeContent` the
 /// version in this commit. `old_path` carries the pre-rename path when set.
 #[tauri::command]
-pub async fn get_commit_file_contents(
+pub fn get_commit_file_contents(
     oid: String,
     path: String,
     old_path: Option<String>,
@@ -36,7 +38,7 @@ pub async fn get_commit_file_contents(
 }
 
 #[tauri::command]
-pub async fn get_unstaged_diff(
+pub fn get_unstaged_diff(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<FileDiffHunks, String> {
@@ -47,7 +49,7 @@ pub async fn get_unstaged_diff(
 }
 
 #[tauri::command]
-pub async fn get_staged_diff(
+pub fn get_staged_diff(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<FileDiffHunks, String> {

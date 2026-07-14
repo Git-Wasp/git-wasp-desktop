@@ -119,9 +119,20 @@ pub fn import_theme_into(dir: &Path, src: &Path) -> Result<ThemeManifest> {
     Ok(parse_manifest(&id, &css))
 }
 
-/// Removes a custom theme file by id from `dir`.
+/// Removes a custom theme file by id from `dir`. The id is re-derived via
+/// `file_stem()` (mirroring `import_theme_into`) so a traversal id like
+/// `"../../etc/passwd"` can't escape `dir` — anything with path separators is
+/// rejected outright.
 pub fn delete_theme_in(dir: &Path, id: &str) -> Result<()> {
-    let path = dir.join(format!("{id}.css"));
+    if id.contains('/') || id.contains('\\') {
+        bail!("invalid theme id: {id}");
+    }
+    let safe_id = Path::new(id)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .context("invalid theme id")?;
+    let path = dir.join(format!("{safe_id}.css"));
     if path.exists() {
         std::fs::remove_file(&path).context("deleting theme file")?;
     }
@@ -194,6 +205,25 @@ mod tests {
         delete_theme_in(store.path(), "my-theme").unwrap();
         let after = list_themes_in(store.path()).unwrap();
         assert!(!after.iter().any(|t| t.id == "my-theme"));
+    }
+
+    #[test]
+    fn delete_theme_rejects_a_traversal_id() {
+        let store = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let victim = outside.path().join("victim.css");
+        std::fs::write(&victim, "keep me").unwrap();
+
+        // An id built to escape `store` via `..` must not delete anything
+        // outside it.
+        let traversal_id = format!(
+            "../{}/victim",
+            outside.path().file_name().unwrap().to_str().unwrap()
+        );
+        let result = delete_theme_in(store.path(), &traversal_id);
+
+        assert!(result.is_err());
+        assert!(victim.exists());
     }
 
     #[test]

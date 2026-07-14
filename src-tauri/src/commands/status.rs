@@ -2,8 +2,10 @@ use crate::repo_manager::AppState;
 use crate::working_tree::{get_working_tree_status as wt_status, WorkingTreeStatus};
 use tauri::State;
 
+// Not `async`: this command body is 100% synchronous git2/fs work with no
+// `.await` points — see commands/graph.rs for the full rationale.
 #[tauri::command]
-pub async fn get_working_tree_status(
+pub fn get_working_tree_status(
     state: State<'_, AppState>,
 ) -> Result<WorkingTreeStatus, String> {
     state

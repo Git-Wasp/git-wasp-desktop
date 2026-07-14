@@ -217,10 +217,12 @@ pub fn fetch(
 
 fn fetch_cli(repo: &Repository, remote_name: &str, prune: bool) -> anyhow::Result<FetchResult> {
     let workdir = repo.workdir().context("bare repo not supported")?;
-    let mut args = vec!["fetch", remote_name];
+    let mut args = vec!["fetch"];
     if prune {
         args.push("--prune");
     }
+    args.push("--");
+    args.push(remote_name);
     let output = std::process::Command::new("git")
         .args(&args)
         .current_dir(workdir)
@@ -325,7 +327,7 @@ pub fn push(
         log::debug!(target: "git", "push: ssh remote, using git CLI");
         let workdir = repo.workdir().context("bare repo not supported")?;
         let output = std::process::Command::new("git")
-            .args(["push", remote_name, branch])
+            .args(["push", "--", remote_name, branch])
             .current_dir(workdir)
             .output()
             .context("failed to run git push")?;
@@ -369,7 +371,7 @@ fn push_refspec(
     if is_ssh_remote(&url) {
         let workdir = repo.workdir().context("bare repo not supported")?;
         let output = std::process::Command::new("git")
-            .args(["push", remote_name, refspec])
+            .args(["push", "--", remote_name, refspec])
             .current_dir(workdir)
             .output()
             .context("failed to run git push")?;
@@ -454,7 +456,7 @@ pub fn list_remote_tags(
     if is_ssh_remote(&url) {
         let workdir = repo.workdir().context("bare repo not supported")?;
         let output = std::process::Command::new("git")
-            .args(["ls-remote", "--tags", remote_name])
+            .args(["ls-remote", "--tags", "--", remote_name])
             .current_dir(workdir)
             .output()
             .context("failed to run git ls-remote")?;
@@ -490,7 +492,7 @@ pub fn list_remote_tags(
 pub fn clone_repo(url: &str, dest: &std::path::Path, token: Option<&str>) -> anyhow::Result<()> {
     if is_ssh_remote(url) {
         let output = std::process::Command::new("git")
-            .args(["clone", url, dest.to_str().unwrap_or("")])
+            .args(["clone", "--", url, dest.to_str().unwrap_or("")])
             .output()
             .context("failed to run git clone")?;
         if !output.status.success() {
@@ -527,6 +529,25 @@ mod tests {
             "https://github.com".to_string(),
             "https://ghe.corp.com".to_string(),
         ]
+    }
+
+    // ----- CLI passthrough argument injection hardening -----
+
+    #[test]
+    fn fetch_cli_treats_a_dash_prefixed_remote_name_as_a_literal_name_not_a_flag() {
+        // A remote literally named "-o" would previously be parsed by `git
+        // fetch` as an option rather than a remote name. After the `--`
+        // separator fix, it should fail with git's "no such remote" (or
+        // similar) rather than a flag-parsing error, proving the name reached
+        // git as a positional arg.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        let result = fetch_cli(&repo, "-o", false);
+        let err = result.unwrap_err().to_string().to_lowercase();
+        assert!(
+            !err.contains("switch") && !err.contains("requires a value") && !err.contains("unknown option"),
+            "expected a 'remote not found'-style error, got a flag-parsing error: {err}"
+        );
     }
 
     // ----- tag ref parsing -----

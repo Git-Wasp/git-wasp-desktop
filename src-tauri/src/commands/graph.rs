@@ -40,7 +40,10 @@ pub fn get_graph_viewport(
 #[tauri::command]
 pub fn find_commit_row(oid: String, state: State<'_, AppState>) -> Result<Option<usize>, String> {
     state
-        .with_repo(|repo| crate::graph::find_commit_row(repo, &oid))
+        .with_repo_graph_cache(|repo, cache| -> anyhow::Result<Option<usize>> {
+            crate::graph::compute_layout_cached(repo, cache, 0, 1)?;
+            Ok(crate::graph::find_commit_row(cache, &oid))
+        })
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }

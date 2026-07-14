@@ -283,6 +283,11 @@ fn join_lines(lines: &[&str]) -> String {
 /// Operates on raw bytes so CRLF content round-trips exactly as the user
 /// edited it.
 pub fn write_resolution(repo: &Repository, path: &str, content: &str) -> anyhow::Result<()> {
+    {
+        let index = repo.index().context("failed to get index")?;
+        find_conflict(&index, path)?;
+    }
+
     let workdir = repo
         .workdir()
         .context("repository has no working directory")?;
@@ -424,22 +429,69 @@ pub fn complete_merge(repo: &mut Repository, message: &str) -> anyhow::Result<St
     Ok(oid.to_string())
 }
 
-/// Aborts an in-progress merge: hard-resets the working tree and index back
-/// to `HEAD` (discarding the merge's partial application) and cleans up
-/// merge state — equivalent to `git merge --abort`.
+/// Aborts an in-progress merge: restores the working tree and index to HEAD
+/// for files the merge actually touched (conflicted or already staged as part
+/// of the merge), leaving unrelated dirty files untouched — matching `git
+/// merge --abort` (`git reset --merge`), not a blanket hard reset.
 pub fn abort_merge(repo: &mut Repository) -> anyhow::Result<()> {
     let head_commit = repo
         .head()?
         .peel_to_commit()
         .context("HEAD is not a commit")?;
-    let mut checkout = git2::build::CheckoutBuilder::new();
-    checkout.force();
-    repo.reset(
-        head_commit.as_object(),
-        git2::ResetType::Hard,
-        Some(&mut checkout),
-    )
-    .context("failed to reset to HEAD")?;
+
+    // Paths the merge actually put its hands on: anything currently
+    // conflicted, plus anything staged with a blob that differs from HEAD's
+    // (the merge's clean auto-merges). Everything else is left alone, so an
+    // unrelated dirty file survives the abort.
+    let touched_paths: Vec<String> = {
+        let index = repo.index().context("failed to get index")?;
+        let head_tree = head_commit.tree().context("HEAD commit has no tree")?;
+        let mut paths = std::collections::HashSet::new();
+        for conflict in index.conflicts().context("failed to read index conflicts")? {
+            let conflict = conflict.context("invalid conflict entry")?;
+            for entry in [conflict.our, conflict.their, conflict.ancestor]
+                .into_iter()
+                .flatten()
+            {
+                if let Ok(p) = std::str::from_utf8(&entry.path) {
+                    paths.insert(p.to_string());
+                }
+            }
+        }
+        for entry in index.iter() {
+            if let Ok(p) = std::str::from_utf8(&entry.path) {
+                let differs_from_head = head_tree
+                    .get_path(Path::new(p))
+                    .map(|e| e.id() != entry.id)
+                    .unwrap_or(true);
+                if differs_from_head {
+                    paths.insert(p.to_string());
+                }
+            }
+        }
+        paths.into_iter().collect()
+    };
+
+    if !touched_paths.is_empty() {
+        // Hard is required for `reset()` to touch the working directory at
+        // all — Mixed only updates HEAD/the index. Scoping the checkout to
+        // `touched_paths` (rather than a full-tree force-checkout) is what
+        // keeps this from clobbering unrelated dirty files.
+        let mut checkout = git2::build::CheckoutBuilder::new();
+        checkout.force();
+        for p in &touched_paths {
+            checkout.path(p);
+        }
+        repo.reset(
+            head_commit.as_object(),
+            git2::ResetType::Hard,
+            Some(&mut checkout),
+        )
+        .context("failed to reset to HEAD")?;
+    } else {
+        repo.reset(head_commit.as_object(), git2::ResetType::Mixed, None)
+            .context("failed to reset to HEAD")?;
+    }
     repo.cleanup_state()
         .context("failed to clean up merge state")?;
     Ok(())
@@ -933,6 +985,24 @@ mod tests {
         assert!(!repo.index().unwrap().has_conflicts());
     }
 
+    #[test]
+    fn write_resolution_rejects_a_path_with_no_conflict() {
+        let (dir, mut repo) = init_repo();
+        let branch = make_conflicting_branches(&dir, &repo);
+        start_merge(&mut repo, &branch).unwrap();
+
+        // "file.txt" is the only real conflict; a path outside the repo (or
+        // any path not in the conflict set) must be rejected before anything
+        // is written to disk.
+        let outside = TempDir::new().unwrap();
+        let evil = outside.path().join("evil.txt");
+
+        let result = write_resolution(&repo, evil.to_str().unwrap(), "pwned");
+
+        assert!(result.is_err());
+        assert!(!evil.exists(), "no file should have been written outside the repo");
+    }
+
     // ---- resolve_with_side / resolve_with_deletion ----
 
     #[test]
@@ -1068,5 +1138,37 @@ mod tests {
         assert!(!repo.index().unwrap().has_conflicts());
         let content = fs::read_to_string(dir.path().join("file.txt")).unwrap();
         assert_eq!(content, "line1\nour change\nline3\n");
+    }
+
+    #[test]
+    fn abort_merge_preserves_uncommitted_edits_to_files_the_merge_did_not_touch() {
+        let (dir, mut repo) = init_repo();
+        let branch = make_conflicting_branches(&dir, &repo);
+        // Add "other.txt" as a further commit on the current branch, after the
+        // branches diverge — present on our side, absent from "theirs" and the
+        // base, so the merge doesn't touch it at all. "file.txt" is the file
+        // that actually conflicts.
+        {
+            let head_before = repo.head().unwrap().peel_to_commit().unwrap();
+            commit_file(&repo, &dir, "other.txt", "untouched\n", "add other", &[&head_before]);
+        }
+
+        start_merge(&mut repo, &branch).unwrap();
+        assert!(repo.index().unwrap().has_conflicts());
+
+        // Dirty an unrelated, non-conflicting file mid-merge — libgit2's
+        // merge() allows this (it only refuses when the dirty file collides
+        // with the merge itself), so this is a reachable state, not a
+        // contrived one.
+        fs::write(dir.path().join("other.txt"), "local edit\n").unwrap();
+
+        abort_merge(&mut repo).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dir.path().join("other.txt")).unwrap(),
+            "local edit\n",
+            "git merge --abort (reset --merge) must not touch files the merge didn't touch"
+        );
+        assert!(!repo.index().unwrap().has_conflicts());
     }
 }
