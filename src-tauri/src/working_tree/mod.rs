@@ -543,14 +543,8 @@ pub fn discard_file(repo: &Repository, path: &str) -> anyhow::Result<WorkingTree
 pub fn delete_file(repo: &Repository, path: &str) -> anyhow::Result<WorkingTreeStatus> {
     // Reject paths that try to escape the working directory. Status-derived paths
     // are always safe repo-relative paths, but never trust one blindly with `rm`.
+    crate::path_guard::validate_repo_relative(path)?;
     let rel = Path::new(path);
-    if rel.is_absolute()
-        || rel
-            .components()
-            .any(|c| c == std::path::Component::ParentDir)
-    {
-        anyhow::bail!("refusing to delete path outside the repository: {path}");
-    }
 
     let workdir = repo
         .workdir()
