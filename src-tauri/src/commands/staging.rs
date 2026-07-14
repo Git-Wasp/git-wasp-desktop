@@ -7,8 +7,10 @@ use crate::working_tree::{
 };
 use tauri::State;
 
+// Not `async`: every command body below is 100% synchronous git2/fs work with
+// no `.await` points — see commands/graph.rs for the full rationale.
 #[tauri::command]
-pub async fn stage_file(
+pub fn stage_file(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<WorkingTreeStatus, String> {
@@ -19,7 +21,7 @@ pub async fn stage_file(
 }
 
 #[tauri::command]
-pub async fn unstage_file(
+pub fn unstage_file(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<WorkingTreeStatus, String> {
@@ -30,7 +32,7 @@ pub async fn unstage_file(
 }
 
 #[tauri::command]
-pub async fn stage_hunk(
+pub fn stage_hunk(
     path: String,
     hunk_index: usize,
     state: State<'_, AppState>,
@@ -42,7 +44,7 @@ pub async fn stage_hunk(
 }
 
 #[tauri::command]
-pub async fn unstage_hunk(
+pub fn unstage_hunk(
     path: String,
     hunk_index: usize,
     state: State<'_, AppState>,
@@ -54,7 +56,7 @@ pub async fn unstage_hunk(
 }
 
 #[tauri::command]
-pub async fn get_stage_file_contents(
+pub fn get_stage_file_contents(
     path: String,
     staged: bool,
     state: State<'_, AppState>,
@@ -66,7 +68,7 @@ pub async fn get_stage_file_contents(
 }
 
 #[tauri::command]
-pub async fn stage_file_content(
+pub fn stage_file_content(
     path: String,
     content: String,
     state: State<'_, AppState>,

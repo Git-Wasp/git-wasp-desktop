@@ -3,8 +3,14 @@ use crate::remote_ops::{self, FetchResult, PullFfOutcome, PullResult, RemoteInfo
 use crate::repo_manager::AppState;
 use tauri::State;
 
+// Not `async`: every command body below is 100% synchronous git2/CLI-passthrough
+// work with no `.await` points — see commands/graph.rs for the full rationale.
+// These do network I/O via blocking git2/CLI calls, which is exactly the
+// "pins a tokio worker" problem this fix addresses most: converting them to
+// plain `fn` moves that blocking work onto Tauri's dedicated blocking pool
+// instead of a tokio async worker.
 #[tauri::command]
-pub async fn detect_remote_info(state: State<'_, AppState>) -> Result<RemoteInfo, String> {
+pub fn detect_remote_info(state: State<'_, AppState>) -> Result<RemoteInfo, String> {
     let known_hosts: Vec<String> = state.known_github_hosts().map_err(|e| e.to_string())?;
     state
         .with_repo(|repo| remote_ops::detect_remote_info(repo, &known_hosts))
@@ -13,7 +19,7 @@ pub async fn detect_remote_info(state: State<'_, AppState>) -> Result<RemoteInfo
 }
 
 #[tauri::command]
-pub async fn fetch_remote(
+pub fn fetch_remote(
     remote_name: Option<String>,
     prune: Option<bool>,
     state: State<'_, AppState>,
@@ -42,7 +48,7 @@ pub async fn fetch_remote(
 }
 
 #[tauri::command]
-pub async fn list_prunable_branches(
+pub fn list_prunable_branches(
     state: State<'_, AppState>,
 ) -> Result<Vec<crate::repo_manager::PrunableBranch>, String> {
     state
@@ -69,7 +75,7 @@ fn remote_token(state: &State<'_, AppState>) -> Option<String> {
 }
 
 #[tauri::command]
-pub async fn push_tag(
+pub fn push_tag(
     tag: String,
     remote_name: Option<String>,
     state: State<'_, AppState>,
@@ -83,7 +89,7 @@ pub async fn push_tag(
 }
 
 #[tauri::command]
-pub async fn delete_remote_tag(
+pub fn delete_remote_tag(
     tag: String,
     remote_name: Option<String>,
     state: State<'_, AppState>,
@@ -97,7 +103,7 @@ pub async fn delete_remote_tag(
 }
 
 #[tauri::command]
-pub async fn list_remote_tags(
+pub fn list_remote_tags(
     remote_name: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Vec<String>, String> {
@@ -110,7 +116,7 @@ pub async fn list_remote_tags(
 }
 
 #[tauri::command]
-pub async fn pull_branch(
+pub fn pull_branch(
     remote_name: Option<String>,
     branch: Option<String>,
     mode: Option<String>,
@@ -215,7 +221,7 @@ pub async fn pull_branch(
 }
 
 #[tauri::command]
-pub async fn push_branch(
+pub fn push_branch(
     remote_name: Option<String>,
     branch: Option<String>,
     state: State<'_, AppState>,
@@ -250,7 +256,7 @@ pub async fn push_branch(
 }
 
 #[tauri::command]
-pub async fn clone_repo(
+pub fn clone_repo(
     url: String,
     dest_path: String,
     state: State<'_, AppState>,

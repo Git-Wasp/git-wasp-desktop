@@ -15,8 +15,10 @@ pub struct BranchInfo {
     pub behind: Option<usize>,
 }
 
+// Not `async`: every command body below is 100% synchronous git2/fs work with
+// no `.await` points — see commands/graph.rs for the full rationale.
 #[tauri::command]
-pub async fn list_branches(state: State<'_, AppState>) -> Result<Vec<BranchInfo>, String> {
+pub fn list_branches(state: State<'_, AppState>) -> Result<Vec<BranchInfo>, String> {
     state
         .with_repo(|repo| crate::repo_manager::list_branches(repo))
         .map_err(|e| e.to_string())?
@@ -24,7 +26,7 @@ pub async fn list_branches(state: State<'_, AppState>) -> Result<Vec<BranchInfo>
 }
 
 #[tauri::command]
-pub async fn checkout_branch(
+pub fn checkout_branch(
     branch_name: String,
     auto_stash: Option<bool>,
     state: State<'_, AppState>,
@@ -35,7 +37,7 @@ pub async fn checkout_branch(
 }
 
 #[tauri::command]
-pub async fn checkout_remote_branch(
+pub fn checkout_remote_branch(
     remote_ref: String,
     auto_stash: Option<bool>,
     state: State<'_, AppState>,
@@ -46,7 +48,7 @@ pub async fn checkout_remote_branch(
 }
 
 #[tauri::command]
-pub async fn checkout_commit(
+pub fn checkout_commit(
     oid: String,
     auto_stash: Option<bool>,
     state: State<'_, AppState>,
@@ -57,7 +59,7 @@ pub async fn checkout_commit(
 }
 
 #[tauri::command]
-pub async fn create_tag(
+pub fn create_tag(
     name: String,
     oid: String,
     message: Option<String>,
@@ -69,7 +71,7 @@ pub async fn create_tag(
 }
 
 #[tauri::command]
-pub async fn create_branch(
+pub fn create_branch(
     name: String,
     start_point: Option<String>,
     state: State<'_, AppState>,
@@ -80,7 +82,7 @@ pub async fn create_branch(
 }
 
 #[tauri::command]
-pub async fn rename_branch(
+pub fn rename_branch(
     old_name: String,
     new_name: String,
     state: State<'_, AppState>,
@@ -91,12 +93,12 @@ pub async fn rename_branch(
 }
 
 #[tauri::command]
-pub async fn delete_branch(name: String, state: State<'_, AppState>) -> Result<(), String> {
+pub fn delete_branch(name: String, state: State<'_, AppState>) -> Result<(), String> {
     state.delete_branch(&name).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn delete_tag(name: String, state: State<'_, AppState>) -> Result<(), String> {
+pub fn delete_tag(name: String, state: State<'_, AppState>) -> Result<(), String> {
     state.delete_tag(&name).map_err(|e| e.to_string())
 }
 
@@ -104,7 +106,7 @@ pub async fn delete_tag(name: String, state: State<'_, AppState>) -> Result<(), 
 /// pointer without checking it out unless it's the current branch. Errors with a
 /// clear message when the move isn't a fast-forward.
 #[tauri::command]
-pub async fn fast_forward_branch(
+pub fn fast_forward_branch(
     branch: String,
     target: String,
     state: State<'_, AppState>,
@@ -124,7 +126,7 @@ pub async fn fast_forward_branch(
 /// Fast-forward local `branch` to its upstream tracking branch, using the
 /// already-fetched remote state (no network access).
 #[tauri::command]
-pub async fn fast_forward_to_upstream(
+pub fn fast_forward_to_upstream(
     branch: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
@@ -142,7 +144,7 @@ pub async fn fast_forward_to_upstream(
 
 /// The local branches that can be fast-forwarded to `target` (a commit oid).
 #[tauri::command]
-pub async fn list_fast_forwardable_branches(
+pub fn list_fast_forwardable_branches(
     target: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<String>, String> {
@@ -152,7 +154,7 @@ pub async fn list_fast_forwardable_branches(
 }
 
 #[tauri::command]
-pub async fn get_ahead_behind(state: State<'_, AppState>) -> Result<Vec<AheadBehind>, String> {
+pub fn get_ahead_behind(state: State<'_, AppState>) -> Result<Vec<AheadBehind>, String> {
     state
         .with_repo(|repo| crate::remote_ops::compute_ahead_behind(repo))
         .map_err(|e| e.to_string())?

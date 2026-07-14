@@ -3,23 +3,25 @@ use crate::operation_runner::OperationStatus;
 use crate::repo_manager::AppState;
 use tauri::State;
 
+// Not `async`: every command body below is 100% synchronous git2/fs work with
+// no `.await` points — see commands/graph.rs for the full rationale.
 #[tauri::command]
-pub async fn operation_status(state: State<'_, AppState>) -> Result<OperationStatus, String> {
+pub fn operation_status(state: State<'_, AppState>) -> Result<OperationStatus, String> {
     state.operation_status().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn operation_resume(state: State<'_, AppState>) -> Result<OperationStatus, String> {
+pub fn operation_resume(state: State<'_, AppState>) -> Result<OperationStatus, String> {
     state.operation_resume().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn operation_abort(state: State<'_, AppState>) -> Result<(), String> {
+pub fn operation_abort(state: State<'_, AppState>) -> Result<(), String> {
     state.operation_abort().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn merge_start(
+pub fn merge_start(
     branch_name: String,
     state: State<'_, AppState>,
 ) -> Result<MergeOutcome, String> {
@@ -27,7 +29,7 @@ pub async fn merge_start(
 }
 
 #[tauri::command]
-pub async fn merge_resolve_file(
+pub fn merge_resolve_file(
     path: String,
     content: String,
     state: State<'_, AppState>,
@@ -38,7 +40,7 @@ pub async fn merge_resolve_file(
 }
 
 #[tauri::command]
-pub async fn merge_resolve_with_side(
+pub fn merge_resolve_with_side(
     path: String,
     side: ConflictSide,
     state: State<'_, AppState>,
@@ -49,7 +51,7 @@ pub async fn merge_resolve_with_side(
 }
 
 #[tauri::command]
-pub async fn merge_resolve_with_deletion(
+pub fn merge_resolve_with_deletion(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<ConflictedFile>, String> {
@@ -59,11 +61,11 @@ pub async fn merge_resolve_with_deletion(
 }
 
 #[tauri::command]
-pub async fn merge_complete(message: String, state: State<'_, AppState>) -> Result<String, String> {
+pub fn merge_complete(message: String, state: State<'_, AppState>) -> Result<String, String> {
     state.merge_complete(&message).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn merge_abort(state: State<'_, AppState>) -> Result<(), String> {
+pub fn merge_abort(state: State<'_, AppState>) -> Result<(), String> {
     state.merge_abort().map_err(|e| e.to_string())
 }
