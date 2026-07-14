@@ -506,6 +506,7 @@ pub fn stage_file_content(
 }
 
 pub fn discard_file(repo: &Repository, path: &str) -> anyhow::Result<WorkingTreeStatus> {
+    crate::path_guard::validate_repo_relative(path)?;
     let workdir = repo
         .workdir()
         .context("bare repository has no working directory")?;
@@ -1365,6 +1366,28 @@ mod tests {
         assert!(path.exists());
         discard_file(&repo, "untracked.txt").unwrap();
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn discard_file_rejects_paths_escaping_the_repo() {
+        let (_dir, repo) = init_repo();
+        make_initial_commit(&repo);
+        assert!(discard_file(&repo, "../secret.txt").is_err());
+    }
+
+    #[test]
+    fn discard_file_does_not_delete_a_file_outside_the_repo() {
+        // An absolute path resolves to an existing file outside the repo and
+        // must not be deleted, even though it "isn't in HEAD" (the untracked
+        // branch) — this is the shape of the P0-1 arbitrary-delete bug.
+        let (_dir, repo) = init_repo();
+        make_initial_commit(&repo);
+        let outside = TempDir::new().unwrap();
+        let victim = outside.path().join("victim.txt");
+        fs::write(&victim, "do not delete me").unwrap();
+
+        assert!(discard_file(&repo, victim.to_str().unwrap()).is_err());
+        assert!(victim.exists(), "file outside the repo must survive");
     }
 
     #[test]
