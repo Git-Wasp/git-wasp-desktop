@@ -283,6 +283,11 @@ fn join_lines(lines: &[&str]) -> String {
 /// Operates on raw bytes so CRLF content round-trips exactly as the user
 /// edited it.
 pub fn write_resolution(repo: &Repository, path: &str, content: &str) -> anyhow::Result<()> {
+    {
+        let index = repo.index().context("failed to get index")?;
+        find_conflict(&index, path)?;
+    }
+
     let workdir = repo
         .workdir()
         .context("repository has no working directory")?;
@@ -931,6 +936,24 @@ mod tests {
         let bytes = fs::read(dir.path().join("file.txt")).unwrap();
         assert_eq!(bytes, b"line1\r\nresolved\r\nline3\r\n");
         assert!(!repo.index().unwrap().has_conflicts());
+    }
+
+    #[test]
+    fn write_resolution_rejects_a_path_with_no_conflict() {
+        let (dir, mut repo) = init_repo();
+        let branch = make_conflicting_branches(&dir, &repo);
+        start_merge(&mut repo, &branch).unwrap();
+
+        // "file.txt" is the only real conflict; a path outside the repo (or
+        // any path not in the conflict set) must be rejected before anything
+        // is written to disk.
+        let outside = TempDir::new().unwrap();
+        let evil = outside.path().join("evil.txt");
+
+        let result = write_resolution(&repo, evil.to_str().unwrap(), "pwned");
+
+        assert!(result.is_err());
+        assert!(!evil.exists(), "no file should have been written outside the repo");
     }
 
     // ---- resolve_with_side / resolve_with_deletion ----
