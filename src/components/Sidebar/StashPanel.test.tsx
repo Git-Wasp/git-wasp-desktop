@@ -2,15 +2,18 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { invoke } from "@tauri-apps/api/core";
+import { useRepoStore } from "../../stores/repoStore";
 import { StashPanel } from "./StashPanel";
 import type { StashEntry } from "../../types/workingTree";
 
+vi.mock("@tauri-apps/api/core");
 const mockInvoke = vi.mocked(invoke);
 
 const stashes: StashEntry[] = [{ index: 0, message: "WIP on main: experiment", oid: "a".repeat(40) }];
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useRepoStore.setState({ activeRepoPath: "/repo-a" });
   mockInvoke.mockImplementation((cmd: string) => {
     if (cmd === "stash_list_cmd") return Promise.resolve(stashes);
     if (cmd === "stash_apply_cmd" || cmd === "stash_pop_cmd") {
@@ -74,5 +77,17 @@ describe("StashPanel", () => {
 
     expect(mockInvoke).not.toHaveBeenCalledWith("stash_drop_cmd", expect.anything());
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("reloads the stash list when the active repo changes", async () => {
+    mockInvoke.mockResolvedValueOnce([{ index: 0, message: "repo A stash", oid: "a".repeat(40) }]);
+    const { rerender } = render(<StashPanel />);
+    expect(await screen.findByText("repo A stash")).toBeInTheDocument();
+
+    mockInvoke.mockResolvedValueOnce([{ index: 0, message: "repo B stash", oid: "b".repeat(40) }]);
+    useRepoStore.setState({ activeRepoPath: "/repo-b" });
+    rerender(<StashPanel />);
+
+    expect(await screen.findByText("repo B stash")).toBeInTheDocument();
   });
 });

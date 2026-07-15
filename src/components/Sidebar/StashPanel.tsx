@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { StashEntry, WorkingTreeStatus } from "../../types/workingTree";
+import { useRepoStore } from "../../stores/repoStore";
 import { useWorkingTreeStore } from "../../stores/workingTreeStore";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 
 export function StashPanel() {
+  const activeRepoPath = useRepoStore((s) => s.activeRepoPath);
   const [stashes, setStashes] = useState<StashEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [pendingDrop, setPendingDrop] = useState<StashEntry | null>(null);
@@ -16,7 +18,10 @@ export function StashPanel() {
     setStashes(entries);
   };
 
-  useEffect(() => { reload(); }, []);
+  useEffect(() => {
+    setStashes([]);
+    reload();
+  }, [activeRepoPath]);
 
   const handleApply = async (index: number) => {
     setLoading(true);
