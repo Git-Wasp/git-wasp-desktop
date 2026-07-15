@@ -700,7 +700,10 @@ export function CommitGraph({
           if (!isCurrent) {
             items.push({
               label: `Checkout ${branch.name}`,
-              onSelect: () => runBranchOp(() => checkoutBranch(branch.name)),
+              onSelect: () =>
+                runBranchOp(async () => {
+                  await checkoutBranch(branch.name);
+                }),
             });
           }
           items.push({

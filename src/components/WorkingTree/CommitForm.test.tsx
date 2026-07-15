@@ -10,7 +10,7 @@ let createCommit: ReturnType<typeof vi.fn<(message: string) => Promise<void>>>;
 let amendCommitMessage: ReturnType<typeof vi.fn<(message: string) => Promise<void>>>;
 let discardAll: ReturnType<typeof vi.fn<() => Promise<void>>>;
 let createBranch: ReturnType<typeof vi.fn<(name: string, startPoint?: string) => Promise<void>>>;
-let checkoutBranch: ReturnType<typeof vi.fn<(name: string) => Promise<void>>>;
+let checkoutBranch: ReturnType<typeof vi.fn<(name: string) => Promise<boolean>>>;
 let fastForwardBranch: ReturnType<typeof vi.fn<(branch: string, target: string) => Promise<void>>>;
 let listFastForwardableBranches: ReturnType<typeof vi.fn<(target: string) => Promise<string[]>>>;
 
@@ -20,7 +20,7 @@ beforeEach(() => {
   amendCommitMessage = vi.fn<(message: string) => Promise<void>>().mockResolvedValue(undefined);
   discardAll = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
   createBranch = vi.fn<(name: string, startPoint?: string) => Promise<void>>().mockResolvedValue(undefined);
-  checkoutBranch = vi.fn<(name: string) => Promise<void>>().mockResolvedValue(undefined);
+  checkoutBranch = vi.fn<(name: string) => Promise<boolean>>().mockResolvedValue(true);
   fastForwardBranch = vi.fn<(branch: string, target: string) => Promise<void>>().mockResolvedValue(undefined);
   listFastForwardableBranches = vi.fn<(target: string) => Promise<string[]>>().mockResolvedValue([]);
   useWorkingTreeStore.setState({

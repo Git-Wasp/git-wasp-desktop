@@ -46,7 +46,7 @@ interface RepoStore {
    *  reload the branch list so the "current branch" marker stays accurate. A
    *  no-op when HEAD is unchanged, so it's cheap to call on focus / on a poll. */
   syncHead: () => Promise<void>;
-  checkoutBranch: (name: string) => Promise<void>;
+  checkoutBranch: (name: string) => Promise<boolean>;
   checkoutRemoteBranch: (remoteRef: string) => Promise<void>;
   checkoutCommit: (oid: string) => Promise<void>;
   createTag: (name: string, oid: string, message?: string) => Promise<void>;
@@ -170,9 +170,10 @@ export const useRepoStore = create<RepoStore>((set, get) => {
         stashPrompt(`switching to "${name}"`),
         () => notifyParked(name),
       );
-      if (!repo) return; // user cancelled the auto-stash
+      if (!repo) return false; // user cancelled the auto-stash
       set({ currentRepo: repo });
       await get().loadBranches();
+      return true;
     },
 
     // Check out a remote-tracking branch (e.g. "origin/feature"): the backend

@@ -6,6 +6,7 @@ describe("runMerge", () => {
     const calls: string[] = [];
     const checkoutBranch = vi.fn(async () => {
       calls.push("checkout");
+      return true;
     });
     const startMerge = vi.fn(async () => {
       calls.push("merge");
@@ -25,7 +26,7 @@ describe("runMerge", () => {
   });
 
   it("skips checkout when the target is already current", async () => {
-    const checkoutBranch = vi.fn(async () => {});
+    const checkoutBranch = vi.fn(async () => true);
     const startMerge = vi.fn(async () => {});
 
     await runMerge({
@@ -37,6 +38,30 @@ describe("runMerge", () => {
     });
 
     expect(checkoutBranch).not.toHaveBeenCalled();
+    expect(startMerge).toHaveBeenCalledWith("feature");
+  });
+
+  it("does not start the merge when checkoutBranch reports the auto-stash was cancelled", async () => {
+    const checkoutBranch = vi.fn().mockResolvedValue(false); // user cancelled the stash prompt
+    const startMerge = vi.fn();
+
+    await runMerge({
+      source: "feature",
+      target: "main",
+      currentBranch: "develop",
+      checkoutBranch,
+      startMerge,
+    });
+
+    expect(startMerge).not.toHaveBeenCalled();
+  });
+
+  it("starts the merge once checkoutBranch confirms the switch happened", async () => {
+    const checkoutBranch = vi.fn().mockResolvedValue(true);
+    const startMerge = vi.fn();
+
+    await runMerge({ source: "feature", target: "main", currentBranch: "develop", checkoutBranch, startMerge });
+
     expect(startMerge).toHaveBeenCalledWith("feature");
   });
 });

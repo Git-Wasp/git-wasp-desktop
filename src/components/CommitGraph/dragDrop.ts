@@ -5,7 +5,7 @@ interface RunMergeArgs {
   source: string;
   target: string;
   currentBranch: string | null;
-  checkoutBranch: (name: string) => Promise<void>;
+  checkoutBranch: (name: string) => Promise<boolean>;
   startMerge: (name: string) => Promise<unknown>;
 }
 
@@ -21,7 +21,8 @@ export async function runMerge({
   startMerge,
 }: RunMergeArgs): Promise<void> {
   if (target !== currentBranch) {
-    await checkoutBranch(target);
+    const switched = await checkoutBranch(target);
+    if (!switched) return; // auto-stash prompt was cancelled — abort, don't merge into the wrong branch
   }
   await startMerge(source);
 }

@@ -166,7 +166,7 @@ describe("repoStore", () => {
     const promise = useRepoStore.getState().checkoutBranch("feature");
     await vi.waitFor(() => expect(useAutoStashStore.getState().pending).not.toBeNull());
     useAutoStashStore.getState().respond(false);
-    await expect(promise).resolves.toBeUndefined();
+    await expect(promise).resolves.toBe(false);
 
     expect(mockInvoke).toHaveBeenCalledTimes(1); // no retry
     expect(useRepoStore.getState().currentRepo).toBeNull();
