@@ -49,6 +49,7 @@ interface WorkingTreeStore {
 // selected (it slots back into `target`). See `nextSelectionAfterStaging`.
 async function reselectAfterStaging(
   set: (partial: Partial<WorkingTreeStore>) => void,
+  get: () => WorkingTreeStore,
   path: string,
   prevChanges: string[],
   status: WorkingTreeStatus,
@@ -60,7 +61,7 @@ async function reselectAfterStaging(
     path: target,
     staged: false,
   });
-  set({ stageDiff });
+  if (get().selectedPath === target && get().stageMode === "unstaged") set({ stageDiff });
 }
 
 export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
@@ -96,7 +97,8 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
     set({ selectedPath: path, stageMode: mode });
     const staged = mode === "staged";
     const stageDiff = await invoke<StageFileContents>("get_stage_file_contents", { path, staged });
-    set({ stageDiff });
+    // Drop a late response if the selection has since moved on (mirrors commitFileStore.selectFile).
+    if (get().selectedPath === path && get().stageMode === mode) set({ stageDiff });
   },
 
   clearSelectedFile: () => set({ selectedPath: null, stageMode: null, stageDiff: null }),
@@ -107,7 +109,7 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
     const status = await invoke<WorkingTreeStatus>("stage_file", { path });
     set({ status });
     // If the diff view was open on this file, advance to the next unstaged one.
-    if (wasSelected) await reselectAfterStaging(set, path, prevChanges, status);
+    if (wasSelected) await reselectAfterStaging(set, get, path, prevChanges, status);
   },
 
   unstageFile: async (path: string) => {

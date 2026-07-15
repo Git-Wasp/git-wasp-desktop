@@ -138,6 +138,20 @@ describe("workingTreeStore", () => {
     expect(useWorkingTreeStore.getState().selectedPath).toBe("b.txt");
   });
 
+  it("selectFile drops a stale response when the selection moved on before it resolved", async () => {
+    let resolveA: (v: StageFileContents) => void;
+    const pendingA = new Promise<StageFileContents>((r) => { resolveA = r; });
+    mockInvoke.mockImplementationOnce(() => pendingA); // fileA: slow
+    mockInvoke.mockResolvedValueOnce({ ...stageDiff, headContent: "B\n" }); // fileB: fast
+
+    const selectA = useWorkingTreeStore.getState().selectFile("fileA.txt", "unstaged");
+    await useWorkingTreeStore.getState().selectFile("fileB.txt", "unstaged"); // resolves first
+    resolveA!(stageDiff); // fileA's late response
+    await selectA;
+
+    expect(useWorkingTreeStore.getState().selectedPath).toBe("fileB.txt");
+    expect(useWorkingTreeStore.getState().stageDiff?.headContent).toBe("B\n");
+  });
 
   it("clearSelectedFile clears the selection and stage diff", () => {
     useWorkingTreeStore.setState({ selectedPath: "f.txt", stageDiff });
