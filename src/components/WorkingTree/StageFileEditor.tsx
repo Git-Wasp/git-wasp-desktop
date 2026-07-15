@@ -23,6 +23,7 @@ import {
   diffLines,
   hunkLines,
   inlineText as buildInlineText,
+  isDiffTooLargeForLineDiff,
 } from "../../lib/lineDiff";
 import { stageGutter, setStagedLines } from "./stageGutter";
 import { ChangeOverview } from "./ChangeOverview";
@@ -410,8 +411,15 @@ export function StageFileEditor({
   // A recognised image (either side has a data-URI) previews as an image rather
   // than a text diff, taking priority over the line editor.
   const isImage = !!(contents.headImage || contents.worktreeImage);
+  // Extend the existing "not line-editable" gate (isImage / isBinary / deleted)
+  // with a size cap, so a huge generated file (lockfiles, minified bundles)
+  // never reaches the synchronous diffLines call.
+  const tooLargeForLineDiff =
+    !isImage &&
+    !contents.isBinary &&
+    isDiffTooLargeForLineDiff(contents.headContent, contents.worktreeContent);
   const lineEditable =
-    !isImage && !contents.isBinary && (readOnly || contents.worktreeExists);
+    !isImage && !contents.isBinary && !tooLargeForLineDiff && (readOnly || contents.worktreeExists);
 
   const language = useMemo(() => languageForPath(path), [path]);
 
@@ -454,8 +462,11 @@ export function StageFileEditor({
   }, []);
 
   const rows = useMemo(
-    () => diffLines(contents.headContent, contents.worktreeContent, { ignoreWhitespace }),
-    [contents.headContent, contents.worktreeContent, ignoreWhitespace],
+    () =>
+      tooLargeForLineDiff
+        ? []
+        : diffLines(contents.headContent, contents.worktreeContent, { ignoreWhitespace }),
+    [contents.headContent, contents.worktreeContent, ignoreWhitespace, tooLargeForLineDiff],
   );
   // Aligned pane texts + real line-number maps: every diff row is one line in
   // both panes, with the absent side padded by a blank (coloured) placeholder so
@@ -921,6 +932,28 @@ export function StageFileEditor({
                   Stage whole file
                 </Button>
               </div>
+            )}
+          </div>
+        ) : tooLargeForLineDiff ? (
+          <div
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "var(--space-3)",
+              padding: "var(--space-4)",
+              color: "var(--color-text-muted)",
+              fontSize: "var(--font-size-sm)",
+              textAlign: "center",
+            }}
+          >
+            <span>This file is too large to diff line-by-line.</span>
+            {!readOnly && onStageWholeFile && (
+              <Button variant="primary" size="sm" onClick={() => onStageWholeFile(path)}>
+                Stage whole file
+              </Button>
             )}
           </div>
         ) : (

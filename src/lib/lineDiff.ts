@@ -40,6 +40,44 @@ export interface DiffOptions {
   ignoreWhitespace?: boolean;
 }
 
+/** Above this many lines in the trimmed middle section, the O(n·m) LCS table
+ *  gets too expensive to build synchronously on the render thread. Callers
+ *  should check {@link isDiffTooLargeForLineDiff} before calling {@link diffLines}
+ *  and fall back to whole-file staging instead. */
+export const DIFF_SIZE_CAP = 4000;
+
+/** True when the untrimmed middle section (after stripping a shared prefix and
+ *  suffix) is large enough that the O(n·m) table would be too expensive to
+ *  build synchronously on the render thread. Callers should skip diffLines
+ *  entirely and fall back to whole-file staging. */
+export function isDiffTooLargeForLineDiff(head: string, worktree: string): boolean {
+  const a = head.split("\n");
+  const b = worktree.split("\n");
+  const { aMid, bMid } = trimmedMiddle(a, b);
+  return aMid.length > DIFF_SIZE_CAP || bMid.length > DIFF_SIZE_CAP;
+}
+
+// Splits `a`/`b` into a shared prefix, a shared suffix, and the (usually much
+// smaller) middle section that actually differs, so the O(n·m) LCS table only
+// has to cover the middle.
+function trimmedMiddle(
+  a: string[],
+  b: string[],
+): { prefix: number; suffix: number; aMid: string[]; bMid: string[] } {
+  const maxPrefix = Math.min(a.length, b.length);
+  let prefix = 0;
+  while (prefix < maxPrefix && a[prefix] === b[prefix]) prefix++;
+  const maxSuffix = Math.min(a.length, b.length) - prefix;
+  let suffix = 0;
+  while (suffix < maxSuffix && a[a.length - 1 - suffix] === b[b.length - 1 - suffix]) suffix++;
+  return {
+    prefix,
+    suffix,
+    aMid: a.slice(prefix, a.length - suffix),
+    bMid: b.slice(prefix, b.length - suffix),
+  };
+}
+
 /**
  * Line-level diff between two texts, as an ordered list of rows. `context` lines
  * appear in both sides; `removed` only in `head`; `added` only in `worktree`.
@@ -47,22 +85,26 @@ export interface DiffOptions {
  * joining the rows belonging to a side with "\n" reproduces that side exactly
  * (unless `ignoreWhitespace` folds a whitespace-only change into context).
  *
- * Uses a standard LCS (O(n·m)) — fine for the file sizes a staging review
- * involves.
+ * A shared prefix/suffix is trimmed off before running the LCS so only the
+ * (usually tiny) differing middle section costs O(n·m); the trimmed ends are
+ * re-attached as context rows, so output is identical to running the LCS on
+ * the whole file.
  */
 export function diffLines(head: string, worktree: string, options: DiffOptions = {}): DiffRow[] {
   const a = head.split("\n");
   const b = worktree.split("\n");
-  const m = a.length;
-  const n = b.length;
 
   // Comparison key: identity, or the whitespace-trimmed line when ignoring
   // leading/trailing whitespace. Lines equal under this key become context.
   const key = options.ignoreWhitespace ? (s: string) => s.trim() : (s: string) => s;
-  const ka = a.map(key);
-  const kb = b.map(key);
 
-  // dp[i][j] = LCS length of a[i..] and b[j..], compared by key.
+  const { prefix, suffix, aMid, bMid } = trimmedMiddle(a, b);
+  const m = aMid.length;
+  const n = bMid.length;
+  const ka = aMid.map(key);
+  const kb = bMid.map(key);
+
+  // dp[i][j] = LCS length of aMid[i..] and bMid[j..], compared by key.
   const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
   for (let i = m - 1; i >= 0; i--) {
     for (let j = n - 1; j >= 0; j--) {
@@ -71,30 +113,34 @@ export function diffLines(head: string, worktree: string, options: DiffOptions =
   }
 
   const rows: DiffRow[] = [];
+  for (let k = 0; k < prefix; k++) rows.push({ kind: "context", text: b[k] });
+
   let i = 0;
   let j = 0;
   while (i < m && j < n) {
     if (ka[i] === kb[j]) {
       // Prefer the worktree text for context (identical to head unless a
       // whitespace-only difference was folded away).
-      const folded = options.ignoreWhitespace && a[i] !== b[j];
+      const folded = options.ignoreWhitespace && aMid[i] !== bMid[j];
       rows.push({
         kind: "context",
-        text: b[j],
-        ...(folded ? { composeText: a[i] } : {}),
+        text: bMid[j],
+        ...(folded ? { composeText: aMid[i] } : {}),
       });
       i++;
       j++;
     } else if (dp[i + 1][j] >= dp[i][j + 1]) {
-      rows.push({ kind: "removed", text: a[i] });
+      rows.push({ kind: "removed", text: aMid[i] });
       i++;
     } else {
-      rows.push({ kind: "added", text: b[j] });
+      rows.push({ kind: "added", text: bMid[j] });
       j++;
     }
   }
-  while (i < m) rows.push({ kind: "removed", text: a[i++] });
-  while (j < n) rows.push({ kind: "added", text: b[j++] });
+  while (i < m) rows.push({ kind: "removed", text: aMid[i++] });
+  while (j < n) rows.push({ kind: "added", text: bMid[j++] });
+
+  for (let k = b.length - suffix; k < b.length; k++) rows.push({ kind: "context", text: b[k] });
   return rows;
 }
 

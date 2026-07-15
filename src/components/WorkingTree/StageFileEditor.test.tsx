@@ -457,4 +457,35 @@ describe("StageFileEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Stage whole file" }));
     expect(onStageWholeFile).toHaveBeenCalledWith("logo.png");
   });
+
+  it("falls back to whole-file staging instead of a line diff when the file is too large", () => {
+    const onStageWholeFile = vi.fn();
+    const huge: StageFileContents = {
+      headContent: Array.from({ length: 5000 }, (_, i) => `h${i}`).join("\n"),
+      worktreeContent: Array.from({ length: 5000 }, (_, i) => `w${i}`).join("\n"),
+      isBinary: false,
+      worktreeExists: true,
+    };
+    const { container } = renderEditor(huge, { path: "bundle.min.js", onStageWholeFile });
+
+    expect(screen.getByText(/too large to diff line-by-line/i)).toBeInTheDocument();
+    expect(container.querySelector('[data-testid="head-pane"]')).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Stage whole file" }));
+    expect(onStageWholeFile).toHaveBeenCalledWith("bundle.min.js");
+  });
+
+  it("shows a too-large message with no stage button in read-only mode", () => {
+    const huge: StageFileContents = {
+      headContent: Array.from({ length: 5000 }, (_, i) => `h${i}`).join("\n"),
+      worktreeContent: Array.from({ length: 5000 }, (_, i) => `w${i}`).join("\n"),
+      isBinary: false,
+      worktreeExists: true,
+    };
+    render(
+      <StageFileEditor readOnly path="bundle.min.js" contents={huge} onStageWholeFile={vi.fn()} />,
+    );
+
+    expect(screen.getByText(/too large to diff line-by-line/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stage whole file" })).not.toBeInTheDocument();
+  });
 });
