@@ -168,6 +168,13 @@ export default function App() {
     void loadRemoteTags();
   }, [repoPath, loadBranches, detectRemote, loadAheadBehind, loadRemoteTags]);
 
+  // A repo switch invalidates whatever the right panel was showing (a commit or
+  // uncommitted-diff selection from the previous repo) — fall back to the
+  // default "commit" mode so it doesn't render stale/mismatched state.
+  useEffect(() => {
+    setHistoryRightMode("commit");
+  }, [repoPath]);
+
   // The file watcher marks the working tree dirty; the poll consumes the flag to
   // decide whether the (potentially expensive) `git status` scan is worth
   // running this tick. See `lib/workingTreeSync`.

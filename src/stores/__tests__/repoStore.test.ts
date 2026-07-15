@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useRepoStore } from "../repoStore";
 import { useGraphStore } from "../graphStore";
+import { useWorkingTreeStore } from "../workingTreeStore";
 import { useAutoStashStore } from "../autoStashStore";
 import { AUTO_STASH_SENTINEL } from "../../lib/autoStash";
 
@@ -203,6 +204,16 @@ describe("repoStore", () => {
     const s = useRepoStore.getState();
     expect(s.currentRepo).toEqual(repoB);
     expect(s.activeRepoPath).toBe("/b");
+  });
+
+  it("activateRepo resets workingTreeStore before reloading the new repo's status", async () => {
+    const repoB = { name: "b", path: "/b", headBranch: "main" };
+    mockByCommand({ activate_repo: repoB });
+    const resetSpy = vi.spyOn(useWorkingTreeStore.getState(), "reset");
+
+    await useRepoStore.getState().activateRepo(repoB.path);
+
+    expect(resetSpy).toHaveBeenCalled();
   });
 
   it("closeRepo falls back to the remaining active repo", async () => {

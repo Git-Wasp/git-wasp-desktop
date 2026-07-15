@@ -179,6 +179,25 @@ describe("workingTreeStore", () => {
     expect(useWorkingTreeStore.getState().status).toEqual(status);
   });
 
+  it("reset clears repo-scoped selection and status", () => {
+    useWorkingTreeStore.setState({
+      status: emptyStatus,
+      selectedPath: "f.txt",
+      stageMode: "staged",
+      stageDiff,
+      headCommit: { oid: "abc", message: "m", pushed: false },
+    });
+
+    useWorkingTreeStore.getState().reset();
+
+    const s = useWorkingTreeStore.getState();
+    expect(s.status).toBeNull();
+    expect(s.selectedPath).toBeNull();
+    expect(s.stageMode).toBeNull();
+    expect(s.stageDiff).toBeNull();
+    expect(s.headCommit).toBeNull();
+  });
+
   it("startWatching refreshes the graph's cached working-tree status before re-fetching the viewport, debounced", async () => {
     vi.useFakeTimers();
     let handler: () => void = () => {};

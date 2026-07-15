@@ -76,6 +76,10 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     // Clear the previous repo's graph (rows, cache, selection) so it doesn't
     // linger — the graph shows its loading skeleton until the new fetch lands.
     useGraphStore.getState().reset();
+    // Likewise the previous repo's working-tree selection/diff/status — otherwise
+    // a file selected in the old repo (or its stale diff) could linger into the
+    // newly-activated one until the fresh status lands.
+    useWorkingTreeStore.getState().reset();
     await Promise.all([
       useGraphStore.getState().fetchViewport(0, GRAPH_INITIAL_LIMIT),
       get().loadBranches(),
@@ -131,6 +135,7 @@ export const useRepoStore = create<RepoStore>((set, get) => {
       } else {
         set({ currentRepo: null, activeRepoPath: null, branches: [] });
         useGraphStore.getState().reset();
+        useWorkingTreeStore.getState().reset();
       }
     },
 
@@ -141,6 +146,7 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     newTab: () => {
       set({ currentRepo: null, activeRepoPath: null, branches: [] });
       useGraphStore.getState().reset();
+      useWorkingTreeStore.getState().reset();
     },
 
     loadRecentRepos: async () => {

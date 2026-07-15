@@ -41,6 +41,10 @@ interface WorkingTreeStore {
   loadHeadCommit: () => Promise<void>;
   loadIdentity: () => Promise<void>;
   startWatching: () => Promise<() => void>;
+  /** Clear everything repo-scoped (selection, staging diff, status, HEAD info)
+   *  so a previous repo's state can't linger into a newly-activated one.
+   *  `identity` is user-level, not repo-scoped, so it's left alone. */
+  reset: () => void;
 }
 
 // After staging `path` (which was the file open in the diff view), move the
@@ -197,4 +201,13 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
     });
     return unlisten;
   },
+
+  reset: () =>
+    set({
+      status: null,
+      selectedPath: null,
+      stageMode: null,
+      stageDiff: null,
+      headCommit: null,
+    }),
 }));
