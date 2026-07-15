@@ -90,6 +90,14 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
   refreshAll: async () => {
     const status = await invoke<WorkingTreeStatus>("refresh_working_tree");
     set({ status });
+    const { selectedPath, stageMode } = get();
+    if (selectedPath && stageMode) {
+      const stageDiff = await invoke<StageFileContents>("get_stage_file_contents", {
+        path: selectedPath,
+        staged: stageMode === "staged",
+      });
+      if (get().selectedPath === selectedPath && get().stageMode === stageMode) set({ stageDiff });
+    }
     await useGraphStore.getState().refresh();
   },
 

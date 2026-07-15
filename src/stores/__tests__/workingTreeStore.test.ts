@@ -225,4 +225,41 @@ describe("workingTreeStore", () => {
 
     vi.useRealTimers();
   });
+
+  it("refreshAll refetches the open file's stageDiff so external edits aren't staged from a stale snapshot", async () => {
+    useWorkingTreeStore.setState({ selectedPath: "f.txt", stageMode: "unstaged" });
+    const newStatus: WorkingTreeStatus = { ...emptyStatus, unstaged: [{ path: "f.txt", originalPath: null, status: "Modified" }] };
+    const freshDiff: StageFileContents = { ...stageDiff, worktreeContent: "a\nB\nc\nD\n" };
+    mockInvoke.mockImplementation((cmd) =>
+      cmd === "get_graph_viewport"
+        ? Promise.resolve({ nodes: [], totalCount: 0, offset: 0 })
+        : cmd === "refresh_working_tree"
+        ? Promise.resolve(newStatus)
+        : cmd === "get_stage_file_contents"
+        ? Promise.resolve(freshDiff)
+        : Promise.resolve(undefined),
+    );
+    useGraphStore.setState({ lastOffset: 0, lastLimit: 50, nodesByRow: new Map() });
+
+    await useWorkingTreeStore.getState().refreshAll();
+
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "get_stage_file_contents", { path: "f.txt", staged: false });
+    expect(useWorkingTreeStore.getState().stageDiff).toEqual(freshDiff);
+  });
+
+  it("refreshAll does not fetch a diff when no file is open", async () => {
+    useWorkingTreeStore.setState({ selectedPath: null, stageMode: null });
+    mockInvoke.mockImplementation((cmd) =>
+      cmd === "get_graph_viewport"
+        ? Promise.resolve({ nodes: [], totalCount: 0, offset: 0 })
+        : cmd === "refresh_working_tree"
+        ? Promise.resolve(emptyStatus)
+        : Promise.resolve(undefined),
+    );
+    useGraphStore.setState({ lastOffset: 0, lastLimit: 50, nodesByRow: new Map() });
+
+    await useWorkingTreeStore.getState().refreshAll();
+
+    expect(mockInvoke).toHaveBeenCalledTimes(2); // refresh_working_tree and get_graph_viewport only
+  });
 });
