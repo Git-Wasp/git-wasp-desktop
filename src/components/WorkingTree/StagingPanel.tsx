@@ -139,9 +139,10 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
     deleteFile,
   } = useWorkingTreeStore();
 
-  // Right-click menu + the pending delete awaiting confirmation.
+  // Right-click menu + the pending delete/discard awaiting confirmation.
   const [menu, setMenu] = useState<RowMenuState | null>(null);
   const [pendingDelete, setPendingDelete] = useState<StatusEntry | null>(null);
+  const [pendingDiscard, setPendingDiscard] = useState<StatusEntry | null>(null);
 
   const openMenu = (e: React.MouseEvent, entry: StatusEntry, staged: boolean) => {
     e.preventDefault();
@@ -159,7 +160,7 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
       ? [{ label: "Unstage", onSelect: () => unstageFile(entry.path) }, { separator: true }, deleteItem]
       : [
           { label: "Stage", onSelect: () => stageFile(entry.path) },
-          { label: "Discard", danger: true, onSelect: () => discardFile(entry.path) },
+          { label: "Discard", danger: true, onSelect: () => setPendingDiscard(entry) },
           { separator: true },
           deleteItem,
         ];
@@ -319,6 +320,19 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
             setPendingDelete(null);
           }}
           onCancel={() => setPendingDelete(null)}
+        />
+      )}
+
+      {pendingDiscard && (
+        <ConfirmDialog
+          title="Discard changes"
+          message={`Discard changes to "${pendingDiscard.path}"? This permanently discards the uncommitted changes to this file and cannot be undone.`}
+          confirmLabel="Discard"
+          onConfirm={() => {
+            discardFile(pendingDiscard.path);
+            setPendingDiscard(null);
+          }}
+          onCancel={() => setPendingDiscard(null)}
         />
       )}
     </div>

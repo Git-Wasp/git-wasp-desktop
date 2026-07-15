@@ -29,6 +29,7 @@ import { stageGutter, setStagedLines } from "./stageGutter";
 import { ChangeOverview } from "./ChangeOverview";
 import { paneLabelStyle } from "./paneLabelStyle";
 import { Button } from "../ui/Button";
+import { ConfirmDialog } from "../common/ConfirmDialog";
 import { IconButton } from "../ui/IconButton";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { Tooltip } from "../ui/Tooltip";
@@ -428,6 +429,7 @@ export function StageFileEditor({
 
   const language = useMemo(() => languageForPath(path), [path]);
 
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>(loadViewMode);
   const changeViewMode = useCallback((mode: ViewMode) => {
     setViewMode(mode);
@@ -890,7 +892,7 @@ export function StageFileEditor({
             </>
           )}
           {!readOnly && onDiscardFile && (
-            <Button variant="danger" size="sm" onClick={() => onDiscardFile(path)}>
+            <Button variant="danger" size="sm" onClick={() => setConfirmDiscard(true)}>
               Discard file
             </Button>
           )}
@@ -1086,6 +1088,19 @@ export function StageFileEditor({
             showHeaderSpacer={viewMode === "split"}
           />
         </div>
+      )}
+
+      {confirmDiscard && (
+        <ConfirmDialog
+          title="Discard changes"
+          message={`Discard changes to "${path}"? This permanently discards the uncommitted changes to this file and cannot be undone.`}
+          confirmLabel="Discard"
+          onConfirm={() => {
+            onDiscardFile?.(path);
+            setConfirmDiscard(false);
+          }}
+          onCancel={() => setConfirmDiscard(false)}
+        />
       )}
     </div>
   );

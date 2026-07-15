@@ -54,11 +54,27 @@ describe("StagingPanel row menu", () => {
     expect(m.queryByText("Discard")).not.toBeInTheDocument();
   });
 
-  it("routes Discard straight through without a confirmation", () => {
+  it("requires confirmation before discarding a file's changes", () => {
     render(<StagingPanel />);
     fireEvent.contextMenu(screen.getByText("changed.ts"));
     fireEvent.click(within(menu()).getByText("Discard"));
+
+    // The discard does not fire until the modal is confirmed.
+    expect(useWorkingTreeStore.getState().discardFile).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("dialog", { name: "Discard changes" });
+    expect(within(dialog).getByText(/changed\.ts/)).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByText("Discard"));
     expect(useWorkingTreeStore.getState().discardFile).toHaveBeenCalledWith("changed.ts");
+  });
+
+  it("does not discard when the confirmation is cancelled", () => {
+    render(<StagingPanel />);
+    fireEvent.contextMenu(screen.getByText("changed.ts"));
+    fireEvent.click(within(menu()).getByText("Discard"));
+    fireEvent.click(screen.getByText("Cancel"));
+    expect(useWorkingTreeStore.getState().discardFile).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("requires confirmation before deleting a file", () => {

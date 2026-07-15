@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { CommitGraph } from "./CommitGraph";
@@ -622,6 +622,76 @@ describe("CommitGraph context menu", () => {
     await waitFor(() =>
       expect(useRepoStore.getState().createTag).toHaveBeenCalledWith("v1.0", "b".repeat(40)),
     );
+  });
+
+  it("requires confirmation before deleting a branch (not a native window.confirm)", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockImplementation(() => {
+      throw new Error("window.confirm should not be used");
+    });
+    useGraphStore.setState({
+      viewport: {
+        totalCount: 2,
+        offset: 0,
+        nodes: [
+          node({
+            oid: "a".repeat(40),
+            summary: "first commit",
+            branchLabels: [{ name: "main", isRemote: false, isTag: false }],
+            isHead: true,
+            row: 0,
+          }),
+          node({
+            oid: "b".repeat(40),
+            summary: "second commit",
+            branchLabels: [{ name: "feature", isRemote: false, isTag: false }],
+            row: 1,
+          }),
+        ],
+      },
+    });
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("second commit"));
+    fireEvent.click(screen.getByText("Delete feature"));
+
+    expect(useRepoStore.getState().deleteBranch).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("dialog", { name: "Delete branch" });
+    expect(within(dialog).getByText(/feature/)).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByText("Delete"));
+    await waitFor(() => expect(useRepoStore.getState().deleteBranch).toHaveBeenCalledWith("feature"));
+
+    confirmSpy.mockRestore();
+  });
+
+  it("does not delete a branch when the confirmation is cancelled", () => {
+    useGraphStore.setState({
+      viewport: {
+        totalCount: 2,
+        offset: 0,
+        nodes: [
+          node({
+            oid: "a".repeat(40),
+            summary: "first commit",
+            branchLabels: [{ name: "main", isRemote: false, isTag: false }],
+            isHead: true,
+            row: 0,
+          }),
+          node({
+            oid: "b".repeat(40),
+            summary: "second commit",
+            branchLabels: [{ name: "feature", isRemote: false, isTag: false }],
+            row: 1,
+          }),
+        ],
+      },
+    });
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("second commit"));
+    fireEvent.click(screen.getByText("Delete feature"));
+    fireEvent.click(screen.getByText("Cancel"));
+
+    expect(useRepoStore.getState().deleteBranch).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("shows a copy-link action only when a remote is detected, and copies the URL", () => {

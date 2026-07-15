@@ -4,10 +4,12 @@ import type { StashEntry, WorkingTreeStatus } from "../../types/workingTree";
 import { useWorkingTreeStore } from "../../stores/workingTreeStore";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { Button } from "../ui/Button";
+import { ConfirmDialog } from "../common/ConfirmDialog";
 
 export function StashPanel() {
   const [stashes, setStashes] = useState<StashEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [pendingDrop, setPendingDrop] = useState<StashEntry | null>(null);
 
   const reload = async () => {
     const entries = await invoke<StashEntry[]>("stash_list_cmd");
@@ -87,7 +89,7 @@ export function StashPanel() {
                 onClick={() => {
                   if (action === "Apply") handleApply(s.index);
                   else if (action === "Pop") handlePop(s.index);
-                  else handleDrop(s.index);
+                  else setPendingDrop(s);
                 }}
               >
                 {action}
@@ -96,6 +98,19 @@ export function StashPanel() {
           </div>
         </div>
       ))}
+
+      {pendingDrop && (
+        <ConfirmDialog
+          title="Drop stash"
+          message={`Drop "${pendingDrop.message}"? This permanently deletes the stashed changes and cannot be undone.`}
+          confirmLabel="Drop"
+          onConfirm={() => {
+            handleDrop(pendingDrop.index);
+            setPendingDrop(null);
+          }}
+          onCancel={() => setPendingDrop(null)}
+        />
+      )}
     </CollapsibleSection>
   );
 }

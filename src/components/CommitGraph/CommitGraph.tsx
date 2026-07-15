@@ -11,6 +11,7 @@ import { useTagStore } from "../../stores/tagStore";
 import { TagDeleteDialog } from "./TagDeleteDialog";
 import { useCommitGraph, GRAPH_PAD_LEFT } from "../../hooks/useCommitGraph";
 import { ContextMenu, type MenuItem } from "../common/ContextMenu";
+import { ConfirmDialog } from "../common/ConfirmDialog";
 import { PromptDialog } from "../common/PromptDialog";
 import { ResizeHandle } from "../common/ResizeHandle";
 import { usePersistedWidth } from "../../lib/usePersistedWidth";
@@ -311,6 +312,7 @@ export function CommitGraph({
   const [prompt, setPrompt] = useState<PromptState | null>(null);
   const [squash, setSquash] = useState<{ oids: string[]; message: string } | null>(null);
   const [tagDelete, setTagDelete] = useState<{ name: string; onRemote: boolean } | null>(null);
+  const [pendingDeleteBranch, setPendingDeleteBranch] = useState<string | null>(null);
   // The row the pointer is over, for a subtle hover highlight. Stable setter, so
   // memoized rows only re-render when their own hovered flag flips.
   const [hoveredOid, setHoveredOid] = useState<string | null>(null);
@@ -727,11 +729,7 @@ export function CommitGraph({
             items.push({
               label: `Delete ${branch.name}`,
               danger: true,
-              onSelect: () => {
-                if (window.confirm(`Delete branch "${branch.name}"?`)) {
-                  runBranchOp(() => deleteBranch(branch.name));
-                }
-              },
+              onSelect: () => setPendingDeleteBranch(branch.name),
             });
           }
         }
@@ -1081,6 +1079,20 @@ export function CommitGraph({
           initialMessage={squash.message}
           onConfirm={runSquash}
           onCancel={() => setSquash(null)}
+        />
+      )}
+
+      {pendingDeleteBranch && (
+        <ConfirmDialog
+          title="Delete branch"
+          message={`Delete "${pendingDeleteBranch}"? Git Wasp deletes branches unconditionally (unlike "git branch -d"), so if it has commits not merged or pushed anywhere else, they will be permanently lost.`}
+          confirmLabel="Delete"
+          onConfirm={() => {
+            const name = pendingDeleteBranch;
+            setPendingDeleteBranch(null);
+            runBranchOp(() => deleteBranch(name));
+          }}
+          onCancel={() => setPendingDeleteBranch(null)}
         />
       )}
 

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import "@testing-library/jest-dom";
@@ -182,6 +182,51 @@ describe("Sidebar", () => {
     render(<Sidebar />);
     fireEvent.click(screen.getByRole("button", { name: "feature actions" }));
     expect(screen.queryByText(/Fast-forward to/)).not.toBeInTheDocument();
+  });
+
+  it("requires confirmation before deleting a branch (not a native window.confirm)", async () => {
+    const deleteBranch = vi.fn().mockResolvedValue(undefined);
+    const confirmSpy = vi.spyOn(window, "confirm").mockImplementation(() => {
+      throw new Error("window.confirm should not be used");
+    });
+    useRepoStore.setState({
+      deleteBranch,
+      branches: [
+        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "a", ahead: null, behind: null },
+      ],
+    });
+
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole("button", { name: "feature actions" }));
+    fireEvent.click(screen.getByText("Delete branch"));
+
+    // The delete does not fire until the modal is confirmed.
+    expect(deleteBranch).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("dialog", { name: "Delete branch" });
+    expect(within(dialog).getByText(/feature/)).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByText("Delete"));
+    await waitFor(() => expect(deleteBranch).toHaveBeenCalledWith("feature"));
+
+    confirmSpy.mockRestore();
+  });
+
+  it("does not delete a branch when the confirmation is cancelled", () => {
+    const deleteBranch = vi.fn().mockResolvedValue(undefined);
+    useRepoStore.setState({
+      deleteBranch,
+      branches: [
+        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "a", ahead: null, behind: null },
+      ],
+    });
+
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole("button", { name: "feature actions" }));
+    fireEvent.click(screen.getByText("Delete branch"));
+    fireEvent.click(screen.getByText("Cancel"));
+
+    expect(deleteBranch).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("creates a tag at a branch tip from its row menu", async () => {

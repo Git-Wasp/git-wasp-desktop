@@ -16,6 +16,7 @@ import { RemoteActions } from "./RemoteActions";
 import { CloneDialog } from "../GitHub/CloneDialog";
 import { PruneBranchesDialog } from "./PruneBranchesDialog";
 import { PromptDialog } from "../common/PromptDialog";
+import { ConfirmDialog } from "../common/ConfirmDialog";
 import { VirtualList } from "../ui/VirtualList";
 
 // Fixed row height for the virtualised branch lists — sized to fit the ⋮ menu
@@ -61,6 +62,8 @@ export function Sidebar({ width = 220 }: { width?: number }) {
   const [selectedRecentPath, setSelectedRecentPath] = useState<string | null>(null);
   // The branch being tagged via "Create tag…" (its tip oid), while the name is entered.
   const [tagBranch, setTagBranch] = useState<{ name: string; oid: string } | null>(null);
+  // The branch awaiting delete confirmation.
+  const [pendingDeleteBranch, setPendingDeleteBranch] = useState<string | null>(null);
 
   // GitHub connection is managed in Settings now; the host is still needed for
   // the "Clone from GitHub…" dialog.
@@ -205,7 +208,13 @@ export function Sidebar({ width = 220 }: { width?: number }) {
               : [{ label: "Merge into current branch", onSelect: () => handleMergeBranch(b.name) }]),
             ...(b.isHead
               ? []
-              : [{ label: "Delete branch", destructive: true, onSelect: () => handleDeleteBranch(b.name) }]),
+              : [
+                  {
+                    label: "Delete branch",
+                    destructive: true,
+                    onSelect: () => setPendingDeleteBranch(b.name),
+                  },
+                ]),
           ]}
         />
       </div>
@@ -304,6 +313,20 @@ export function Sidebar({ width = 220 }: { width?: number }) {
           confirmLabel="Create"
           onConfirm={handleCreateTag}
           onCancel={() => setTagBranch(null)}
+        />
+      )}
+
+      {pendingDeleteBranch && (
+        <ConfirmDialog
+          title="Delete branch"
+          message={`Delete "${pendingDeleteBranch}"? Git Wasp deletes branches unconditionally (unlike "git branch -d"), so if it has commits not merged or pushed anywhere else, they will be permanently lost.`}
+          confirmLabel="Delete"
+          onConfirm={() => {
+            const name = pendingDeleteBranch;
+            setPendingDeleteBranch(null);
+            void handleDeleteBranch(name);
+          }}
+          onCancel={() => setPendingDeleteBranch(null)}
         />
       )}
 

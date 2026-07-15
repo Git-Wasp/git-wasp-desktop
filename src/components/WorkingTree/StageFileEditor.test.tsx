@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { StageFileEditor } from "./StageFileEditor";
@@ -472,6 +472,31 @@ describe("StageFileEditor", () => {
     expect(container.querySelector('[data-testid="head-pane"]')).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Stage whole file" }));
     expect(onStageWholeFile).toHaveBeenCalledWith("bundle.min.js");
+  });
+
+  describe("discard confirmation", () => {
+    it("prompts for confirmation before discarding, and discards only after confirming", () => {
+      const onDiscardFile = vi.fn();
+      renderEditor(inserted, { onDiscardFile });
+      fireEvent.click(screen.getByRole("button", { name: "Discard file" }));
+
+      expect(onDiscardFile).not.toHaveBeenCalled();
+      const dialog = screen.getByRole("dialog", { name: "Discard changes" });
+      expect(within(dialog).getByText(/f\.txt/)).toBeInTheDocument();
+
+      fireEvent.click(within(dialog).getByText("Discard"));
+      expect(onDiscardFile).toHaveBeenCalledWith("f.txt");
+    });
+
+    it("does not discard when the confirmation is cancelled", () => {
+      const onDiscardFile = vi.fn();
+      renderEditor(inserted, { onDiscardFile });
+      fireEvent.click(screen.getByRole("button", { name: "Discard file" }));
+      fireEvent.click(screen.getByText("Cancel"));
+
+      expect(onDiscardFile).not.toHaveBeenCalled();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
   });
 
   it("shows a too-large message with no stage button in read-only mode", () => {
