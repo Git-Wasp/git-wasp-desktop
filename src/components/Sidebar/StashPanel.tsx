@@ -20,6 +20,7 @@ export function StashPanel() {
 
   useEffect(() => {
     setStashes([]);
+    setPendingDrop(null);
     reload();
   }, [activeRepoPath]);
 

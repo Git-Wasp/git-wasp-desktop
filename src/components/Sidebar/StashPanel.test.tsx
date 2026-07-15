@@ -90,4 +90,21 @@ describe("StashPanel", () => {
 
     expect(await screen.findByText("repo B stash")).toBeInTheDocument();
   });
+
+  it("clears a pending drop confirmation when the active repo changes", async () => {
+    mockInvoke.mockResolvedValueOnce([{ index: 0, message: "repo A stash", oid: "a".repeat(40) }]);
+    const { rerender } = render(<StashPanel />);
+    await screen.findByText("repo A stash");
+
+    fireEvent.click(screen.getByRole("button", { name: "Drop" }));
+    expect(screen.getByRole("dialog", { name: "Drop stash" })).toBeInTheDocument();
+
+    mockInvoke.mockResolvedValueOnce([{ index: 0, message: "repo B stash", oid: "b".repeat(40) }]);
+    useRepoStore.setState({ activeRepoPath: "/repo-b" });
+    rerender(<StashPanel />);
+
+    await screen.findByText("repo B stash");
+    expect(screen.queryByRole("dialog", { name: "Drop stash" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/repo A stash/)).not.toBeInTheDocument();
+  });
 });
