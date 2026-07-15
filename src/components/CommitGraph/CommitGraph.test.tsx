@@ -469,6 +469,32 @@ describe("CommitGraph context menu", () => {
     expect(screen.queryByText(/Squash/)).toBeNull();
   });
 
+  it("does not offer squash when a selected commit scrolled out of the loaded viewport slice", () => {
+    // Selection spans 3 commits, but only 2 are in the currently loaded
+    // viewport (the 3rd scrolled out of view) — buildSquashPlan would happily
+    // return a smaller, silently-wrong 2-commit plan from just the loaded
+    // nodes, so the call site must refuse to offer it at all.
+    const aOid = "a".repeat(40);
+    const bOid = "b".repeat(40);
+    const cOid = "c".repeat(40);
+    useGraphStore.setState({
+      viewport: {
+        totalCount: 3,
+        offset: 0,
+        nodes: [
+          node({ oid: aOid, summary: "first commit", isHead: true, row: 0 }),
+          node({ oid: bOid, summary: "second commit", row: 1 }),
+          // cOid (row 2) is selected but not in the loaded viewport slice.
+        ],
+      },
+      selection: { anchor: aOid, focus: cOid, range: new Set([aOid, bOid, cOid]) },
+    });
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("second commit"));
+
+    expect(screen.queryByText(/Squash/)).toBeNull();
+  });
+
   it("offers squash when several commits are selected and keeps the selection", () => {
     const aOid = "a".repeat(40);
     const bOid = "b".repeat(40);

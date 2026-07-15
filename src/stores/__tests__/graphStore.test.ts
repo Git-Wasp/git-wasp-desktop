@@ -156,6 +156,23 @@ describe("graphStore", () => {
     expect(selection.range.size).toBe(3);
   });
 
+  it("range-select still resolves the full run when the anchor has scrolled out of the current viewport", () => {
+    const nodesByRow = new Map<number, ReturnType<typeof makeNode>>();
+    for (let row = 0; row <= 11; row++) {
+      nodesByRow.set(row, makeNode(row, `c${row}`));
+    }
+
+    useGraphStore.setState({
+      viewport: { nodes: [nodesByRow.get(10)!, nodesByRow.get(11)!], totalCount: 20, offset: 10, headRow: null },
+      nodesByRow,
+    });
+    useGraphStore.getState().selectCommit("c0", "replace"); // anchor at row 0, now off-viewport
+    // Viewport is unaffected by the anchor selection — still only rows 10-11.
+    useGraphStore.getState().selectCommit("c11", "range"); // shift-click at row 11
+
+    expect(useGraphStore.getState().selection.range.size).toBe(12); // rows 0..11 inclusive
+  });
+
   it("selectCommit toggle adds and removes individual commits (discontiguous)", () => {
     useGraphStore.setState({ viewport: makeViewport() });
 

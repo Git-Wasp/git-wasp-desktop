@@ -649,7 +649,10 @@ export function CommitGraph({
       // unpushed, includes the branch tip) and reports a clear error otherwise.
       if (viewport && selection.range.size > 1 && selection.range.has(node.oid)) {
         const plan = buildSquashPlan(viewport.nodes, selection.range);
-        if (plan) {
+        // Refuse a plan whose size doesn't match the full selection — some selected
+        // rows scrolled out of the loaded slice, so "Squash N" must not offer a
+        // smaller, silently-wrong N.
+        if (plan && plan.oids.length === selection.range.size) {
           items.push({
             label: `Squash ${plan.oids.length} commits…`,
             onSelect: () => setSquash(plan),

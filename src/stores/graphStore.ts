@@ -405,8 +405,18 @@ export const useGraphStore = create<GraphStore>((set, get) => {
 
     // mode === "range": shift-click extends the contiguous run from the anchor.
     const anchorOid = selection.anchor ?? oid;
-    const anchorNode = viewport.nodes.find((n) => n.oid === anchorOid);
-    const focusNode = viewport.nodes.find((n) => n.oid === oid);
+    const { nodesByRow } = get();
+    const findByOid = (target: string): GraphNode | undefined => {
+      // Prefer the live viewport (cheap for the common case), fall back to the
+      // full-session row cache — every row the user could have clicked to set
+      // this anchor was necessarily loaded into it at some point.
+      return (
+        viewport.nodes.find((n) => n.oid === target) ??
+        [...nodesByRow.values()].find((n) => n.oid === target)
+      );
+    };
+    const anchorNode = findByOid(anchorOid);
+    const focusNode = findByOid(oid);
 
     if (!anchorNode || !focusNode) {
       set({
@@ -418,11 +428,15 @@ export const useGraphStore = create<GraphStore>((set, get) => {
 
     const minRow = Math.min(anchorNode.row, focusNode.row);
     const maxRow = Math.max(anchorNode.row, focusNode.row);
-    const range = new Set(
-      viewport.nodes
-        .filter((n) => n.row >= minRow && n.row <= maxRow)
-        .map((n) => n.oid)
-    );
+    // Build the range from the row cache (covers rows outside the current
+    // viewport slice), falling back to whatever's in the live viewport for any
+    // row that was never cached (shouldn't happen for a reachable anchor/focus,
+    // but keeps this total rather than silently dropping rows).
+    const range = new Set<string>();
+    for (let row = minRow; row <= maxRow; row++) {
+      const cached = nodesByRow.get(row) ?? viewport.nodes.find((n) => n.row === row);
+      if (cached) range.add(cached.oid);
+    }
 
     set({
       selection: { anchor: anchorOid, focus: oid, range },
