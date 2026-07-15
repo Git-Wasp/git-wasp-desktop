@@ -3,6 +3,7 @@ import { create } from "zustand";
 import type { AheadBehind, FetchResult, PullResult } from "../types/github";
 import { logOperationError } from "../lib/logger";
 import { withAutoStash } from "../lib/autoStash";
+import { useRepoStore } from "./repoStore";
 
 export type PullMode = "ffOnly" | "ffOrMerge";
 
@@ -33,8 +34,17 @@ export const useRemoteStore = create<RemoteStore>((set, get) => ({
   lastError: null,
 
   loadAheadBehind: async () => {
-    const aheadBehind = await invoke<AheadBehind[]>("get_ahead_behind");
-    set({ aheadBehind });
+    const epoch = useRepoStore.getState().activationEpoch;
+    try {
+      const aheadBehind = await invoke<AheadBehind[]>("get_ahead_behind");
+      if (useRepoStore.getState().activationEpoch !== epoch) return; // superseded by a repo switch
+      set({ aheadBehind });
+    } catch (e) {
+      // Clear stale ahead/behind counts from a previous repo rather than
+      // leaving them displayed alongside a failed refresh.
+      if (useRepoStore.getState().activationEpoch === epoch) set({ aheadBehind: [] });
+      throw e;
+    }
   },
 
   fetch: async (remoteName?: string, prune?: boolean) => {

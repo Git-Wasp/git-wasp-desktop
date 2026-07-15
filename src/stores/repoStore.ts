@@ -30,6 +30,13 @@ interface RepoStore {
   branches: BranchInfo[];
   openRepos: RepoInfo[];
   activeRepoPath: string | null;
+  /** Monotonic counter bumped once per repo-switch (reloadActiveRepo,
+   *  closeRepo's no-repos-left branch, newTab). Repo-scoped stores capture
+   *  this at the start of an in-flight fetch and discard the result if it has
+   *  moved by the time the fetch resolves — the same guard shape as
+   *  graphStore's `fetchId`, but shared globally since it must be visible to
+   *  other stores rather than a fetch-local counter. */
+  activationEpoch: number;
   openRepo: (path: string) => Promise<void>;
   loadCurrentRepo: () => Promise<void>;
   loadOpenRepos: () => Promise<void>;
@@ -72,7 +79,7 @@ export const useRepoStore = create<RepoStore>((set, get) => {
   // Reload everything that's scoped to the active repo: graph, branches, and
   // the working-tree / merge status. Called whenever the active tab changes.
   const reloadActiveRepo = async (repo: RepoInfo) => {
-    set({ currentRepo: repo, activeRepoPath: repo.path });
+    set({ currentRepo: repo, activeRepoPath: repo.path, activationEpoch: get().activationEpoch + 1 });
     // Clear the previous repo's graph (rows, cache, selection) so it doesn't
     // linger — the graph shows its loading skeleton until the new fetch lands.
     useGraphStore.getState().reset();
@@ -94,6 +101,7 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     branches: [],
     openRepos: [],
     activeRepoPath: null,
+    activationEpoch: 0,
 
     openRepo: async (path: string) => {
       const repo = await invoke<RepoInfo>("open_repo", { path });
@@ -133,7 +141,12 @@ export const useRepoStore = create<RepoStore>((set, get) => {
       if (next) {
         await reloadActiveRepo(next);
       } else {
-        set({ currentRepo: null, activeRepoPath: null, branches: [] });
+        set({
+          currentRepo: null,
+          activeRepoPath: null,
+          branches: [],
+          activationEpoch: get().activationEpoch + 1,
+        });
         useGraphStore.getState().reset();
         useWorkingTreeStore.getState().reset();
       }
@@ -144,7 +157,12 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     // re-activates it. Frontend-only — the backend's active repo is re-synced on
     // the next activate/open.
     newTab: () => {
-      set({ currentRepo: null, activeRepoPath: null, branches: [] });
+      set({
+        currentRepo: null,
+        activeRepoPath: null,
+        branches: [],
+        activationEpoch: get().activationEpoch + 1,
+      });
       useGraphStore.getState().reset();
       useWorkingTreeStore.getState().reset();
     },

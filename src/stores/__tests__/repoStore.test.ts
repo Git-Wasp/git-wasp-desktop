@@ -10,7 +10,14 @@ const mockInvoke = vi.mocked(invoke);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useRepoStore.setState({ currentRepo: null, recentRepos: [], branches: [], openRepos: [], activeRepoPath: null });
+  useRepoStore.setState({
+    currentRepo: null,
+    recentRepos: [],
+    branches: [],
+    openRepos: [],
+    activeRepoPath: null,
+    activationEpoch: 0,
+  });
   // reloadActiveRepo (triggered by openRepo/activateRepo/closeRepo) drives
   // graphStore's fetchViewport, which now caches fetched rows — reset it too
   // so one test's cached (possibly empty) viewport can't mask another's
@@ -241,5 +248,36 @@ describe("repoStore", () => {
     expect(s.currentRepo).toBeNull();
     expect(s.activeRepoPath).toBeNull();
     expect(s.openRepos).toEqual([]);
+  });
+
+  it("activationEpoch bumps exactly once per repo-switch path", async () => {
+    expect(useRepoStore.getState().activationEpoch).toBe(0);
+
+    // openRepo (routes through reloadActiveRepo) — one bump.
+    const repoA = { name: "a", path: "/a", headBranch: "main" };
+    mockByCommand({ open_repo: repoA, list_open_repos: [repoA] });
+    await useRepoStore.getState().openRepo("/a");
+    expect(useRepoStore.getState().activationEpoch).toBe(1);
+
+    // activateRepo (routes through reloadActiveRepo) — one bump.
+    const repoB = { name: "b", path: "/b", headBranch: "main" };
+    mockByCommand({ activate_repo: repoB });
+    await useRepoStore.getState().activateRepo("/b");
+    expect(useRepoStore.getState().activationEpoch).toBe(2);
+
+    // closeRepo falling back to a remaining repo (routes through
+    // reloadActiveRepo internally) — one bump, not two.
+    mockByCommand({ close_repo: repoA, list_open_repos: [repoA] });
+    await useRepoStore.getState().closeRepo("/b");
+    expect(useRepoStore.getState().activationEpoch).toBe(3);
+
+    // closeRepo's no-repos-left branch — one bump.
+    mockByCommand({ close_repo: null, list_open_repos: [] });
+    await useRepoStore.getState().closeRepo("/a");
+    expect(useRepoStore.getState().activationEpoch).toBe(4);
+
+    // newTab — one bump.
+    useRepoStore.getState().newTab();
+    expect(useRepoStore.getState().activationEpoch).toBe(5);
   });
 });

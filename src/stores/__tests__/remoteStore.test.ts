@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useRemoteStore } from "../remoteStore";
+import { useRepoStore } from "../repoStore";
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -24,6 +25,35 @@ describe("remoteStore", () => {
 
     expect(mockInvoke).toHaveBeenCalledWith("get_ahead_behind");
     expect(useRemoteStore.getState().aheadBehind).toEqual(aheadBehind);
+  });
+
+  it("loadAheadBehind discards a late response from before a repo switch", async () => {
+    let resolveA: (v: { branch: string; upstream: string; ahead: number; behind: number }[]) => void;
+    const pendingA = new Promise<{ branch: string; upstream: string; ahead: number; behind: number }[]>((r) => {
+      resolveA = r;
+    });
+    mockInvoke.mockImplementationOnce(() => pendingA); // repo A's slow get_ahead_behind
+
+    const loadA = useRemoteStore.getState().loadAheadBehind();
+    useRepoStore.setState({ activationEpoch: useRepoStore.getState().activationEpoch + 1 }); // repo switch happens
+
+    const aheadBehindB = [{ branch: "main", upstream: "origin/main", ahead: 5, behind: 0 }];
+    mockInvoke.mockResolvedValueOnce(aheadBehindB); // repo B's own (fast) loadAheadBehind call
+    await useRemoteStore.getState().loadAheadBehind();
+
+    resolveA!([{ branch: "main", upstream: "origin/main", ahead: 1, behind: 2 }]); // repo A's late response
+    await loadA;
+
+    expect(useRemoteStore.getState().aheadBehind).toEqual(aheadBehindB); // not clobbered by A's stale data
+  });
+
+  it("loadAheadBehind clears aheadBehind on failure", async () => {
+    useRemoteStore.setState({ aheadBehind: [{ branch: "main", upstream: "origin/main", ahead: 1, behind: 2 }] });
+    mockInvoke.mockRejectedValueOnce(new Error("offline"));
+
+    await expect(useRemoteStore.getState().loadAheadBehind()).rejects.toThrow("offline");
+
+    expect(useRemoteStore.getState().aheadBehind).toEqual([]);
   });
 
   it("fetch sets isFetching during the call and reloads ahead/behind", async () => {

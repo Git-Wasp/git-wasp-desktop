@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useTagStore } from "../tagStore";
 import { useGraphStore } from "../graphStore";
+import { useRepoStore } from "../repoStore";
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -47,5 +48,30 @@ describe("tagStore", () => {
     await useTagStore.getState().deleteTag("v1.0", false);
     expect(mockInvoke).toHaveBeenCalledWith("delete_tag", { name: "v1.0" });
     expect(mockInvoke).not.toHaveBeenCalledWith("delete_remote_tag", expect.anything());
+  });
+
+  it("loadRemoteTags discards a late response from before a repo switch", async () => {
+    let resolveA: (v: string[]) => void;
+    const pendingA = new Promise<string[]>((r) => { resolveA = r; });
+    mockInvoke.mockImplementationOnce(() => pendingA);
+
+    const loadA = useTagStore.getState().loadRemoteTags(); // repo A's slow list_remote_tags
+    useRepoStore.setState({ activationEpoch: useRepoStore.getState().activationEpoch + 1 }); // repo switch happens
+    mockInvoke.mockResolvedValueOnce(["v2.0"]); // repo B's own (fast) loadRemoteTags call
+    await useTagStore.getState().loadRemoteTags();
+    resolveA!(["v1.0"]); // repo A's late response
+    await loadA;
+
+    expect(useTagStore.getState().remoteTags).toEqual(["v2.0"]); // not clobbered by A's stale v1.0
+  });
+
+  it("loadRemoteTags clears remoteTags (not just `loaded`) on failure", async () => {
+    useTagStore.setState({ remoteTags: ["v1.0"], loaded: true });
+    mockInvoke.mockRejectedValueOnce(new Error("offline"));
+
+    await useTagStore.getState().loadRemoteTags();
+
+    expect(useTagStore.getState().remoteTags).toEqual([]);
+    expect(useTagStore.getState().loaded).toBe(false);
   });
 });

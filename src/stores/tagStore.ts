@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import { useGraphStore } from "./graphStore";
+import { useRepoStore } from "./repoStore";
 
 /**
  * Tag actions + the set of tags known to exist on the remote (for the
@@ -25,12 +26,16 @@ export const useTagStore = create<TagStore>((set, get) => ({
   loaded: false,
 
   loadRemoteTags: async () => {
+    const epoch = useRepoStore.getState().activationEpoch;
     try {
       const remoteTags = await invoke<string[]>("list_remote_tags");
+      if (useRepoStore.getState().activationEpoch !== epoch) return; // superseded by a repo switch
       set({ remoteTags, loaded: true });
     } catch {
-      // Best-effort (offline / no remote): leave the indicator unknown.
-      set({ loaded: false });
+      // Best-effort (offline / no remote): leave the indicator unknown, and
+      // clear any stale tags from a previously-loaded repo/remote.
+      if (useRepoStore.getState().activationEpoch !== epoch) return;
+      set({ remoteTags: [], loaded: false });
     }
   },
 

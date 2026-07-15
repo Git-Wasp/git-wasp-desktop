@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useGithubStore } from "../githubStore";
+import { useRepoStore } from "../repoStore";
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -61,6 +62,53 @@ describe("githubStore", () => {
     await useGithubStore.getState().detectRemote();
 
     expect(useGithubStore.getState().remoteInfo).toBeNull();
+  });
+
+  it("detectRemote discards a late response from before a repo switch", async () => {
+    let resolveA: (v: { host: string; owner: string; repo: string; protocol: "https" }) => void;
+    const pendingA = new Promise<{ host: string; owner: string; repo: string; protocol: "https" }>((r) => {
+      resolveA = r;
+    });
+    mockInvoke.mockImplementationOnce(() => pendingA); // repo A's slow detect_remote_info
+
+    const detectA = useGithubStore.getState().detectRemote();
+    useRepoStore.setState({ activationEpoch: useRepoStore.getState().activationEpoch + 1 }); // repo switch happens
+
+    const remoteInfoB = { host: "github.com", owner: "b", repo: "repoB", protocol: "https" as const };
+    mockInvoke.mockResolvedValueOnce(remoteInfoB); // repo B's own (fast) detect_remote_info
+    mockInvoke.mockResolvedValueOnce(connected); // checkConnection for B
+    await useGithubStore.getState().detectRemote();
+
+    resolveA!({ host: "github.com", owner: "a", repo: "repoA", protocol: "https" }); // repo A's late response
+    await detectA;
+
+    expect(useGithubStore.getState().remoteInfo).toEqual(remoteInfoB); // not clobbered by A's stale remote
+  });
+
+  it("detectRemote clears pullRequests when the remote changes to a different repo", async () => {
+    useGithubStore.setState({
+      remoteInfo: { host: "github.com", owner: "a", repo: "repoA", protocol: "https" },
+      pullRequests: [
+        {
+          number: 1,
+          title: "stale PR from repo A",
+          author: "a",
+          headRef: "h",
+          baseRef: "main",
+          url: "u",
+          ciStatus: "none",
+          approvalCount: 0,
+        },
+      ],
+    });
+    const remoteInfoB = { host: "github.com", owner: "b", repo: "repoB", protocol: "https" as const };
+    mockInvoke.mockResolvedValueOnce(remoteInfoB); // detect_remote_info
+    mockInvoke.mockResolvedValueOnce(connected); // checkConnection
+
+    await useGithubStore.getState().detectRemote();
+
+    expect(useGithubStore.getState().remoteInfo).toEqual(remoteInfoB);
+    expect(useGithubStore.getState().pullRequests).toEqual([]);
   });
 
   it("startDeviceFlow stores the init payload and marks authenticating", async () => {

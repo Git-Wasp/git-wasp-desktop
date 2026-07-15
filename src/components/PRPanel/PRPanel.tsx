@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useGithubStore } from "../../stores/githubStore";
+import { useRepoStore } from "../../stores/repoStore";
 import { PRRow } from "./PRRow";
 import { NewPRForm } from "./NewPRForm";
 import { Button } from "../ui/Button";
@@ -8,6 +9,7 @@ import { EmptyState } from "../ui/EmptyState";
 export function PRPanel() {
   const { remoteInfo, pullRequests, loadPullRequests, prDraft, setPrDraft } =
     useGithubStore();
+  const activeRepoPath = useRepoStore((s) => s.activeRepoPath);
   const [showNewForm, setShowNewForm] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -15,8 +17,13 @@ export function PRPanel() {
     if (remoteInfo) {
       loadPullRequests(remoteInfo.host).catch((e) => setError(String(e)));
     }
+    // Re-keyed on activeRepoPath too, not just remoteInfo.host — two open
+    // repos can share the same GitHub host (e.g. both on github.com), so
+    // host alone wouldn't re-fire this effect on a switch between them and
+    // the previous repo's PR list would linger until something else
+    // triggered a reload.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remoteInfo?.host]);
+  }, [remoteInfo?.host, activeRepoPath]);
 
   // A pr draft (e.g. dropped from the commit graph) opens the form pre-seeded.
   useEffect(() => {
