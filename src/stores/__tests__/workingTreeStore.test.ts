@@ -226,6 +226,25 @@ describe("workingTreeStore", () => {
     vi.useRealTimers();
   });
 
+  it("startWatching's unlisten cancels a pending debounced refreshAll", async () => {
+    vi.useFakeTimers();
+    let handler: () => void = () => {};
+    mockListen.mockImplementation((_event, cb) => {
+      handler = cb as unknown as () => void;
+      return Promise.resolve(vi.fn());
+    });
+    const refreshAllSpy = vi.spyOn(useWorkingTreeStore.getState(), "refreshAll").mockResolvedValue();
+
+    const unlisten = await useWorkingTreeStore.getState().startWatching();
+    handler(); // a working-tree-changed event arrives, arming the 300ms debounce
+    unlisten(); // caller (e.g. an unmounting StagingPanel) tears down immediately
+    vi.advanceTimersByTime(400);
+
+    expect(refreshAllSpy).not.toHaveBeenCalled();
+    refreshAllSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
   it("refreshAll refetches the open file's stageDiff so external edits aren't staged from a stale snapshot", async () => {
     useWorkingTreeStore.setState({ selectedPath: "f.txt", stageMode: "unstaged" });
     const newStatus: WorkingTreeStatus = { ...emptyStatus, unstaged: [{ path: "f.txt", originalPath: null, status: "Modified" }] };

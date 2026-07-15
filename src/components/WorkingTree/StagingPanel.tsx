@@ -168,11 +168,17 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
 
   useEffect(() => {
     loadStatus();
+    let cancelled = false;
     let unlisten: (() => void) | null = null;
     startWatching().then((fn) => {
-      unlisten = fn;
+      // If the panel already unmounted (or a repo switch tore this effect down)
+      // before listen() resolved, tear the listener down immediately instead of
+      // stashing it in a variable nothing will ever read again.
+      if (cancelled) fn();
+      else unlisten = fn;
     });
     return () => {
+      cancelled = true;
       unlisten?.();
     };
   }, [loadStatus, startWatching]);

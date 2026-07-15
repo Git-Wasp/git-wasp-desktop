@@ -204,10 +204,18 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
         // no longer rescans the working tree on every call (it was costing a
         // full statuses() walk per scroll tick on large repos), so this
         // explicit, debounced refresh is what keeps it in sync now.
+        debounceTimer = null;
         void get().refreshAll();
       }, 300);
     });
-    return unlisten;
+    // The debounce timer must be torn down alongside the listener — otherwise
+    // a fs event that arrives just before unlisten() still fires a refresh
+    // (and setState) after the caller (e.g. an unmounting StagingPanel) has
+    // moved on.
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      unlisten();
+    };
   },
 
   reset: () =>

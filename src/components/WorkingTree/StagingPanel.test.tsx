@@ -1,11 +1,23 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
+import { listen } from "@tauri-apps/api/event";
 import { StagingPanel } from "./StagingPanel";
 import { useWorkingTreeStore } from "../../stores/workingTreeStore";
 import { useStashStore } from "../../stores/stashStore";
 import { useToastStore } from "../../stores/toastStore";
 import type { WorkingTreeStatus } from "../../types/workingTree";
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(),
+}));
+
+const mockListen = vi.mocked(listen);
+
+// Captured before beforeEach overrides `startWatching` with a stub for the
+// other tests in this file — the listener-leak test below needs the real
+// implementation so it can drive `listen()`'s resolution directly.
+const realStartWatching = useWorkingTreeStore.getState().startWatching;
 
 const status: WorkingTreeStatus = {
   staged: [{ path: "staged.ts", originalPath: null, status: "Modified" }],
@@ -139,5 +151,28 @@ describe("StagingPanel stash changes", () => {
     expect(screen.queryByText("Stash changes")).not.toBeInTheDocument();
     // Stage all still shows for the untracked file.
     expect(screen.getByText("Stage all")).toBeInTheDocument();
+  });
+});
+
+describe("StagingPanel file-watcher subscription", () => {
+  it("does not leak a listener when the panel unmounts before listen() resolves", async () => {
+    useWorkingTreeStore.setState({ startWatching: realStartWatching });
+    let resolveListen: (fn: () => void) => void;
+    mockListen.mockImplementation(
+      () =>
+        new Promise((r) => {
+          resolveListen = r;
+        }),
+    );
+    const { unmount } = render(<StagingPanel />);
+    unmount();
+
+    const innerUnlisten = vi.fn();
+    resolveListen!(innerUnlisten);
+    // The resolution passes through two promise hops (listen()'s await inside
+    // startWatching, then startWatching()'s own promise settling before the
+    // component's .then() runs), so wait rather than assume a single microtask
+    // tick flushes it.
+    await vi.waitFor(() => expect(innerUnlisten).toHaveBeenCalled()); // the late-resolved unlisten must be invoked, not dropped
   });
 });
