@@ -413,11 +413,16 @@ export function StageFileEditor({
   const isImage = !!(contents.headImage || contents.worktreeImage);
   // Extend the existing "not line-editable" gate (isImage / isBinary / deleted)
   // with a size cap, so a huge generated file (lockfiles, minified bundles)
-  // never reaches the synchronous diffLines call.
-  const tooLargeForLineDiff =
-    !isImage &&
-    !contents.isBinary &&
-    isDiffTooLargeForLineDiff(contents.headContent, contents.worktreeContent);
+  // never reaches the synchronous diffLines call. Memoized: isDiffTooLargeForLineDiff
+  // does two split("\n") calls plus an O(n) prefix/suffix scan, so it should only
+  // rerun when the file contents actually change, not on every render.
+  const tooLargeForLineDiff = useMemo(
+    () =>
+      !isImage &&
+      !contents.isBinary &&
+      isDiffTooLargeForLineDiff(contents.headContent, contents.worktreeContent),
+    [isImage, contents.isBinary, contents.headContent, contents.worktreeContent],
+  );
   const lineEditable =
     !isImage && !contents.isBinary && !tooLargeForLineDiff && (readOnly || contents.worktreeExists);
 
