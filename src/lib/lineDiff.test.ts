@@ -106,6 +106,24 @@ describe("composeStagedText", () => {
     const addedA = rows.findIndex((r) => r.kind === "added" && r.text === "A");
     expect(composeStagedText(rows, new Set([addedA]))).toBe("a\nA\nb\nc\n");
   });
+
+  it("ignoreWhitespace: staging a real change does not also stage a hidden whitespace-only change", () => {
+    const head = "line1\nline2\nline3\n";
+    const worktree = "line1 changed\nline2\nline3  \n"; // line1 real change, line3 whitespace-only
+    const rows = diffLines(head, worktree, { ignoreWhitespace: true });
+
+    // line1's change is a real added/removed pair; line3 folded to context.
+    const changed = changedRowIndices(rows);
+    expect(changed.length).toBeGreaterThan(0);
+
+    // Stage only line1's change (nothing else).
+    const staged = new Set(changed);
+    const result = composeStagedText(rows, staged);
+
+    // line3 must come back as HEAD's text ("line3\n"), not the worktree's
+    // trailing-whitespace variant — the hidden change must NOT be staged.
+    expect(result).toBe("line1 changed\nline2\nline3\n");
+  });
 });
 
 describe("composeStagedResult", () => {

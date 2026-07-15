@@ -7,6 +7,10 @@ export type DiffRowKind = "context" | "added" | "removed";
 export interface DiffRow {
   kind: DiffRowKind;
   text: string;
+  /** Set only on a whitespace-folded context row: the HEAD-side text, used when
+   *  composing the staged blob so a hidden whitespace-only change is never
+   *  silently staged/unstaged as a side effect of an unrelated toggle. */
+  composeText?: string;
 }
 
 /** A changed line within one pane: its 1-based pane line number + source row. */
@@ -73,7 +77,12 @@ export function diffLines(head: string, worktree: string, options: DiffOptions =
     if (ka[i] === kb[j]) {
       // Prefer the worktree text for context (identical to head unless a
       // whitespace-only difference was folded away).
-      rows.push({ kind: "context", text: b[j] });
+      const folded = options.ignoreWhitespace && a[i] !== b[j];
+      rows.push({
+        kind: "context",
+        text: b[j],
+        ...(folded ? { composeText: a[i] } : {}),
+      });
       i++;
       j++;
     } else if (dp[i + 1][j] >= dp[i][j + 1]) {
@@ -192,7 +201,7 @@ export function composeStagedResult(
   const lines: ResultLine[] = [];
   rows.forEach((row, idx) => {
     if (row.kind === "context") {
-      text.push(row.text);
+      text.push(row.composeText ?? row.text);
       lines.push({ kind: "context", rowIndex: idx, staged: false });
     } else if (row.kind === "added") {
       if (staged.has(idx)) {
