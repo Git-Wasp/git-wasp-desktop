@@ -8,6 +8,7 @@ import { useGraphStore } from "../../stores/graphStore";
 import { useGithubStore } from "../../stores/githubStore";
 import { useRemoteStore } from "../../stores/remoteStore";
 import { useMergeStore } from "../../stores/mergeStore";
+import { useToastStore } from "../../stores/toastStore";
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -227,6 +228,64 @@ describe("Sidebar", () => {
 
     expect(deleteBranch).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("shows a toast instead of throwing when checking out a branch fails", async () => {
+    const checkoutBranch = vi.fn().mockRejectedValue(new Error("uncommitted changes"));
+    const error = vi.fn();
+    useToastStore.setState({ error });
+    useRepoStore.setState({
+      checkoutBranch,
+      branches: [
+        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "a", ahead: null, behind: null },
+      ],
+    });
+
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole("button", { name: "feature actions" }));
+    fireEvent.click(screen.getByText("Checkout branch"));
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: uncommitted changes", { title: "Couldn't checkout branch" }),
+    );
+  });
+
+  it("shows a toast instead of throwing when deleting a branch fails", async () => {
+    const deleteBranch = vi.fn().mockRejectedValue(new Error("locked"));
+    const error = vi.fn();
+    useToastStore.setState({ error });
+    useRepoStore.setState({
+      deleteBranch,
+      branches: [
+        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "a", ahead: null, behind: null },
+      ],
+    });
+
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole("button", { name: "feature actions" }));
+    fireEvent.click(screen.getByText("Delete branch"));
+    const dialog = screen.getByRole("dialog", { name: "Delete branch" });
+    fireEvent.click(within(dialog).getByText("Delete"));
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: locked", { title: "Couldn't delete branch" }),
+    );
+  });
+
+  it("shows a toast instead of throwing when creating a branch fails", async () => {
+    const createBranch = vi.fn().mockRejectedValue(new Error("already exists"));
+    const error = vi.fn();
+    useToastStore.setState({ error });
+    useRepoStore.setState({ createBranch });
+
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    fireEvent.change(screen.getByPlaceholderText("branch-name"), { target: { value: "feature" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: already exists", { title: "Couldn't create branch" }),
+    );
   });
 
   it("creates a tag at a branch tip from its row menu", async () => {

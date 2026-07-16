@@ -16,7 +16,7 @@ export function RepoPicker() {
   const openRepo = useRepoStore((s) => s.openRepo);
 
   useEffect(() => {
-    loadRecentRepos();
+    void loadRecentRepos();
   }, [loadRecentRepos]);
 
   const handleOpenFolder = async () => {

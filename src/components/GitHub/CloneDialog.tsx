@@ -122,7 +122,7 @@ export function CloneDialog({ host, onClose }: { host: string; onClose: () => vo
 
         {selected && (
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-3)" }}>
-            <Button variant="secondary" size="sm" onClick={handleChooseFolder}>
+            <Button variant="secondary" size="sm" onClick={() => void handleChooseFolder()}>
               Choose folder…
             </Button>
             <span
@@ -150,7 +150,7 @@ export function CloneDialog({ host, onClose }: { host: string; onClose: () => vo
           <Button variant="secondary" fullWidth onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" fullWidth disabled={!destPath || isCloning} onClick={handleClone}>
+          <Button variant="primary" fullWidth disabled={!destPath || isCloning} onClick={() => void handleClone()}>
             {isCloning ? "Cloning…" : "Clone"}
           </Button>
         </div>

@@ -3,6 +3,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import "@testing-library/jest-dom";
 import { FontSettings } from "./FontSettings";
 
+interface FontPrefs {
+  uiFontId?: string;
+  monoFontId?: string;
+  sizeId?: string;
+}
+
+const readFontPrefs = (): FontPrefs => JSON.parse(localStorage.getItem("fontPrefs")!) as FontPrefs;
+
 beforeEach(() => {
   localStorage.clear();
   document.documentElement.removeAttribute("style");
@@ -22,7 +30,7 @@ describe("FontSettings", () => {
     fireEvent.change(screen.getByLabelText("Code font"), { target: { value: "menlo" } });
 
     expect(document.documentElement.style.getPropertyValue("--font-family-mono")).toContain("Menlo");
-    expect(JSON.parse(localStorage.getItem("fontPrefs")!).monoFontId).toBe("menlo");
+    expect(readFontPrefs().monoFontId).toBe("menlo");
   });
 
   it("applies and persists a UI size change", () => {
@@ -31,7 +39,7 @@ describe("FontSettings", () => {
     fireEvent.change(screen.getByLabelText("UI size"), { target: { value: "large" } });
 
     expect(document.documentElement.style.getPropertyValue("--font-scale")).toBe("1.12");
-    expect(JSON.parse(localStorage.getItem("fontPrefs")!).sizeId).toBe("large");
+    expect(readFontPrefs().sizeId).toBe("large");
   });
 
   it("restores the persisted selection on mount", () => {
@@ -40,8 +48,8 @@ describe("FontSettings", () => {
       JSON.stringify({ uiFontId: "georgia", monoFontId: "consolas", sizeId: "small" }),
     );
     render(<FontSettings />);
-    expect((screen.getByLabelText("UI font") as HTMLSelectElement).value).toBe("georgia");
-    expect((screen.getByLabelText("Code font") as HTMLSelectElement).value).toBe("consolas");
-    expect((screen.getByLabelText("UI size") as HTMLSelectElement).value).toBe("small");
+    expect(screen.getByLabelText<HTMLSelectElement>("UI font").value).toBe("georgia");
+    expect(screen.getByLabelText<HTMLSelectElement>("Code font").value).toBe("consolas");
+    expect(screen.getByLabelText<HTMLSelectElement>("UI size").value).toBe("small");
   });
 });

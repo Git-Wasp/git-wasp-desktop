@@ -23,10 +23,10 @@ describe("isAutoStashError", () => {
 describe("withAutoStash", () => {
   it("returns the first result without prompting when the op succeeds", async () => {
     let calls = 0;
-    const result = await withAutoStash(async (autoStash) => {
+    const result = await withAutoStash((autoStash) => {
       calls++;
       expect(autoStash).toBe(false);
-      return "ok";
+      return Promise.resolve("ok");
     }, prompt);
     expect(result).toBe("ok");
     expect(calls).toBe(1);
@@ -35,19 +35,23 @@ describe("withAutoStash", () => {
 
   it("rethrows non-sentinel errors without opening a prompt", async () => {
     await expect(
-      withAutoStash(async () => {
-        throw "nope";
-      }, prompt),
+      // `invoke()` rejects with a raw string, not an Error — mirrors the real
+      // shape `isAutoStashError`/`withAutoStash` must handle.
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+      withAutoStash(() => Promise.reject("nope"), prompt),
     ).rejects.toBe("nope");
     expect(useAutoStashStore.getState().pending).toBeNull();
   });
 
   it("prompts on the sentinel and retries with autoStash when confirmed", async () => {
     const seen: boolean[] = [];
-    const p = withAutoStash(async (autoStash) => {
+    const p = withAutoStash((autoStash) => {
       seen.push(autoStash);
-      if (!autoStash) throw AUTO_STASH_SENTINEL;
-      return "done";
+      // `invoke()` rejects with a raw string, not an Error — mirrors the real
+      // shape `isAutoStashError`/`withAutoStash` must handle.
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+      if (!autoStash) return Promise.reject(AUTO_STASH_SENTINEL);
+      return Promise.resolve("done");
     }, prompt);
 
     // A prompt is now pending; confirm it.
@@ -61,10 +65,13 @@ describe("withAutoStash", () => {
 
   it("returns undefined and does not retry when the prompt is cancelled", async () => {
     let calls = 0;
-    const p = withAutoStash(async (autoStash) => {
+    const p = withAutoStash((autoStash) => {
       calls++;
-      if (!autoStash) throw AUTO_STASH_SENTINEL;
-      return "done";
+      // `invoke()` rejects with a raw string, not an Error — mirrors the real
+      // shape `isAutoStashError`/`withAutoStash` must handle.
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+      if (!autoStash) return Promise.reject(AUTO_STASH_SENTINEL);
+      return Promise.resolve("done");
     }, prompt);
 
     await Promise.resolve();

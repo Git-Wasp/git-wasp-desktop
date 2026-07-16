@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { useRepoStore } from "../../stores/repoStore";
+import { useToastStore } from "../../stores/toastStore";
 import { IconButton } from "../ui/IconButton";
 
 const barStyle: CSSProperties = {
@@ -40,7 +41,11 @@ export function TabBar() {
             role="tab"
             aria-selected={active}
             title={repo.path}
-            onClick={() => activateRepo(repo.path)}
+            onClick={() =>
+              void activateRepo(repo.path).catch((e: unknown) =>
+                useToastStore.getState().error(String(e), { title: "Couldn't switch repository" }),
+              )
+            }
             onMouseEnter={(e) => {
               if (!active) e.currentTarget.style.background = "var(--color-bg-hover)";
             }}
@@ -68,7 +73,9 @@ export function TabBar() {
               aria-label={`Close ${repo.name}`}
               onClick={(e) => {
                 e.stopPropagation();
-                void closeRepo(repo.path);
+                closeRepo(repo.path).catch((err: unknown) =>
+                  useToastStore.getState().error(String(err), { title: "Couldn't close repository" }),
+                );
               }}
             >
               ✕

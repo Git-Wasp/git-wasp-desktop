@@ -201,9 +201,9 @@ describe("workingTreeStore", () => {
   it("startWatching refreshes the graph's cached working-tree status before re-fetching the viewport, debounced", async () => {
     vi.useFakeTimers();
     let handler: () => void = () => {};
-    mockListen.mockImplementation(async (_event, cb) => {
+    mockListen.mockImplementation((_event, cb) => {
       handler = cb as unknown as () => void;
-      return () => {};
+      return Promise.resolve(() => {});
     });
     mockInvoke.mockImplementation((cmd) =>
       cmd === "get_graph_viewport"

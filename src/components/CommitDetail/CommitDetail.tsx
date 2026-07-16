@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { CommitDetail as CommitDetailData } from "../../types/repo";
 import { FileList } from "./FileList";
 import { useCommitFileStore } from "../../stores/commitFileStore";
+import { useToastStore } from "../../stores/toastStore";
 
 interface CommitDetailProps {
   oid: string | null;
@@ -26,7 +27,11 @@ export function CommitDetail({ oid }: CommitDetailProps) {
     // A different commit: drop any file open in the main-panel diff so it returns
     // to the graph and this commit's file list reads fresh.
     clearCommitFile();
-    invoke<CommitDetailData>("get_commit_diff", { oid }).then(setDetail);
+    invoke<CommitDetailData>("get_commit_diff", { oid })
+      .then(setDetail)
+      .catch((e: unknown) =>
+        useToastStore.getState().error(String(e), { title: "Couldn't load commit" }),
+      );
   }, [oid, clearCommitFile]);
 
   if (!oid || !detail) {
@@ -52,7 +57,9 @@ export function CommitDetail({ oid }: CommitDetailProps) {
 
   const handleSelect = (path: string) => {
     const file = detail.changedFiles.find((f) => f.path === path);
-    selectFile(oid, path, file?.oldPath ?? null);
+    selectFile(oid, path, file?.oldPath ?? null).catch((e: unknown) =>
+      useToastStore.getState().error(String(e), { title: "Couldn't load diff" }),
+    );
   };
 
   return (

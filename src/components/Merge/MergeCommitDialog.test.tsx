@@ -13,8 +13,8 @@ beforeEach(() => {
   // After completing/aborting, the store reloads operation_status — return a
   // valid "none" status so the dialog unmounts cleanly instead of crashing on
   // an undefined status.
-  mockInvoke.mockImplementation(async (cmd: string) =>
-    cmd === "operation_status" ? { kind: "none" } : undefined,
+  mockInvoke.mockImplementation((cmd: string) =>
+    Promise.resolve(cmd === "operation_status" ? { kind: "none" } : undefined),
   );
   useMergeStore.setState({ status: { kind: "none" }, isLoading: false, lastError: null });
   useRepoStore.setState({

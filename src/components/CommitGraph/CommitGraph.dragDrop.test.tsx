@@ -1,9 +1,11 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { CommitGraph } from "./CommitGraph";
 import { useGraphStore, type SelectMode } from "../../stores/graphStore";
 import { useRepoStore } from "../../stores/repoStore";
+import { useMergeStore } from "../../stores/mergeStore";
+import { useToastStore } from "../../stores/toastStore";
 import type { GraphNode, GraphViewport } from "../../types/graph";
 
 const node = (oid: string, summary: string, branch: string): GraphNode => ({
@@ -46,7 +48,7 @@ beforeEach(() => {
     selectedOid: null,
     lastOffset: 0,
     lastLimit: 40,
-    fetchViewport: vi.fn(),
+    fetchViewport: vi.fn().mockResolvedValue(undefined),
     refresh: vi.fn(),
     selectCommit,
   });
@@ -103,5 +105,24 @@ describe("CommitGraph drag-and-drop (DOM pills)", () => {
     fireEvent.click(screen.getByText("first")); // the row that owned the source pill
 
     expect(selectCommit).not.toHaveBeenCalled();
+  });
+
+  it("shows a toast instead of throwing when a drag-merge fails", async () => {
+    useMergeStore.setState({ startMerge: vi.fn().mockRejectedValue(new Error("conflict")) });
+    useRepoStore.setState({ checkoutBranch: vi.fn().mockResolvedValue(true) });
+    const error = vi.fn();
+    useToastStore.setState({ error });
+
+    render(<CommitGraph onStartPullRequest={vi.fn()} />);
+
+    fireEvent.pointerDown(screen.getByText("main"), { clientX: 10, clientY: 8 });
+    fireWindow("pointermove", 10, 30);
+    fireEvent.pointerEnter(screen.getByText("feat"));
+    fireWindow("pointerup", 10, 30);
+
+    const dialog = screen.getByRole("dialog", { name: /merge branch/i });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Merge" }));
+
+    await waitFor(() => expect(error).toHaveBeenCalledWith("Error: conflict"));
   });
 });

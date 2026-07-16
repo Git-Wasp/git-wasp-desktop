@@ -68,7 +68,7 @@ beforeEach(() => {
       ledger: ["commit", "author", "branch", "hash", "date"],
       split: ["hash", "commit", "author", "branch", "date"],
     },
-    fetchViewport: vi.fn(),
+    fetchViewport: vi.fn().mockResolvedValue(undefined),
     refresh: vi.fn(),
     selectCommit,
     searchOpen: false,
@@ -182,9 +182,9 @@ describe("CommitGraph columns", () => {
     render(<CommitGraph />);
     const handle = screen.getByRole("separator", { name: "Resize graph column" });
 
-    act(() => handle.dispatchEvent(new MouseEvent("pointerdown", { clientX: 100, bubbles: true })));
-    act(() => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 140, bubbles: true })));
-    act(() => window.dispatchEvent(new MouseEvent("pointerup", { clientX: 140, bubbles: true })));
+    void act(() => handle.dispatchEvent(new MouseEvent("pointerdown", { clientX: 100, bubbles: true })));
+    void act(() => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 140, bubbles: true })));
+    void act(() => window.dispatchEvent(new MouseEvent("pointerup", { clientX: 140, bubbles: true })));
 
     expect(localStorage.getItem("graphCol:graph")).toBe("196"); // 156 default + 40
   });
@@ -194,9 +194,9 @@ describe("CommitGraph columns", () => {
     render(<CommitGraph />);
     const handle = screen.getByRole("separator", { name: "Resize author column" });
 
-    act(() => handle.dispatchEvent(new MouseEvent("pointerdown", { clientX: 100, bubbles: true })));
-    act(() => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 130, bubbles: true })));
-    act(() => window.dispatchEvent(new MouseEvent("pointerup", { clientX: 130, bubbles: true })));
+    void act(() => handle.dispatchEvent(new MouseEvent("pointerdown", { clientX: 100, bubbles: true })));
+    void act(() => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 130, bubbles: true })));
+    void act(() => window.dispatchEvent(new MouseEvent("pointerup", { clientX: 130, bubbles: true })));
 
     expect(localStorage.getItem("graphCol:author")).toBe("210"); // 180 default + 30
   });
@@ -235,9 +235,9 @@ describe("CommitGraph columns", () => {
       });
 
     // Drag the Date header label onto the Commit header → Date moves before Commit.
-    act(() => fireEvent.pointerDown(screen.getByText("Date"), { clientX: 400, clientY: 10 }));
+    void act(() => fireEvent.pointerDown(screen.getByText("Date"), { clientX: 400, clientY: 10 }));
     fireWindow("pointermove", 440, 10); // past the drag threshold
-    act(() => fireEvent.pointerEnter(container.querySelector('[data-header="commit"]')!));
+    void act(() => fireEvent.pointerEnter(container.querySelector('[data-header="commit"]')!));
     fireWindow("pointerup", 440, 10);
 
     expect(useGraphStore.getState().columnOrder.ledger).toEqual([
@@ -857,7 +857,7 @@ describe("CommitGraph stash", () => {
     render(<CommitGraph />);
     fireEvent.contextMenu(screen.getByText("WIP on main: experiment"));
     fireEvent.click(screen.getByText("Rename stash…"));
-    const input = screen.getByRole("textbox") as HTMLInputElement;
+    const input = screen.getByRole<HTMLInputElement>("textbox");
     expect(input.value).toBe("WIP on main: experiment");
     fireEvent.change(input, { target: { value: "renamed" } });
     fireEvent.click(screen.getByRole("button", { name: /^rename$/i }));
@@ -929,7 +929,7 @@ describe("CommitGraph tags", () => {
     fireEvent.contextMenu(screen.getByText("release commit"));
     fireEvent.click(screen.getByText("Delete tag v1.0"));
     // On-remote tag → the checkbox is present and checked by default.
-    const checkbox = screen.getByRole("checkbox") as HTMLInputElement;
+    const checkbox = screen.getByRole<HTMLInputElement>("checkbox");
     expect(checkbox.checked).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: /^delete$/i }));
     await waitFor(() => expect(useTagStore.getState().deleteTag).toHaveBeenCalledWith("v1.0", true));

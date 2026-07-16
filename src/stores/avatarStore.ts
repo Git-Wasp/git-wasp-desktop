@@ -53,7 +53,7 @@ export const useAvatarStore = create<AvatarStore>((set, get) => {
       unique.forEach((e) => next.set(e, { status: "loading" }));
       set({ avatars: next });
 
-      unique.forEach(async (email) => {
+      const fetchOne = async (email: string) => {
         try {
           const url = await invoke<string | null>("get_avatar", { email });
           if (!url) {
@@ -67,7 +67,8 @@ export const useAvatarStore = create<AvatarStore>((set, get) => {
         } catch {
           settle(email, { status: "none" });
         }
-      });
+      };
+      unique.forEach((email) => void fetchOne(email));
     },
 
     getImage: (email) => {

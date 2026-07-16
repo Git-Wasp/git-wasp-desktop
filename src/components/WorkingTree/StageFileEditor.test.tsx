@@ -359,7 +359,7 @@ describe("StageFileEditor", () => {
       expect(container.querySelector('[data-testid="head-pane"]')).toBeNull();
       expect(screen.queryByRole("button", { name: "Inline view" })).toBeNull();
 
-      const img = screen.getByAltText(/preview/i) as HTMLImageElement;
+      const img = screen.getByAltText<HTMLImageElement>(/preview/i);
       expect(img.src).toBe("data:image/png;base64,AAAA");
 
       fireEvent.click(screen.getByRole("button", { name: /stage whole file/i }));
@@ -369,7 +369,7 @@ describe("StageFileEditor", () => {
     it("shows both before/after images for a modified image", () => {
       renderEditor(modifiedImage, { path: "logo.png" });
 
-      const imgs = screen.getAllByAltText(/preview/i) as HTMLImageElement[];
+      const imgs = screen.getAllByAltText(/preview/i);
       expect(imgs.map((i) => i.getAttribute("src"))).toEqual([
         "data:image/png;base64,OLD0",
         "data:image/png;base64,NEW1",
@@ -442,7 +442,7 @@ describe("StageFileEditor", () => {
     });
   });
 
-  it("falls back to whole-file staging for binary files", async () => {
+  it("falls back to whole-file staging for binary files", () => {
     const onStageWholeFile = vi.fn();
     const binary: StageFileContents = {
       headContent: "",

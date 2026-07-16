@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { listen } from "@tauri-apps/api/event";
@@ -110,6 +110,71 @@ describe("StagingPanel row menu", () => {
     fireEvent.click(screen.getByText("Cancel"));
     expect(useWorkingTreeStore.getState().deleteFile).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
+describe("StagingPanel toasts on failed mutations", () => {
+  it("shows a toast instead of throwing when staging a file fails", async () => {
+    useWorkingTreeStore.setState({ stageFile: vi.fn().mockRejectedValue(new Error("boom")) });
+    const error = vi.fn();
+    useToastStore.setState({ error });
+
+    render(<StagingPanel />);
+    fireEvent.click(screen.getAllByText("Stage")[0]);
+
+    await waitFor(() => expect(error).toHaveBeenCalledWith("Error: boom", { title: "Stage failed" }));
+  });
+
+  it("shows a toast instead of throwing when unstaging a file fails", async () => {
+    useWorkingTreeStore.setState({ unstageFile: vi.fn().mockRejectedValue(new Error("boom")) });
+    const error = vi.fn();
+    useToastStore.setState({ error });
+
+    render(<StagingPanel />);
+    fireEvent.click(screen.getByText("Unstage"));
+
+    await waitFor(() => expect(error).toHaveBeenCalledWith("Error: boom", { title: "Unstage failed" }));
+  });
+
+  it("shows a toast instead of throwing when discarding a file fails", async () => {
+    useWorkingTreeStore.setState({ discardFile: vi.fn().mockRejectedValue(new Error("boom")) });
+    const error = vi.fn();
+    useToastStore.setState({ error });
+
+    render(<StagingPanel />);
+    fireEvent.contextMenu(screen.getByText("changed.ts"));
+    fireEvent.click(within(menu()).getByText("Discard"));
+    const dialog = screen.getByRole("dialog", { name: "Discard changes" });
+    fireEvent.click(within(dialog).getByText("Discard"));
+
+    await waitFor(() => expect(error).toHaveBeenCalledWith("Error: boom", { title: "Discard failed" }));
+  });
+
+  it("shows a toast instead of throwing when deleting a file fails", async () => {
+    useWorkingTreeStore.setState({ deleteFile: vi.fn().mockRejectedValue(new Error("boom")) });
+    const error = vi.fn();
+    useToastStore.setState({ error });
+
+    render(<StagingPanel />);
+    fireEvent.contextMenu(screen.getByText("changed.ts"));
+    fireEvent.click(within(menu()).getByText("Delete file"));
+    const dialog = screen.getByRole("dialog", { name: "Delete file" });
+    fireEvent.click(within(dialog).getByText("Delete"));
+
+    await waitFor(() => expect(error).toHaveBeenCalledWith("Error: boom", { title: "Delete failed" }));
+  });
+
+  it("shows a toast instead of throwing when loading a file's diff fails", async () => {
+    useWorkingTreeStore.setState({ selectFile: vi.fn().mockRejectedValue(new Error("boom")) });
+    const error = vi.fn();
+    useToastStore.setState({ error });
+
+    render(<StagingPanel />);
+    fireEvent.click(screen.getByText("changed.ts"));
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: boom", { title: "Couldn't load diff" }),
+    );
   });
 });
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useGithubStore } from "../../stores/githubStore";
+import { useToastStore } from "../../stores/toastStore";
 import { Button } from "../ui/Button";
 import { Spinner } from "../ui/Spinner";
 import { DeviceFlowModal } from "../GitHub/DeviceFlowModal";
@@ -60,10 +61,16 @@ export function GithubSettings() {
   const lastResolved = useRef<GithubConnection>(conn);
   if (conn.state !== "checking") lastResolved.current = conn;
 
+  const handleLogout = () => {
+    logout(host).catch((e: unknown) =>
+      useToastStore.getState().error(String(e), { title: "Couldn't disconnect" }),
+    );
+  };
+
   useEffect(() => {
-    checkConnection(host);
-    const id = setInterval(() => checkConnection(host), POLL_MS);
-    const onFocus = () => checkConnection(host);
+    void checkConnection(host);
+    const id = setInterval(() => void checkConnection(host), POLL_MS);
+    const onFocus = () => void checkConnection(host);
     window.addEventListener("focus", onFocus);
     return () => {
       clearInterval(id);
@@ -102,10 +109,10 @@ export function GithubSettings() {
       <div style={{ display: "flex", gap: "var(--space-2)" }}>
         {view.state === "connected" && (
           <>
-            <Button onClick={() => logout(host)} disabled={busy}>
+            <Button onClick={handleLogout} disabled={busy}>
               Disconnect
             </Button>
-            <Button onClick={() => checkConnection(host)} loading={busy}>
+            <Button onClick={() => void checkConnection(host)} loading={busy}>
               Check now
             </Button>
           </>
@@ -115,7 +122,7 @@ export function GithubSettings() {
             <Button variant="primary" onClick={() => setConnecting(true)} disabled={busy}>
               Reconnect
             </Button>
-            <Button onClick={() => logout(host)} disabled={busy}>
+            <Button onClick={handleLogout} disabled={busy}>
               Disconnect
             </Button>
           </>
@@ -126,7 +133,7 @@ export function GithubSettings() {
           </Button>
         )}
         {view.state === "error" && (
-          <Button onClick={() => checkConnection(host)} loading={busy}>
+          <Button onClick={() => void checkConnection(host)} loading={busy}>
             Retry
           </Button>
         )}
@@ -137,7 +144,7 @@ export function GithubSettings() {
           host={host}
           onClose={() => {
             setConnecting(false);
-            checkConnection(host);
+            void checkConnection(host);
           }}
         />
       )}

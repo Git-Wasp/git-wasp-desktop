@@ -30,6 +30,7 @@ import { useMergeStore } from "./stores/mergeStore";
 import { useTagStore } from "./stores/tagStore";
 import { useThemeStore } from "./stores/themeStore";
 import { useWorkingTreeStore } from "./stores/workingTreeStore";
+import { useToastStore } from "./stores/toastStore";
 import type { View, HistoryRightMode } from "./types/view";
 
 // How many history rows to warm during boot so the graph isn't blank on reveal.
@@ -120,7 +121,7 @@ export default function App() {
     const task = (t: string) => {
       if (!cancelled) setBootTask(t);
     };
-    (async () => {
+    void (async () => {
       try {
         task("Loading theme…");
         await initTheme();
@@ -150,7 +151,7 @@ export default function App() {
   // Network-bound startup work runs after reveal so it can't stall the splash.
   useEffect(() => {
     if (!booted) return;
-    init();
+    void init();
     applyDiagnosticsPref().catch(() => {});
   }, [booted, init]);
 
@@ -161,9 +162,13 @@ export default function App() {
   const repoPath = currentRepo?.path ?? null;
   useEffect(() => {
     if (!repoPath) return;
-    loadBranches();
-    detectRemote();
-    loadAheadBehind();
+    void (async () => {
+      try {
+        await Promise.all([loadBranches(), detectRemote(), loadAheadBehind()]);
+      } catch (e) {
+        useToastStore.getState().error(String(e), { title: "Couldn't load repository state" });
+      }
+    })();
     // Best-effort: populates the tag local/remote indicator (network ls-remote).
     void loadRemoteTags();
   }, [repoPath, loadBranches, detectRemote, loadAheadBehind, loadRemoteTags]);
@@ -238,7 +243,7 @@ export default function App() {
         running = false;
       }
     };
-    const id = setInterval(tick, 8000);
+    const id = setInterval(() => void tick(), 8000);
     return () => clearInterval(id);
   }, [repoPath]);
 
@@ -335,9 +340,21 @@ export default function App() {
                     path={wtSelectedPath}
                     contents={wtStageDiff}
                     stageMode={wtStageMode ?? "unstaged"}
-                    onApplyIndex={applyIndexContent}
-                    onStageWholeFile={stageFile}
-                    onDiscardFile={discardFile}
+                    onApplyIndex={(path, content) => {
+                      applyIndexContent(path, content).catch((e: unknown) =>
+                        useToastStore.getState().error(String(e), { title: "Stage failed" }),
+                      );
+                    }}
+                    onStageWholeFile={(path) => {
+                      stageFile(path).catch((e: unknown) =>
+                        useToastStore.getState().error(String(e), { title: "Stage failed" }),
+                      );
+                    }}
+                    onDiscardFile={(path) => {
+                      discardFile(path).catch((e: unknown) =>
+                        useToastStore.getState().error(String(e), { title: "Discard failed" }),
+                      );
+                    }}
                     onClose={clearSelectedFile}
                     leftLabel={wtStageMode === "staged" ? "HEAD" : "Staged"}
                     rightLabel={wtStageMode === "staged" ? "Staged" : "Working tree"}

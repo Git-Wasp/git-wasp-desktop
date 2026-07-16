@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { CommitDetail } from "./CommitDetail";
 import "@testing-library/jest-dom";
 import { useCommitFileStore } from "../../stores/commitFileStore";
+import { useToastStore } from "../../stores/toastStore";
 import type { CommitDetail as CommitDetailData } from "../../types/repo";
 
 const mockInvoke = vi.mocked(invoke);
@@ -99,5 +100,31 @@ describe("CommitDetail", () => {
       });
     });
     expect(useCommitFileStore.getState().path).toBe("src/main.rs");
+  });
+
+  it("shows a toast instead of throwing when loading the commit fails", async () => {
+    mockInvoke.mockRejectedValueOnce(new Error("no such commit"));
+    const error = vi.fn();
+    useToastStore.setState({ error });
+
+    render(<CommitDetail oid="abc123def456" />);
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: no such commit", { title: "Couldn't load commit" }),
+    );
+  });
+
+  it("shows a toast instead of throwing when loading a file's diff fails", async () => {
+    mockInvoke.mockResolvedValueOnce(fakeDetail); // get_commit_diff
+    mockInvoke.mockRejectedValueOnce(new Error("no such file")); // get_commit_file_contents
+    const error = vi.fn();
+    useToastStore.setState({ error });
+
+    render(<CommitDetail oid="abc123def456" />);
+    fireEvent.click(await screen.findByText("src/main.rs"));
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: no such file", { title: "Couldn't load diff" }),
+    );
   });
 });

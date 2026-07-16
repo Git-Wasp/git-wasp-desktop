@@ -96,7 +96,7 @@ export function DiagnosticsSettings() {
 
       <Toggle
         checked={info?.enabled ?? false}
-        onChange={handleToggle}
+        onChange={(next) => void handleToggle(next)}
         label="Enable diagnostic logging"
       />
 
@@ -107,7 +107,7 @@ export function DiagnosticsSettings() {
           </span>
           <code style={pathStyle}>{info.logFile}</code>
           <div>
-            <Button type="button" onClick={() => openLogDir()}>
+            <Button type="button" onClick={() => void openLogDir().catch((e: unknown) => setError(String(e)))}>
               Open log folder
             </Button>
           </div>

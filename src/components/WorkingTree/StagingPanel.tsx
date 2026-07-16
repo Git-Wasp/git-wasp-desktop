@@ -149,6 +149,26 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
     setMenu({ x: e.clientX, y: e.clientY, entry, staged });
   };
 
+  // Single-file mutations all route through these so a rejection (e.g. the file
+  // vanished, a permissions error) surfaces as a toast instead of an unhandled
+  // rejection — see the sibling `stashChanges` for the same shape.
+  const stageOne = (path: string) =>
+    stageFile(path).catch((e: unknown) => useToastStore.getState().error(String(e), { title: "Stage failed" }));
+  const unstageOne = (path: string) =>
+    unstageFile(path).catch((e: unknown) =>
+      useToastStore.getState().error(String(e), { title: "Unstage failed" }),
+    );
+  const discardOne = (path: string) =>
+    discardFile(path).catch((e: unknown) =>
+      useToastStore.getState().error(String(e), { title: "Discard failed" }),
+    );
+  const deleteOne = (path: string) =>
+    deleteFile(path).catch((e: unknown) => useToastStore.getState().error(String(e), { title: "Delete failed" }));
+  const selectOne = (path: string, mode: "staged" | "unstaged") =>
+    selectFile(path, mode).catch((e: unknown) =>
+      useToastStore.getState().error(String(e), { title: "Couldn't load diff" }),
+    );
+
   const menuItems = (m: RowMenuState): MenuItem[] => {
     const { entry, staged } = m;
     const deleteItem: MenuItem = {
@@ -157,9 +177,9 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
       onSelect: () => setPendingDelete(entry),
     };
     return staged
-      ? [{ label: "Unstage", onSelect: () => unstageFile(entry.path) }, { separator: true }, deleteItem]
+      ? [{ label: "Unstage", onSelect: () => void unstageOne(entry.path) }, { separator: true }, deleteItem]
       : [
-          { label: "Stage", onSelect: () => stageFile(entry.path) },
+          { label: "Stage", onSelect: () => void stageOne(entry.path) },
           { label: "Discard", danger: true, onSelect: () => setPendingDiscard(entry) },
           { separator: true },
           deleteItem,
@@ -167,7 +187,7 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
   };
 
   useEffect(() => {
-    loadStatus();
+    void loadStatus();
     let cancelled = false;
     let unlisten: (() => void) | null = null;
     startWatching().then((fn) => {
@@ -176,6 +196,9 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
       // stashing it in a variable nothing will ever read again.
       if (cancelled) fn();
       else unlisten = fn;
+    }).catch(() => {
+      // Best-effort: the panel keeps working off the (still-refreshed-on-demand)
+      // status even if the live watch subscription fails to attach.
     });
     return () => {
       cancelled = true;
@@ -188,8 +211,8 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
   const staged = status?.staged ?? [];
   const stagedCount = staged.length;
 
-  const stageAll = () => changes.forEach((e) => stageFile(e.path));
-  const unstageAll = () => staged.forEach((e) => unstageFile(e.path));
+  const stageAll = () => changes.forEach((e) => void stageOne(e.path));
+  const unstageAll = () => staged.forEach((e) => void unstageOne(e.path));
 
   // Stash all tracked changes (staged + unstaged). Untracked files aren't
   // stashed, so the button is offered only when there's something git will
@@ -231,7 +254,7 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
             stashable || changes.length > 0 ? (
               <div style={{ display: "flex", gap: "var(--space-2)" }}>
                 {stashable && (
-                  <Button size="sm" variant="secondary" onClick={stashChanges}>
+                  <Button size="sm" variant="secondary" onClick={() => void stashChanges()}>
                     Stash changes
                   </Button>
                 )}
@@ -253,8 +276,8 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
                 key={`change-${entry.path}`}
                 entry={entry}
                 actionLabel="Stage"
-                action={() => stageFile(entry.path)}
-                onSelect={() => selectFile(entry.path, "unstaged")}
+                action={() => void stageOne(entry.path)}
+                onSelect={() => void selectOne(entry.path, "unstaged")}
                 onContextMenu={(e) => openMenu(e, entry, false)}
                 isSelected={selectedPath === entry.path && stageMode === "unstaged"}
               />
@@ -294,8 +317,8 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
                 key={`staged-${entry.path}`}
                 entry={entry}
                 actionLabel="Unstage"
-                action={() => unstageFile(entry.path)}
-                onSelect={() => selectFile(entry.path, "staged")}
+                action={() => void unstageOne(entry.path)}
+                onSelect={() => void selectOne(entry.path, "staged")}
                 onContextMenu={(e) => openMenu(e, entry, true)}
                 isSelected={selectedPath === entry.path && stageMode === "staged"}
               />
@@ -322,7 +345,7 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
           message={`Delete "${pendingDelete.path}"? This removes the file from your working tree.`}
           confirmLabel="Delete"
           onConfirm={() => {
-            deleteFile(pendingDelete.path);
+            void deleteOne(pendingDelete.path);
             setPendingDelete(null);
           }}
           onCancel={() => setPendingDelete(null)}
@@ -335,7 +358,7 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
           message={`Discard changes to "${pendingDiscard.path}"? This permanently discards the uncommitted changes to this file and cannot be undone.`}
           confirmLabel="Discard"
           onConfirm={() => {
-            discardFile(pendingDiscard.path);
+            void discardOne(pendingDiscard.path);
             setPendingDiscard(null);
           }}
           onCancel={() => setPendingDiscard(null)}

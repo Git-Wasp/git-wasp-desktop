@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useGraphStore } from "../graphStore";
+import { useToastStore } from "../toastStore";
 import type { GraphViewport } from "../../types/graph";
 
 const mockInvoke = vi.mocked(invoke);
@@ -69,7 +70,7 @@ describe("graphStore", () => {
     // First call stays pending; the second resolves immediately.
     let resolveOlder: (v: GraphViewport) => void = () => {};
     mockInvoke
-      .mockImplementationOnce(() => new Promise((res) => { resolveOlder = res as (v: GraphViewport) => void; }))
+      .mockImplementationOnce(() => new Promise((res) => { resolveOlder = res; }))
       .mockResolvedValueOnce(newer);
 
     const p1 = useGraphStore.getState().fetchViewport(0, 10); // id 1, pending
@@ -366,7 +367,7 @@ describe("graphStore", () => {
     ]);
     // The split order is untouched.
     expect(useGraphStore.getState().columnOrder.split[0]).toBe("hash");
-    const persisted = JSON.parse(localStorage.getItem("graphColumnOrder")!);
+    const persisted = JSON.parse(localStorage.getItem("graphColumnOrder")!) as { ledger: string[] };
     expect(persisted.ledger[0]).toBe("date");
   });
 
@@ -405,6 +406,16 @@ describe("graphStore", () => {
       const s = useGraphStore.getState();
       expect(s.searchHits).toEqual([]);
       expect(s.searchIndex).toBe(-1);
+    });
+
+    it("shows a toast instead of throwing when the backend search fails", async () => {
+      mockInvoke.mockRejectedValueOnce(new Error("index locked"));
+      const error = vi.fn();
+      useToastStore.setState({ error });
+
+      await useGraphStore.getState().runSearch("fix");
+
+      expect(error).toHaveBeenCalledWith("Error: index locked", { title: "Search failed" });
     });
 
     it("nextMatch and prevMatch wrap around and scroll to the hit", async () => {

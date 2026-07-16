@@ -123,7 +123,7 @@ describe("ConflictFileEditor", () => {
   });
 
   it("calls onMarkResolved with the file path and the current result content", async () => {
-    const onMarkResolved = vi.fn();
+    const onMarkResolved = vi.fn<(path: string, content: string) => void>();
     render(<ConflictFileEditor file={file} onMarkResolved={onMarkResolved} />);
 
     await waitFor(() => expect(screen.getByRole("button", { name: "Accept current" })).toBeInTheDocument());

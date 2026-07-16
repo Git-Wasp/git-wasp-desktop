@@ -168,7 +168,7 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
     const status = await invoke<WorkingTreeStatus>("discard_all");
     set({ status, selectedPath: null, stageDiff: null });
     // Keep the graph's working-tree node in sync after a bulk discard.
-    useGraphStore.getState().refresh();
+    await useGraphStore.getState().refresh();
   },
 
   createCommit: async (message: string) => {
@@ -181,7 +181,7 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
     await invoke("amend_commit_message", { message });
     await get().loadHeadCommit();
     // The reworded commit is a new oid, so refresh the graph too.
-    useGraphStore.getState().refresh();
+    await useGraphStore.getState().refresh();
   },
 
   loadHeadCommit: async () => {

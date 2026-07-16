@@ -31,7 +31,7 @@ describe("FileStatusIcon", () => {
   });
 
   it("exposes an accessible label and falls back to Modified for unknown statuses", () => {
-    expect(screen.queryByLabelText).toBeDefined();
+    expect(typeof screen.queryByLabelText).toBe("function");
     render(<FileStatusIcon status="Added" />);
     expect(screen.getByLabelText("Added")).toBeInTheDocument();
 

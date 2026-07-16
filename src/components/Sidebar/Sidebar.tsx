@@ -70,7 +70,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
   const githubHost = remoteInfo?.host ?? "github.com";
 
   useEffect(() => {
-    loadRecentRepos();
+    void loadRecentRepos();
   }, [loadRecentRepos]);
 
   // Branch list, ahead/behind, and remote detection are loaded at the app root
@@ -78,26 +78,46 @@ export function Sidebar({ width = 220 }: { width?: number }) {
   // collapsed (and thus unmounted).
 
   const handleRecentClick = async (path: string) => {
-    await openRepo(path);
+    try {
+      await openRepo(path);
+    } catch (e) {
+      toastError(String(e), { title: "Couldn't open repository" });
+    }
   };
 
   const handleCreateBranch = async () => {
     if (!newBranchName.trim()) return;
-    await createBranch(newBranchName.trim());
-    setNewBranchName("");
-    setShowNewBranch(false);
+    try {
+      await createBranch(newBranchName.trim());
+      setNewBranchName("");
+      setShowNewBranch(false);
+    } catch (e) {
+      toastError(String(e), { title: "Couldn't create branch" });
+    }
   };
 
   const handleDeleteBranch = async (name: string) => {
-    await deleteBranch(name);
+    try {
+      await deleteBranch(name);
+    } catch (e) {
+      toastError(String(e), { title: "Couldn't delete branch" });
+    }
   };
 
   const handleCheckoutBranch = async (name: string) => {
-    await checkoutBranch(name);
+    try {
+      await checkoutBranch(name);
+    } catch (e) {
+      toastError(String(e), { title: "Couldn't checkout branch" });
+    }
   };
 
   const handleMergeBranch = async (name: string) => {
-    await startMerge(name);
+    try {
+      await startMerge(name);
+    } catch (e) {
+      toastError(String(e), { title: "Merge failed" });
+    }
   };
 
   const handleCreateTag = async (tagName: string) => {
@@ -149,7 +169,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
           <LaptopIcon />
         </span>
         <div
-          onClick={() => revealCommit(b.oid)}
+          onClick={() => void revealCommit(b.oid)}
           title={`Show ${b.name} in the commit graph`}
           style={{
             flex: 1,
@@ -187,22 +207,22 @@ export function Sidebar({ width = 220 }: { width?: number }) {
           items={[
             ...(b.isHead
               ? []
-              : [{ label: "Checkout branch", onSelect: () => handleCheckoutBranch(b.name) }]),
+              : [{ label: "Checkout branch", onSelect: () => void handleCheckoutBranch(b.name) }]),
             // A clean fast-forward is available: behind the upstream with no local
             // commits ahead. Advances the branch pointer without checking it out.
             ...(ab && ab.behind > 0 && ab.ahead === 0
               ? [
                   {
                     label: `Fast-forward to ${b.upstream ?? "upstream"}`,
-                    onSelect: () => handleFastForwardToUpstream(b.name),
+                    onSelect: () => void handleFastForwardToUpstream(b.name),
                   },
                 ]
               : []),
-            { label: "Push branch", onSelect: () => handlePushBranch(b.name) },
+            { label: "Push branch", onSelect: () => void handlePushBranch(b.name) },
             { label: "Create tag…", onSelect: () => setTagBranch({ name: b.name, oid: b.oid }) },
             ...(b.isHead || operationStatus.kind === "merge"
               ? []
-              : [{ label: "Merge into current branch", onSelect: () => handleMergeBranch(b.name) }]),
+              : [{ label: "Merge into current branch", onSelect: () => void handleMergeBranch(b.name) }]),
             ...(b.isHead
               ? []
               : [
@@ -224,7 +244,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
         <GitHubIcon />
       </span>
       <div
-        onClick={() => revealCommit(b.oid)}
+        onClick={() => void revealCommit(b.oid)}
         title={`Show ${b.name} in the commit graph`}
         style={{
           flex: 1,
@@ -308,7 +328,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
           title="Create tag"
           label="Tag name"
           confirmLabel="Create"
-          onConfirm={handleCreateTag}
+          onConfirm={(tagName) => void handleCreateTag(tagName)}
           onCancel={() => setTagBranch(null)}
         />
       )}
@@ -357,7 +377,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
                 value={newBranchName}
                 onChange={(e) => setNewBranchName(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") handleCreateBranch();
+                  if (e.key === "Enter") void handleCreateBranch();
                   if (e.key === "Escape") {
                     setShowNewBranch(false);
                     setNewBranchName("");
@@ -366,7 +386,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
                 placeholder="branch-name"
                 style={{ flex: 1, fontFamily: "var(--font-family-mono)" }}
               />
-              <Button variant="primary" size="sm" onClick={handleCreateBranch}>
+              <Button variant="primary" size="sm" onClick={() => void handleCreateBranch()}>
                 Create
               </Button>
             </div>
@@ -439,7 +459,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
               <RowMenu
                 label={`${r.name} actions`}
                 items={[
-                  { label: "Open repository", onSelect: () => handleRecentClick(r.path) },
+                  { label: "Open repository", onSelect: () => void handleRecentClick(r.path) },
                   {
                     label: "Remove from recent",
                     destructive: true,

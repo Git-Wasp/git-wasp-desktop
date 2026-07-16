@@ -35,11 +35,15 @@ const noDriftRules = [
 export default tseslint.config(
   { ignores: ["dist", "src-tauri"] },
   {
-    extends: [js.configs.recommended, ...tseslint.configs.recommended],
+    extends: [js.configs.recommended, ...tseslint.configs.recommendedTypeChecked],
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
+      parserOptions: {
+        project: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
     plugins: {
       "react-hooks": reactHooks,
@@ -52,6 +56,7 @@ export default tseslint.config(
         { allowConstantExport: true },
       ],
       "no-restricted-syntax": ["error", ...noDriftRules],
+      "@typescript-eslint/no-floating-promises": "error",
     },
   },
   {

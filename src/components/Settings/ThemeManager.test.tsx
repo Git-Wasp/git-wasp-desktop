@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { ThemeManager } from "./ThemeManager";
 import { useThemeStore, BUILT_IN_THEMES, type ThemeInfo } from "../../stores/themeStore";
+import { useToastStore } from "../../stores/toastStore";
 
 const solar: ThemeInfo = {
   id: "solar",
@@ -59,6 +60,46 @@ describe("ThemeManager", () => {
     await waitFor(() => {
       expect(useThemeStore.getState().deleteTheme).toHaveBeenCalledWith("solar");
     });
+  });
+
+  it("shows a toast instead of throwing when activating a theme fails", async () => {
+    useThemeStore.setState({ setActiveTheme: vi.fn().mockRejectedValue(new Error("boom")) });
+    const error = vi.fn();
+    useToastStore.setState({ error });
+
+    render(<ThemeManager />);
+    fireEvent.click(screen.getByRole("button", { name: /activate light/i }));
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: boom", { title: "Couldn't activate theme" }),
+    );
+  });
+
+  it("shows a toast instead of throwing when importing a theme fails", async () => {
+    useThemeStore.setState({ importTheme: vi.fn().mockRejectedValue(new Error("boom")) });
+    const error = vi.fn();
+    useToastStore.setState({ error });
+
+    render(<ThemeManager />);
+    fireEvent.click(screen.getByRole("button", { name: /import theme/i }));
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: boom", { title: "Couldn't import theme" }),
+    );
+  });
+
+  it("shows a toast instead of throwing when deleting a theme fails", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    useThemeStore.setState({ deleteTheme: vi.fn().mockRejectedValue(new Error("boom")) });
+    const error = vi.fn();
+    useToastStore.setState({ error });
+
+    render(<ThemeManager />);
+    fireEvent.click(screen.getByRole("button", { name: /delete solar/i }));
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: boom", { title: "Couldn't delete theme" }),
+    );
   });
 
   it("does not offer delete for built-in themes", () => {

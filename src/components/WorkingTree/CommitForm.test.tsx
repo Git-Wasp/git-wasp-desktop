@@ -27,7 +27,7 @@ beforeEach(() => {
   useWorkingTreeStore.setState({
     identity: { name: "A", email: "a@a" },
     headCommit: null,
-    loadIdentity: vi.fn(),
+    loadIdentity: vi.fn().mockResolvedValue(undefined),
     loadHeadCommit: vi.fn().mockResolvedValue(undefined),
     createCommit,
     amendCommitMessage,
@@ -120,8 +120,8 @@ describe("CommitForm", () => {
 
     // Entering amend mode prefills subject + body and allows commit with nothing staged.
     fireEvent.click(screen.getByLabelText(/amend last commit/i));
-    expect((screen.getByPlaceholderText(/summary/i) as HTMLInputElement).value).toBe("Old subject");
-    expect((screen.getByPlaceholderText(/description/i) as HTMLTextAreaElement).value).toBe("Old body");
+    expect(screen.getByPlaceholderText<HTMLInputElement>(/summary/i).value).toBe("Old subject");
+    expect(screen.getByPlaceholderText<HTMLTextAreaElement>(/description/i).value).toBe("Old body");
 
     const amendButton = screen.getByRole("button", { name: /^amend/i });
     expect(amendButton).toBeEnabled();

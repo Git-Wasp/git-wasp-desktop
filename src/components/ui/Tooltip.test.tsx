@@ -5,7 +5,9 @@ import { Tooltip } from "./Tooltip";
 
 // The tooltip appears via a setTimeout that updates state, so timer advances
 // must run inside act() to flush the resulting React render.
-const advance = (ms: number) => act(() => vi.advanceTimersByTime(ms));
+const advance = (ms: number) => {
+  void act(() => vi.advanceTimersByTime(ms));
+};
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -60,7 +62,7 @@ describe("Tooltip", () => {
   });
 
   const rectAt = (top: number, bottom: number): DOMRect =>
-    ({ top, bottom, left: 100, right: 120, width: 20, height: bottom - top, x: 100, y: top, toJSON: () => ({}) }) as DOMRect;
+    ({ top, bottom, left: 100, right: 120, width: 20, height: bottom - top, x: 100, y: top, toJSON: () => ({}) });
 
   it("opens above the trigger when there is room", () => {
     render(

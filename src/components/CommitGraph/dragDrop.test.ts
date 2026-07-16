@@ -4,12 +4,13 @@ import { runMerge } from "./dragDrop";
 describe("runMerge", () => {
   it("checks out the target before merging when it is not the current branch", async () => {
     const calls: string[] = [];
-    const checkoutBranch = vi.fn(async () => {
+    const checkoutBranch = vi.fn(() => {
       calls.push("checkout");
-      return true;
+      return Promise.resolve(true);
     });
-    const startMerge = vi.fn(async () => {
+    const startMerge = vi.fn(() => {
       calls.push("merge");
+      return Promise.resolve();
     });
 
     await runMerge({
@@ -26,8 +27,8 @@ describe("runMerge", () => {
   });
 
   it("skips checkout when the target is already current", async () => {
-    const checkoutBranch = vi.fn(async () => true);
-    const startMerge = vi.fn(async () => {});
+    const checkoutBranch = vi.fn(() => Promise.resolve(true));
+    const startMerge = vi.fn(() => Promise.resolve());
 
     await runMerge({
       source: "feature",

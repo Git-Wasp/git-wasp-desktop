@@ -52,8 +52,8 @@ export function CommitForm({
   const [ffBranches, setFfBranches] = useState<string[]>([]);
 
   useEffect(() => {
-    loadIdentity();
-    loadHeadCommit();
+    loadIdentity().catch((e: unknown) => setError(String(e)));
+    loadHeadCommit().catch((e: unknown) => setError(String(e)));
   }, [loadIdentity, loadHeadCommit]);
 
   useEffect(() => {
@@ -238,8 +238,8 @@ export function CommitForm({
         placeholder="Summary (required)"
         onKeyDown={(e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-            if (detached) handleCreateBranchAndCommit();
-            else handleCommit();
+            if (detached) void handleCreateBranchAndCommit();
+            else void handleCommit();
           }
         }}
       />
@@ -270,8 +270,8 @@ export function CommitForm({
           }}
           onKeyDown={(e) => {
             if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-              if (detached) handleCreateBranchAndCommit();
-              else handleCommit();
+              if (detached) void handleCreateBranchAndCommit();
+              else void handleCommit();
             }
           }}
         />
@@ -324,13 +324,13 @@ export function CommitForm({
           <Button
             variant="primary"
             fullWidth
-            onClick={handleCreateBranchAndCommit}
+            onClick={() => void handleCreateBranchAndCommit()}
             disabled={!branchName.trim() || !hasSubject || stagedCount === 0 || committing}
           >
             {committing ? "Creating…" : "Create branch & commit"}
           </Button>
         ) : (
-          <Button variant="primary" fullWidth onClick={handleCommit} disabled={!canCommit}>
+          <Button variant="primary" fullWidth onClick={() => void handleCommit()} disabled={!canCommit}>
             {amending
               ? committing
                 ? "Amending…"
@@ -353,7 +353,7 @@ export function CommitForm({
               variant="secondary"
               fullWidth
               disabled={committing}
-              onClick={() => handleFastForwardAndSwitch(b)}
+              onClick={() => void handleFastForwardAndSwitch(b)}
               style={{ fontFamily: "var(--font-family-mono)" }}
             >
               Fast-forward {b} &amp; switch
@@ -367,7 +367,7 @@ export function CommitForm({
           title="Discard all changes?"
           message="This will unstage everything and permanently discard all uncommitted changes in the working tree. This cannot be undone."
           confirmLabel="Discard everything"
-          onConfirm={handleReset}
+          onConfirm={() => void handleReset()}
           onCancel={() => setConfirmReset(false)}
         />
       )}

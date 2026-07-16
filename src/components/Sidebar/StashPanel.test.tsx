@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { useRepoStore } from "../../stores/repoStore";
+import { useToastStore } from "../../stores/toastStore";
 import { StashPanel } from "./StashPanel";
 import type { StashEntry } from "../../types/workingTree";
 
@@ -66,6 +67,61 @@ describe("StashPanel", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Drop" }));
     await waitFor(() =>
       expect(mockInvoke).toHaveBeenCalledWith("stash_drop_cmd", { index: 0 }),
+    );
+  });
+
+  it("shows a toast instead of throwing when stash apply fails", async () => {
+    const error = vi.fn();
+    useToastStore.setState({ error });
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "stash_list_cmd") return Promise.resolve(stashes);
+      if (cmd === "stash_apply_cmd") return Promise.reject(new Error("conflict"));
+      return Promise.resolve(undefined);
+    });
+
+    render(<StashPanel />);
+    await screen.findByText("WIP on main: experiment");
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: conflict", { title: "Stash apply failed" }),
+    );
+  });
+
+  it("shows a toast instead of throwing when stash pop conflicts", async () => {
+    const error = vi.fn();
+    useToastStore.setState({ error });
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "stash_list_cmd") return Promise.resolve(stashes);
+      if (cmd === "stash_pop_cmd") return Promise.reject(new Error("conflict"));
+      return Promise.resolve(undefined);
+    });
+
+    render(<StashPanel />);
+    await screen.findByText("WIP on main: experiment");
+    fireEvent.click(screen.getByRole("button", { name: "Pop" }));
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: conflict", { title: "Stash pop failed" }),
+    );
+  });
+
+  it("shows a toast instead of throwing when stash drop fails", async () => {
+    const error = vi.fn();
+    useToastStore.setState({ error });
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "stash_list_cmd") return Promise.resolve(stashes);
+      if (cmd === "stash_drop_cmd") return Promise.reject(new Error("locked"));
+      return Promise.resolve(undefined);
+    });
+
+    render(<StashPanel />);
+    await screen.findByText("WIP on main: experiment");
+    fireEvent.click(screen.getByRole("button", { name: "Drop" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Drop stash" })).getByRole("button", { name: "Drop" }));
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: locked", { title: "Stash drop failed" }),
     );
   });
 

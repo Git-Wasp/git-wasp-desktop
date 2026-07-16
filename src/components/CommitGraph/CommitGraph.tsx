@@ -385,8 +385,8 @@ export function CommitGraph({
     const container = containerRef.current;
     if (!container) return;
     const limit = Math.ceil(container.clientHeight / rowHeight) + BUFFER_ROWS * 2;
-    fetchViewport(0, limit);
-  }, [fetchViewport, rowHeight]);
+    fetchViewport(0, limit).catch((e: unknown) => toastError(String(e), { title: "Couldn't load history" }));
+  }, [fetchViewport, rowHeight, toastError]);
 
   // Resolve gravatars for the authors in view (deduped + cached in the store).
   useEffect(() => {
@@ -427,10 +427,12 @@ export function CommitGraph({
             offset >= loadedStart && (offset + limit <= loadedEnd || loadedEnd >= vp.totalCount);
           if (covered) return;
         }
-        fetchViewport(offset, limit);
+        fetchViewport(offset, limit).catch((e: unknown) =>
+          toastError(String(e), { title: "Couldn't load history" }),
+        );
       });
     },
-    [fetchViewport, syncHeaderScroll, rowHeight],
+    [fetchViewport, syncHeaderScroll, rowHeight, toastError],
   );
 
   useEffect(() => {
@@ -455,9 +457,9 @@ export function CommitGraph({
     container.scrollTop = target;
     const offset = Math.max(0, Math.floor(target / rowHeight) - BUFFER_ROWS);
     const limit = Math.ceil(container.clientHeight / rowHeight) + BUFFER_ROWS * 2;
-    fetchViewport(offset, limit);
+    fetchViewport(offset, limit).catch((e: unknown) => toastError(String(e), { title: "Couldn't load history" }));
     useGraphStore.setState({ scrollToRow: null });
-  }, [scrollToRow, fetchViewport, rowHeight]);
+  }, [scrollToRow, fetchViewport, rowHeight, toastError]);
 
   // ⌘/Ctrl+F opens the graph search. Only mounted with the graph view, so it
   // won't fire while a diff editor has the panel.
@@ -476,17 +478,21 @@ export function CommitGraph({
   const handleMerge = useCallback(
     (source: string, target: string) => {
       void (async () => {
-        await runMerge({
-          source,
-          target,
-          currentBranch: currentRepo?.headBranch ?? null,
-          checkoutBranch,
-          startMerge,
-        });
-        await refresh();
+        try {
+          await runMerge({
+            source,
+            target,
+            currentBranch: currentRepo?.headBranch ?? null,
+            checkoutBranch,
+            startMerge,
+          });
+          await refresh();
+        } catch (e) {
+          toastError(String(e));
+        }
       })();
     },
-    [currentRepo, checkoutBranch, startMerge, refresh],
+    [currentRepo, checkoutBranch, startMerge, refresh, toastError],
   );
 
   const drag = useGraphDragDrop({
@@ -633,7 +639,7 @@ export function CommitGraph({
         return [
           {
             label: "Pop stash",
-            onSelect: () => runStashOp(() => stashPop(index), "Popped stash"),
+            onSelect: () => void runStashOp(() => stashPop(index), "Popped stash"),
           },
           {
             label: "Rename stash…",
@@ -652,7 +658,7 @@ export function CommitGraph({
         ];
       }
       const items: MenuItem[] = [
-        { label: "Checkout this commit", onSelect: () => runBranchOp(() => checkoutCommit(node.oid)) },
+        { label: "Checkout this commit", onSelect: () => void runBranchOp(() => checkoutCommit(node.oid)) },
       ];
 
       // When this commit is part of a multi-commit selection, offer to squash the
@@ -686,10 +692,10 @@ export function CommitGraph({
         { label: "New branch here…", onSelect: () => setPrompt({ kind: "new-branch", oid: node.oid }) },
         { label: "Create tag here…", onSelect: () => setPrompt({ kind: "create-tag", oid: node.oid }) },
         { separator: true },
-        { label: "Revert commit", onSelect: () => handleRevertCommit(node.oid, true) },
+        { label: "Revert commit", onSelect: () => void handleRevertCommit(node.oid, true) },
         {
           label: "Revert without committing",
-          onSelect: () => handleRevertCommit(node.oid, false),
+          onSelect: () => void handleRevertCommit(node.oid, false),
         },
       );
 
@@ -701,7 +707,7 @@ export function CommitGraph({
         for (const branch of ffBranches) {
           items.push({
             label: `Fast-forward ${branch} to here`,
-            onSelect: () => runBranchOp(() => fastForwardBranch(branch, node.oid)),
+            onSelect: () => void runBranchOp(() => fastForwardBranch(branch, node.oid)),
           });
         }
       }
@@ -716,17 +722,18 @@ export function CommitGraph({
               label: `Checkout ${branch.name}`,
               // checkoutBranch now refreshes the graph internally — routing
               // through runBranchOp would just refresh a second time.
-              onSelect: () => checkoutBranch(branch.name).catch((e) => toastError(String(e))),
+              onSelect: () => void checkoutBranch(branch.name).catch((e: unknown) => toastError(String(e))),
             });
           }
           items.push({
             label: `Push ${branch.name}`,
-            onSelect: () => handlePushBranch(branch.name),
+            onSelect: () => void handlePushBranch(branch.name),
           });
           if (!isCurrent && operationStatus.kind !== "merge") {
             items.push({
               label: `Merge ${branch.name} into current`,
-              onSelect: () => startMerge(branch.name),
+              onSelect: () =>
+                void startMerge(branch.name).catch((e: unknown) => toastError(String(e), { title: "Merge failed" })),
             });
           }
           items.push({
@@ -753,7 +760,7 @@ export function CommitGraph({
           if (!onRemote) {
             items.push({
               label: `Push tag ${tag.name}`,
-              onSelect: () => runTagOp(() => pushTag(tag.name), `Pushed tag ${tag.name}`),
+              onSelect: () => void runTagOp(() => pushTag(tag.name), `Pushed tag ${tag.name}`),
             });
           }
           items.push({
@@ -1157,7 +1164,7 @@ export function CommitGraph({
                 ? "Stash"
                 : "Create"
           }
-          onConfirm={handlePromptConfirm}
+          onConfirm={(value) => void handlePromptConfirm(value)}
           onCancel={() => setPrompt(null)}
         />
       )}

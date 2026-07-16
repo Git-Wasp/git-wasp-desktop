@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import type { GraphNode, GraphViewport, SearchHit } from "../types/graph";
 import { DEFAULT_DENSITY, isGraphDensity, type GraphDensity } from "../lib/graphDensity";
+import { useToastStore } from "./toastStore";
 
 // Sentinel oid of the synthetic working-tree (uncommitted changes) node — must
 // match the backend graph layout (`graph/layout.rs`). Selecting it highlights
@@ -83,7 +84,7 @@ const loadColumnVisibility = (): ColumnVisibility => {
     if (!raw) return all;
     const parsed = JSON.parse(raw) as Partial<Record<OptionalColumn, boolean>>;
     for (const c of OPTIONAL_COLUMNS) {
-      if (typeof parsed[c] === "boolean") all[c] = parsed[c] as boolean;
+      if (typeof parsed[c] === "boolean") all[c] = parsed[c];
     }
     return all;
   } catch {
@@ -510,7 +511,13 @@ export const useGraphStore = create<GraphStore>((set, get) => {
       set({ searchHits: [], searchMatchOids: new Set<string>(), searchIndex: -1 });
       return;
     }
-    const hits = await invoke<SearchHit[]>("search_graph", { query });
+    let hits: SearchHit[];
+    try {
+      hits = await invoke<SearchHit[]>("search_graph", { query });
+    } catch (e) {
+      useToastStore.getState().error(String(e), { title: "Search failed" });
+      return;
+    }
     // A later keystroke may have superseded this query while we awaited.
     if (get().searchQuery !== query) return;
     const oids = new Set(hits.map((h) => h.oid));
