@@ -28,6 +28,15 @@ const modified: StageFileContents = {
   worktreeExists: true,
 };
 
+// Two independent modifications, so the rendered diff carries (at least) two
+// distinct per-line stage toggles to click.
+const twoChanges: StageFileContents = {
+  headContent: "a\nb\nc\nd\ne\n",
+  worktreeContent: "a\nB\nc\nD\ne\n",
+  isBinary: false,
+  worktreeExists: true,
+};
+
 // The view-mode preference persists to localStorage; reset it between tests so
 // each starts from the default (split) view.
 beforeEach(() => localStorage.clear());
@@ -170,6 +179,39 @@ describe("StageFileEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Unstage all" }));
 
     expect(onApplyIndex.mock.calls[0]).toEqual(["f.txt", "a\nc\n"]);
+  });
+
+  it("ignores a second line-toggle while the first is still applying", async () => {
+    let resolveFirst: () => void;
+    // `onApplyIndex`'s declared prop type is `(path, content) => void` (its
+    // real-world caller, App.tsx, is fire-and-forget) — but the component
+    // guards overlapping toggles via `Promise.resolve(onApplyIndex(...))`, so
+    // this test's mock returns a real promise and is cast past the narrower
+    // declared type to prove that guard actually waits for it.
+    const onApplyIndex = vi.fn(
+      () =>
+        new Promise<void>((r) => {
+          resolveFirst = r;
+        }),
+    ) as unknown as (path: string, content: string) => void;
+    const { container } = renderEditor(twoChanges, { onApplyIndex });
+
+    const toggles = await waitFor(() => {
+      const buttons = Array.from(container.querySelectorAll<HTMLButtonElement>(".cm-stage-toggle"));
+      expect(buttons.length).toBeGreaterThanOrEqual(2);
+      return buttons;
+    });
+
+    fireEvent.click(toggles[0]);
+    fireEvent.click(toggles[1]); // fired before the first resolves
+
+    expect(onApplyIndex).toHaveBeenCalledTimes(1); // second click ignored, not composed from stale rows
+
+    resolveFirst!();
+    // Once the first apply resolves, a subsequent toggle is honoured again.
+    await new Promise((r) => setTimeout(r, 0)); // let the in-flight promise's `.finally` settle
+    fireEvent.click(toggles[1]);
+    expect(onApplyIndex).toHaveBeenCalledTimes(2);
   });
 
   it("defaults to the split view with both panes and a view-mode toggle", () => {

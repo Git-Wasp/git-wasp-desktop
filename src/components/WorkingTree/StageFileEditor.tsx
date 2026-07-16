@@ -629,12 +629,19 @@ export function StageFileEditor({
     setStagedRows(next);
   }, []);
 
+  // Guards against a second line-toggle firing while the first's index write
+  // is still in flight: `onApplyIndex` composes the new index blob from the
+  // current `rows`/`stagedRows` closure, so a toggle fired before the prior
+  // one's promise resolves would compose from stale state and clobber it.
+  const applyInFlightRef = useRef(false);
+
   const toggleRow = useCallback(
     (rowIndex: number) => {
       // Live per-line staging: recompose this file's index blob and write it
       // immediately. Unstaged view (index → worktree) stages just this line;
       // staged view (HEAD → index) unstages it (keep every other staged line).
       if (stageMode && onApplyIndex) {
+        if (applyInFlightRef.current) return; // a previous toggle hasn't landed yet
         let indexSelection: Set<number>;
         if (stageMode === "unstaged") {
           indexSelection = new Set([rowIndex]);
@@ -642,7 +649,10 @@ export function StageFileEditor({
           indexSelection = new Set(changedRowIndices(rows));
           indexSelection.delete(rowIndex);
         }
-        onApplyIndex(path, composeStagedText(rows, indexSelection));
+        applyInFlightRef.current = true;
+        void Promise.resolve(onApplyIndex(path, composeStagedText(rows, indexSelection))).finally(() => {
+          applyInFlightRef.current = false;
+        });
         return;
       }
       const next = new Set(stagedRowsRef.current);

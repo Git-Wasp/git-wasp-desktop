@@ -213,8 +213,21 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
   const staged = status?.staged ?? [];
   const stagedCount = staged.length;
 
-  const stageAll = () => changes.forEach((e) => void stageOne(e.path));
-  const unstageAll = () => staged.forEach((e) => void unstageOne(e.path));
+  // Sequential, not `Array.forEach` firing every invoke concurrently: git's
+  // index is a single file, so N concurrent `stage_file`/`unstage_file` calls
+  // race each other. `stageOne`/`unstageOne` already toast per-file failures,
+  // so a rejection here just moves on to the next file rather than aborting
+  // the rest of the batch.
+  const stageAll = async () => {
+    for (const e of changes) {
+      await stageOne(e.path);
+    }
+  };
+  const unstageAll = async () => {
+    for (const e of staged) {
+      await unstageOne(e.path);
+    }
+  };
 
   // Stash all tracked changes (staged + unstaged). Untracked files aren't
   // stashed, so the button is offered only when there's something git will
@@ -261,7 +274,7 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
                   </Button>
                 )}
                 {changes.length > 0 && (
-                  <Button size="sm" onClick={stageAll}>
+                  <Button size="sm" onClick={() => void stageAll()}>
                     Stage all
                   </Button>
                 )}
@@ -304,7 +317,7 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
           count={stagedCount}
           action={
             stagedCount > 0 ? (
-              <Button size="sm" onClick={unstageAll}>
+              <Button size="sm" onClick={() => void unstageAll()}>
                 Unstage all
               </Button>
             ) : undefined
