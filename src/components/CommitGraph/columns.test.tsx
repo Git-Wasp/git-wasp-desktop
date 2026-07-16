@@ -226,7 +226,7 @@ describe("BranchCell multiple tags", () => {
       const { container } = render(<BranchCell node={threeTags} />);
       const chip = container.querySelector("[data-tag]")!.parentElement!;
       fireEvent.mouseEnter(chip);
-      act(() => vi.advanceTimersByTime(400));
+      void act(() => vi.advanceTimersByTime(400));
 
       const tip = screen.getByRole("tooltip");
       expect(tip).toHaveTextContent("v2.0.0");

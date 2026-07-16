@@ -138,6 +138,20 @@ describe("workingTreeStore", () => {
     expect(useWorkingTreeStore.getState().selectedPath).toBe("b.txt");
   });
 
+  it("selectFile drops a stale response when the selection moved on before it resolved", async () => {
+    let resolveA: (v: StageFileContents) => void;
+    const pendingA = new Promise<StageFileContents>((r) => { resolveA = r; });
+    mockInvoke.mockImplementationOnce(() => pendingA); // fileA: slow
+    mockInvoke.mockResolvedValueOnce({ ...stageDiff, headContent: "B\n" }); // fileB: fast
+
+    const selectA = useWorkingTreeStore.getState().selectFile("fileA.txt", "unstaged");
+    await useWorkingTreeStore.getState().selectFile("fileB.txt", "unstaged"); // resolves first
+    resolveA!(stageDiff); // fileA's late response
+    await selectA;
+
+    expect(useWorkingTreeStore.getState().selectedPath).toBe("fileB.txt");
+    expect(useWorkingTreeStore.getState().stageDiff?.headContent).toBe("B\n");
+  });
 
   it("clearSelectedFile clears the selection and stage diff", () => {
     useWorkingTreeStore.setState({ selectedPath: "f.txt", stageDiff });
@@ -165,12 +179,31 @@ describe("workingTreeStore", () => {
     expect(useWorkingTreeStore.getState().status).toEqual(status);
   });
 
+  it("reset clears repo-scoped selection and status", () => {
+    useWorkingTreeStore.setState({
+      status: emptyStatus,
+      selectedPath: "f.txt",
+      stageMode: "staged",
+      stageDiff,
+      headCommit: { oid: "abc", message: "m", pushed: false },
+    });
+
+    useWorkingTreeStore.getState().reset();
+
+    const s = useWorkingTreeStore.getState();
+    expect(s.status).toBeNull();
+    expect(s.selectedPath).toBeNull();
+    expect(s.stageMode).toBeNull();
+    expect(s.stageDiff).toBeNull();
+    expect(s.headCommit).toBeNull();
+  });
+
   it("startWatching refreshes the graph's cached working-tree status before re-fetching the viewport, debounced", async () => {
     vi.useFakeTimers();
     let handler: () => void = () => {};
-    mockListen.mockImplementation(async (_event, cb) => {
+    mockListen.mockImplementation((_event, cb) => {
       handler = cb as unknown as () => void;
-      return () => {};
+      return Promise.resolve(() => {});
     });
     mockInvoke.mockImplementation((cmd) =>
       cmd === "get_graph_viewport"
@@ -191,5 +224,61 @@ describe("workingTreeStore", () => {
     expect(mockInvoke).toHaveBeenNthCalledWith(2, "get_graph_viewport", { offset: 0, limit: 50 });
 
     vi.useRealTimers();
+  });
+
+  it("startWatching's unlisten cancels a pending debounced refreshAll", async () => {
+    vi.useFakeTimers();
+    let handler: () => void = () => {};
+    mockListen.mockImplementation((_event, cb) => {
+      handler = cb as unknown as () => void;
+      return Promise.resolve(vi.fn());
+    });
+    const refreshAllSpy = vi.spyOn(useWorkingTreeStore.getState(), "refreshAll").mockResolvedValue();
+
+    const unlisten = await useWorkingTreeStore.getState().startWatching();
+    handler(); // a working-tree-changed event arrives, arming the 300ms debounce
+    unlisten(); // caller (e.g. an unmounting StagingPanel) tears down immediately
+    vi.advanceTimersByTime(400);
+
+    expect(refreshAllSpy).not.toHaveBeenCalled();
+    refreshAllSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it("refreshAll refetches the open file's stageDiff so external edits aren't staged from a stale snapshot", async () => {
+    useWorkingTreeStore.setState({ selectedPath: "f.txt", stageMode: "unstaged" });
+    const newStatus: WorkingTreeStatus = { ...emptyStatus, unstaged: [{ path: "f.txt", originalPath: null, status: "Modified" }] };
+    const freshDiff: StageFileContents = { ...stageDiff, worktreeContent: "a\nB\nc\nD\n" };
+    mockInvoke.mockImplementation((cmd) =>
+      cmd === "get_graph_viewport"
+        ? Promise.resolve({ nodes: [], totalCount: 0, offset: 0 })
+        : cmd === "refresh_working_tree"
+        ? Promise.resolve(newStatus)
+        : cmd === "get_stage_file_contents"
+        ? Promise.resolve(freshDiff)
+        : Promise.resolve(undefined),
+    );
+    useGraphStore.setState({ lastOffset: 0, lastLimit: 50, nodesByRow: new Map() });
+
+    await useWorkingTreeStore.getState().refreshAll();
+
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "get_stage_file_contents", { path: "f.txt", staged: false });
+    expect(useWorkingTreeStore.getState().stageDiff).toEqual(freshDiff);
+  });
+
+  it("refreshAll does not fetch a diff when no file is open", async () => {
+    useWorkingTreeStore.setState({ selectedPath: null, stageMode: null });
+    mockInvoke.mockImplementation((cmd) =>
+      cmd === "get_graph_viewport"
+        ? Promise.resolve({ nodes: [], totalCount: 0, offset: 0 })
+        : cmd === "refresh_working_tree"
+        ? Promise.resolve(emptyStatus)
+        : Promise.resolve(undefined),
+    );
+    useGraphStore.setState({ lastOffset: 0, lastLimit: 50, nodesByRow: new Map() });
+
+    await useWorkingTreeStore.getState().refreshAll();
+
+    expect(mockInvoke).toHaveBeenCalledTimes(2); // refresh_working_tree and get_graph_viewport only
   });
 });

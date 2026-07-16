@@ -1,9 +1,23 @@
 import { useEffect } from "react";
 import { useThemeStore, type ThemeInfo } from "../../stores/themeStore";
+import { useToastStore } from "../../stores/toastStore";
 import { Button } from "../ui/Button";
 
 function ThemeRow({ theme, active }: { theme: ThemeInfo; active: boolean }) {
   const { setActiveTheme, deleteTheme, previewTheme, clearPreview } = useThemeStore();
+
+  const handleActivate = () => {
+    setActiveTheme(theme.id).catch((e: unknown) =>
+      useToastStore.getState().error(String(e), { title: "Couldn't activate theme" }),
+    );
+  };
+
+  const handleDelete = () => {
+    if (!window.confirm(`Delete theme "${theme.name}"?`)) return;
+    deleteTheme(theme.id).catch((e: unknown) =>
+      useToastStore.getState().error(String(e), { title: "Couldn't delete theme" }),
+    );
+  };
 
   const meta = [theme.author, theme.version].filter(Boolean).join(" · ");
 
@@ -42,7 +56,7 @@ function ThemeRow({ theme, active }: { theme: ThemeInfo; active: boolean }) {
           type="button"
           size="sm"
           aria-label={`Activate ${theme.name}`}
-          onClick={() => setActiveTheme(theme.id)}
+          onClick={handleActivate}
         >
           Activate
         </Button>
@@ -54,9 +68,7 @@ function ThemeRow({ theme, active }: { theme: ThemeInfo; active: boolean }) {
           size="sm"
           variant="danger"
           aria-label={`Delete ${theme.name}`}
-          onClick={() => {
-            if (window.confirm(`Delete theme "${theme.name}"?`)) deleteTheme(theme.id);
-          }}
+          onClick={handleDelete}
         >
           Delete
         </Button>
@@ -69,8 +81,16 @@ export function ThemeManager() {
   const { themes, activeThemeId, loadThemes, importTheme } = useThemeStore();
 
   useEffect(() => {
-    loadThemes();
+    loadThemes().catch((e: unknown) =>
+      useToastStore.getState().error(String(e), { title: "Couldn't load themes" }),
+    );
   }, [loadThemes]);
+
+  const handleImport = () => {
+    importTheme().catch((e: unknown) =>
+      useToastStore.getState().error(String(e), { title: "Couldn't import theme" }),
+    );
+  };
 
   return (
     <div>
@@ -85,7 +105,7 @@ export function ThemeManager() {
         <span style={{ fontSize: "var(--font-size-sm)", color: "var(--color-text-secondary)" }}>
           Hover a theme to preview it; click Activate to keep it.
         </span>
-        <Button variant="primary" type="button" onClick={() => importTheme()}>
+        <Button variant="primary" type="button" onClick={handleImport}>
           Import theme…
         </Button>
       </div>

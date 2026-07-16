@@ -28,6 +28,46 @@ function resolveLaneColors(): string[] {
   return Array.from({ length: 8 }, (_, i) => resolveCssVar(`--color-lane-${i}`));
 }
 
+interface ResolvedColors {
+  selectedBg: string;
+  nodeBg: string;
+  headRowBg: string;
+  hoverBg: string;
+  mutedColor: string;
+  mutedAlpha: number;
+  matchBg: string;
+  rowDivider: string;
+  pageBg: string;
+  selectionAccent: string;
+  sansFont: string;
+  stashMuted: string;
+  warningColor: string;
+}
+
+// All CSS custom-property reads the draw effect needs, resolved once per
+// theme/density change (see the config effect below) rather than on every
+// draw — getComputedStyle forces a synchronous layout, and the draw effect
+// re-runs on every hoveredOid change (i.e. every mouse-move during a hover
+// sweep over the graph), so resolving these inline made every hover tick pay
+// for ~12 forced-layout reads.
+function resolveColors(): ResolvedColors {
+  return {
+    selectedBg: resolveCssVar("--color-bg-selected") || "rgba(77, 157, 224, 0.15)",
+    nodeBg: resolveCssVar("--color-graph-node-bg") || "rgba(255, 255, 255, 0.035)",
+    headRowBg: resolveCssVar("--color-graph-head-row-bg") || "rgba(77, 157, 224, 0.13)",
+    hoverBg: resolveCssVar("--color-bg-hover") || "rgba(255, 255, 255, 0.06)",
+    mutedColor: resolveCssVar("--color-graph-muted") || "#5b6270",
+    mutedAlpha: parseFloat(resolveCssVar("--graph-muted-opacity")) || 0.4,
+    matchBg: resolveCssVar("--color-graph-match") || "rgba(255, 199, 87, 0.22)",
+    rowDivider: resolveCssVar("--color-graph-row-divider") || "rgba(255, 255, 255, 0.06)",
+    pageBg: resolveCssVar("--color-graph-bg") || resolveCssVar("--color-bg-app") || "#141510",
+    selectionAccent: resolveCssVar("--color-accent-primary") || "#4d9de0",
+    sansFont: resolveCssVar("--font-family-sans") || "sans-serif",
+    stashMuted: resolveCssVar("--color-text-muted") || "#8a8a8a",
+    warningColor: resolveCssVar("--color-warning") || "#ff9f0a",
+  };
+}
+
 // Geometry comes from CSS tokens, except row height and dot radius which the
 // caller overrides per the selected density preset (see lib/graphDensity) — the
 // canvas must use the exact same numbers as the DOM virtualisation.
@@ -72,20 +112,26 @@ export function useCommitGraph(
 ): void {
   const configRef = useRef<GraphConfig | null>(null);
   const laneColorsRef = useRef<string[]>([]);
+  const colorsRef = useRef<ResolvedColors | null>(null);
   const [themeTick, setThemeTick] = useState(0);
   // Redraw when avatars resolve so dots swap from colour to image.
   const avatarVersion = useAvatarStore((s) => s.version);
 
   // Resolve CSS tokens at mount, on theme change, and whenever the density
   // override changes (tokens are read from CSS, so a theme swap must re-resolve
-  // colours and redraw; a density change resizes the row/dot geometry).
+  // colours and redraw; a density change resizes the row/dot geometry). This is
+  // the only place `resolveCssVar`/`getComputedStyle` should be called — the
+  // draw effect below reads the cached `colorsRef.current` instead, since it
+  // re-runs on every `hoveredOid` change (every mouse-move during a hover sweep).
   useEffect(() => {
     configRef.current = resolveConfig(rowHeight, dotRadius);
     laneColorsRef.current = resolveLaneColors();
+    colorsRef.current = resolveColors();
 
     const onThemeChange = () => {
       configRef.current = resolveConfig(rowHeight, dotRadius);
       laneColorsRef.current = resolveLaneColors();
+      colorsRef.current = resolveColors();
       setThemeTick((t) => t + 1);
     };
     window.addEventListener(THEME_CHANGE_EVENT, onThemeChange);
@@ -94,30 +140,33 @@ export function useCommitGraph(
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !viewport || !configRef.current) return;
+    if (!canvas || !viewport || !configRef.current || !colorsRef.current) return;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     const { rowHeight, laneWidth, dotRadius, lineWidth } = configRef.current;
     const laneColors = laneColorsRef.current;
-    const selectedBg = resolveCssVar("--color-bg-selected") || "rgba(77, 157, 224, 0.15)";
-    const nodeBg = resolveCssVar("--color-graph-node-bg") || "rgba(255, 255, 255, 0.035)";
-    const headRowBg = resolveCssVar("--color-graph-head-row-bg") || "rgba(77, 157, 224, 0.13)";
-    const hoverBg = resolveCssVar("--color-bg-hover") || "rgba(255, 255, 255, 0.06)";
-    const mutedColor = resolveCssVar("--color-graph-muted") || "#5b6270";
-    const mutedAlpha = parseFloat(resolveCssVar("--graph-muted-opacity")) || 0.4;
-    const matchBg = resolveCssVar("--color-graph-match") || "rgba(255, 199, 87, 0.22)";
-    // Hairline divider between rows (graph-column half; the DOM row draws the
-    // matching border across the data columns) — cues individual commits.
-    const rowDivider = resolveCssVar("--color-graph-row-divider") || "rgba(255, 255, 255, 0.06)";
     // Page background: painted as a "cutout" ring around each dot so crossing
     // lane lines never visibly pierce the marker. Accent: the dashed selection
     // ring. Sans stack: canvas text for the commit-dot initials fallback.
-    const pageBg =
-      resolveCssVar("--color-graph-bg") || resolveCssVar("--color-bg-app") || "#141510";
-    const selectionAccent = resolveCssVar("--color-accent-primary") || "#4d9de0";
-    const sansFont = resolveCssVar("--font-family-sans") || "sans-serif";
+    const {
+      selectedBg,
+      nodeBg,
+      headRowBg,
+      hoverBg,
+      mutedColor,
+      mutedAlpha,
+      matchBg,
+      // Hairline divider between rows (graph-column half; the DOM row draws
+      // the matching border across the data columns) — cues individual commits.
+      rowDivider,
+      pageBg,
+      selectionAccent,
+      sansFont,
+      stashMuted,
+      warningColor,
+    } = colorsRef.current;
     const dpr = window.devicePixelRatio || 1;
 
     // A commit matches the active search (highlighted; never dimmed).
@@ -258,7 +307,7 @@ export function useCommitGraph(
         // the commit it descends from isn't a match.
         const edgeDimmed = (focusCurrentBranch && !edge.onHeadLine) || (!!searchActive && !isMatch(node));
         ctx.strokeStyle = isStashEdge
-          ? resolveCssVar("--color-text-muted") || "#8a8a8a"
+          ? stashMuted
           : edgeDimmed
             ? mutedColor
             : laneColors[edge.colorIndex % 8] || "#4d9de0";
@@ -299,7 +348,7 @@ export function useCommitGraph(
         const x = laneX(wt.lane);
         const yTop = wtIdx * rowHeight + rowHeight / 2;
         const yBottom = localHeadRow * rowHeight + rowHeight / 2;
-        ctx.strokeStyle = resolveCssVar("--color-warning") || "#ff9f0a";
+        ctx.strokeStyle = warningColor;
         ctx.lineWidth = lineWidth;
         ctx.setLineDash([3, 3]);
         ctx.beginPath();
@@ -347,7 +396,7 @@ export function useCommitGraph(
         ctx.lineTo(x - r, y);
         ctx.closePath();
         ctx.setLineDash([2, 2]);
-        ctx.strokeStyle = resolveCssVar("--color-text-muted") || "#8a8a8a";
+        ctx.strokeStyle = stashMuted;
         ctx.lineWidth = 2;
         ctx.stroke();
         ctx.setLineDash([]);

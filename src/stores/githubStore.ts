@@ -9,6 +9,12 @@ import type {
   RemoteInfo,
   RepoLabel,
 } from "../types/github";
+import { useRepoStore } from "./repoStore";
+
+// Whether two RemoteInfo values point at the same GitHub repo (used to decide
+// whether stale `pullRequests` from the previous remote need clearing).
+const sameRepo = (a: RemoteInfo | null, b: RemoteInfo | null): boolean =>
+  a !== null && b !== null && a.host === b.host && a.owner === b.owner && a.repo === b.repo;
 
 interface GithubStore {
   connections: Record<string, GithubConnection>;
@@ -65,12 +71,19 @@ export const useGithubStore = create<GithubStore>((set, get) => ({
   },
 
   detectRemote: async () => {
+    const epoch = useRepoStore.getState().activationEpoch;
     try {
       const remoteInfo = await invoke<RemoteInfo>("detect_remote_info");
-      set({ remoteInfo });
+      if (useRepoStore.getState().activationEpoch !== epoch) return; // superseded by a repo switch
+      // A different repo (even on the same host) invalidates the previous
+      // repo's PR list — otherwise it can linger on screen until the new
+      // repo's own list_pull_requests call resolves.
+      const changed = !sameRepo(get().remoteInfo, remoteInfo);
+      set({ remoteInfo, ...(changed ? { pullRequests: [] } : {}) });
       await get().checkConnection(remoteInfo.host);
     } catch {
-      set({ remoteInfo: null });
+      if (useRepoStore.getState().activationEpoch !== epoch) return;
+      set({ remoteInfo: null, pullRequests: [] });
     }
   },
 

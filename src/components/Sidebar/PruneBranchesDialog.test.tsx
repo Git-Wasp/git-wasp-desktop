@@ -17,7 +17,7 @@ function routeInvoke(prunable: PrunableBranch[], over: Record<string, unknown> =
     delete_branch: undefined,
     ...over,
   };
-  mockInvoke.mockImplementation(async (cmd: string) => table[cmd]);
+  mockInvoke.mockImplementation((cmd: string) => Promise.resolve(table[cmd]));
 }
 
 beforeEach(() => {
@@ -91,10 +91,10 @@ describe("PruneBranchesDialog", () => {
     routeInvoke([gone("feat/old", "origin/feat/old")], {
       fetch_remote: undefined,
     });
-    mockInvoke.mockImplementation(async (cmd: string) => {
-      if (cmd === "fetch_remote") throw new Error("offline");
-      if (cmd === "list_prunable_branches") return [gone("feat/old", "origin/feat/old")];
-      return undefined;
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "fetch_remote") return Promise.reject(new Error("offline"));
+      if (cmd === "list_prunable_branches") return Promise.resolve([gone("feat/old", "origin/feat/old")]);
+      return Promise.resolve(undefined);
     });
 
     render(<PruneBranchesDialog onClose={vi.fn()} />);

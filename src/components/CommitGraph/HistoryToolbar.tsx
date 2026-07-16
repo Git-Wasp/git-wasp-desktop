@@ -74,7 +74,7 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
     try {
       await refreshAll();
     } catch (e) {
-      toastError(`Refresh failed: ${e}`);
+      toastError(`Refresh failed: ${String(e)}`);
     } finally {
       setIsRefreshing(false);
     }
@@ -160,20 +160,23 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
 
   const handleCreateBranch = async (name: string) => {
     setShowNewBranch(false);
-    await createBranch(name);
-    await checkoutBranch(name);
-    await refresh();
+    try {
+      await createBranch(name);
+      await checkoutBranch(name);
+    } catch (e) {
+      toastError(String(e), { title: "Couldn't create branch" });
+    }
   };
 
   const pullItems: MenuItem[] = [
-    { label: "Fetch", onSelect: handleFetch },
-    { label: "Pull (fast-forward if possible)", onSelect: () => handlePull("ffOrMerge") },
-    { label: "Pull (fast-forward only)", onSelect: () => handlePull("ffOnly") },
+    { label: "Fetch", onSelect: () => void handleFetch() },
+    { label: "Pull (fast-forward if possible)", onSelect: () => void handlePull("ffOrMerge") },
+    { label: "Pull (fast-forward only)", onSelect: () => void handlePull("ffOnly") },
   ];
 
   return (
     <div className="elevation-below" style={barStyle}>
-      <Button type="button" onClick={handlePush} loading={isPushing} disabled={!hasRemote || busy}>
+      <Button type="button" onClick={() => void handlePush()} loading={isPushing} disabled={!hasRemote || busy}>
         {!isPushing && <PushIcon />}
         Push
       </Button>
@@ -258,7 +261,7 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
         <Tooltip label="Check for changes">
           <IconButton
             aria-label="Check for changes"
-            onClick={handleRefresh}
+            onClick={() => void handleRefresh()}
             disabled={isRefreshing}
           >
             <RefreshIcon />
@@ -290,7 +293,7 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
           title="New branch"
           label="Branch name"
           confirmLabel="Create"
-          onConfirm={handleCreateBranch}
+          onConfirm={(name) => void handleCreateBranch(name)}
           onCancel={() => setShowNewBranch(false)}
         />
       )}

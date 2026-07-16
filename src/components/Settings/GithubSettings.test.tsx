@@ -1,8 +1,9 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { GithubSettings } from "./GithubSettings";
 import { useGithubStore } from "../../stores/githubStore";
+import { useToastStore } from "../../stores/toastStore";
 import type { GithubConnection } from "../../types/github";
 
 let checkConnection: ReturnType<typeof vi.fn<(host: string) => Promise<void>>>;
@@ -37,6 +38,20 @@ describe("GithubSettings", () => {
     expect(screen.getByText(/Connected as mike/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
     expect(logout).toHaveBeenCalledWith("github.com");
+  });
+
+  it("shows a toast instead of throwing when disconnect fails", async () => {
+    logout.mockRejectedValue(new Error("network down"));
+    const error = vi.fn();
+    useToastStore.setState({ error });
+    seed({ state: "connected", login: "mike", message: null });
+
+    render(<GithubSettings />);
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: network down", { title: "Couldn't disconnect" }),
+    );
   });
 
   it("offers Connect when disconnected", () => {

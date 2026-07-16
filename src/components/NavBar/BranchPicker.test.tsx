@@ -39,7 +39,7 @@ describe("BranchPicker", () => {
     expect(screen.getByRole("button", { name: /branch picker/i })).toHaveTextContent("main");
   });
 
-  it("lists local branches and checks out the chosen one + refreshes the graph", async () => {
+  it("lists local branches and checks out the chosen one", async () => {
     render(<BranchPicker />);
     fireEvent.click(screen.getByRole("button", { name: /branch picker/i }));
 
@@ -51,7 +51,9 @@ describe("BranchPicker", () => {
     await waitFor(() =>
       expect(useRepoStore.getState().checkoutBranch).toHaveBeenCalledWith("feat/x"),
     );
-    expect(useGraphStore.getState().refresh).toHaveBeenCalled();
+    // checkoutBranch now refreshes the graph internally — BranchPicker no
+    // longer needs (or issues) its own explicit refresh for a local checkout.
+    expect(useGraphStore.getState().refresh).not.toHaveBeenCalled();
   });
 
   it("does not check out the already-current branch", () => {
@@ -96,6 +98,9 @@ describe("BranchPicker", () => {
       expect(useRepoStore.getState().checkoutRemoteBranch).toHaveBeenCalledWith("origin/release"),
     );
     expect(useRepoStore.getState().checkoutBranch).not.toHaveBeenCalled();
+    // checkoutRemoteBranch isn't one of the self-refreshing repoStore actions,
+    // so BranchPicker still refreshes explicitly on this path.
+    expect(useGraphStore.getState().refresh).toHaveBeenCalled();
   });
 
   it("hides the symbolic origin/HEAD ref", () => {

@@ -24,6 +24,7 @@ const fakeInit = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockOpenUrl.mockResolvedValue(undefined);
   useGithubStore.setState({
     connections: {},
     remoteInfo: null,

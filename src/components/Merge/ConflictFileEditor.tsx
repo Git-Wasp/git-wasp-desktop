@@ -24,6 +24,7 @@ import { Button } from "../ui/Button";
 interface ConflictFileEditorProps {
   file: ConflictedFile;
   onMarkResolved: (path: string, content: string) => void;
+  onDirtyChange?: (path: string, dirty: boolean) => void;
 }
 
 type BlockSelection = { current: Set<number>; source: Set<number> };
@@ -170,11 +171,10 @@ function ReadOnlyPane({
   );
 }
 
-export function ConflictFileEditor({ file, onMarkResolved }: ConflictFileEditorProps) {
-  const seeded = file.seededResult ?? "";
+export function ConflictFileEditor({ file, onMarkResolved, onDirtyChange }: ConflictFileEditorProps) {
   const resultContainerRef = useRef<HTMLDivElement>(null);
   const resultViewRef = useRef<EditorView | null>(null);
-  const [resultContent, setResultContent] = useState(seeded);
+  const [resultContent, setResultContent] = useState(file.seededResult ?? "");
   const [selections, setSelections] = useState<Selections>({});
   const selectionsRef = useRef<Selections>({});
 
@@ -207,18 +207,21 @@ export function ConflictFileEditor({ file, onMarkResolved }: ConflictFileEditorP
     [currentRanges, selections],
   );
 
-  // Reset selection when switching files.
+  // Reset selection and result text when switching files, or when the same
+  // file's seeded result changes underneath us (e.g. resolved externally mid-merge).
   useEffect(() => {
     selectionsRef.current = {};
     setSelections({});
-  }, [file.path]);
+    setResultContent(file.seededResult ?? "");
+  }, [file.path, file.seededResult]);
 
   useEffect(() => {
     if (!resultContainerRef.current) return;
 
+    const initialDoc = file.seededResult ?? "";
     const view = new EditorView({
       state: EditorState.create({
-        doc: seeded,
+        doc: initialDoc,
         extensions: [
           lineNumbers(),
           ...activeLineExtensions,
@@ -234,7 +237,9 @@ export function ConflictFileEditor({ file, onMarkResolved }: ConflictFileEditorP
           ),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
-              setResultContent(update.state.doc.toString());
+              const next = update.state.doc.toString();
+              setResultContent(next);
+              onDirtyChange?.(file.path, next !== (file.seededResult ?? ""));
             }
           }),
         ],
@@ -243,6 +248,9 @@ export function ConflictFileEditor({ file, onMarkResolved }: ConflictFileEditorP
     });
     resultViewRef.current = view;
     const unregister = registerEditorView(view);
+    // A freshly (re)built doc always starts equal to its seeded result — clear
+    // any stale dirty flag left over from before this file/seed switch.
+    onDirtyChange?.(file.path, false);
 
     return () => {
       unregister();
@@ -250,7 +258,7 @@ export function ConflictFileEditor({ file, onMarkResolved }: ConflictFileEditorP
       resultViewRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [file.path]);
+  }, [file.path, file.seededResult]);
 
   // Replace a block's tracked range in the result with the composed selection.
   const applyBlock = useCallback(
@@ -383,7 +391,7 @@ export function ConflictFileEditor({ file, onMarkResolved }: ConflictFileEditorP
             }}
           >
             {file.conflictBlocks.map((block, index) => {
-              const resolved = isBlockResolved(resultContent, seeded, block);
+              const resolved = isBlockResolved(resultContent, file.seededResult ?? "", block);
               return (
                 <div key={index} style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
                   <span style={{ fontSize: "var(--font-size-sm)", color: "var(--color-text-secondary)" }}>

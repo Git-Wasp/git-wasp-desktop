@@ -316,7 +316,7 @@ export function NewPRForm({
         <Button
           variant="primary"
           fullWidth
-          onClick={handleSubmit}
+          onClick={() => void handleSubmit()}
           loading={isSubmitting}
           disabled={isSubmitting || !canSubmit}
         >

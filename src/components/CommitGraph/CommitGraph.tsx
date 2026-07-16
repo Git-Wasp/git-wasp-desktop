@@ -11,6 +11,7 @@ import { useTagStore } from "../../stores/tagStore";
 import { TagDeleteDialog } from "./TagDeleteDialog";
 import { useCommitGraph, GRAPH_PAD_LEFT } from "../../hooks/useCommitGraph";
 import { ContextMenu, type MenuItem } from "../common/ContextMenu";
+import { ConfirmDialog } from "../common/ConfirmDialog";
 import { PromptDialog } from "../common/PromptDialog";
 import { ResizeHandle } from "../common/ResizeHandle";
 import { usePersistedWidth } from "../../lib/usePersistedWidth";
@@ -262,8 +263,12 @@ export function CommitGraph({
 } = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { viewport, selection, fetchViewport, selectCommit, selectWorkingTree, refresh } =
-    useGraphStore();
+  const viewport = useGraphStore((s) => s.viewport);
+  const selection = useGraphStore((s) => s.selection);
+  const fetchViewport = useGraphStore((s) => s.fetchViewport);
+  const selectCommit = useGraphStore((s) => s.selectCommit);
+  const selectWorkingTree = useGraphStore((s) => s.selectWorkingTree);
+  const refresh = useGraphStore((s) => s.refresh);
   const scrollToRow = useGraphStore((s) => s.scrollToRow);
   const focusCurrentBranch = useGraphStore((s) => s.focusCurrentBranch);
   const searchOpen = useGraphStore((s) => s.searchOpen);
@@ -278,19 +283,17 @@ export function CommitGraph({
   // these) and where the commit body line goes (below / beside / hidden).
   const graphDensity = useGraphStore((s) => s.graphDensity);
   const { rowHeight, dotRadius, bodyPlacement } = GRAPH_DENSITY[graphDensity];
-  const {
-    currentRepo,
-    createBranch,
-    checkoutBranch,
-    renameBranch,
-    deleteBranch,
-    checkoutCommit,
-    createTag,
-    revertCommit,
-    squashCommits,
-    fastForwardBranch,
-    listFastForwardableBranches,
-  } = useRepoStore();
+  const currentRepo = useRepoStore((s) => s.currentRepo);
+  const createBranch = useRepoStore((s) => s.createBranch);
+  const checkoutBranch = useRepoStore((s) => s.checkoutBranch);
+  const renameBranch = useRepoStore((s) => s.renameBranch);
+  const deleteBranch = useRepoStore((s) => s.deleteBranch);
+  const checkoutCommit = useRepoStore((s) => s.checkoutCommit);
+  const createTag = useRepoStore((s) => s.createTag);
+  const revertCommit = useRepoStore((s) => s.revertCommit);
+  const squashCommits = useRepoStore((s) => s.squashCommits);
+  const fastForwardBranch = useRepoStore((s) => s.fastForwardBranch);
+  const listFastForwardableBranches = useRepoStore((s) => s.listFastForwardableBranches);
   const remoteInfo = useGithubStore((s) => s.remoteInfo);
   const startMerge = useMergeStore((s) => s.startMerge);
   const operationStatus = useMergeStore((s) => s.status);
@@ -298,7 +301,10 @@ export function CommitGraph({
   const requestAvatars = useAvatarStore((s) => s.request);
   const toastError = useToastStore((s) => s.error);
   const toastSuccess = useToastStore((s) => s.success);
-  const stash = useStashStore();
+  const stashCreate = useStashStore((s) => s.create);
+  const stashPop = useStashStore((s) => s.pop);
+  const stashDrop = useStashStore((s) => s.drop);
+  const stashRename = useStashStore((s) => s.rename);
   const remoteTags = useTagStore((s) => s.remoteTags);
   const pushTag = useTagStore((s) => s.pushTag);
   const deleteTag = useTagStore((s) => s.deleteTag);
@@ -311,6 +317,7 @@ export function CommitGraph({
   const [prompt, setPrompt] = useState<PromptState | null>(null);
   const [squash, setSquash] = useState<{ oids: string[]; message: string } | null>(null);
   const [tagDelete, setTagDelete] = useState<{ name: string; onRemote: boolean } | null>(null);
+  const [pendingDeleteBranch, setPendingDeleteBranch] = useState<string | null>(null);
   // The row the pointer is over, for a subtle hover highlight. Stable setter, so
   // memoized rows only re-render when their own hovered flag flips.
   const [hoveredOid, setHoveredOid] = useState<string | null>(null);
@@ -378,8 +385,8 @@ export function CommitGraph({
     const container = containerRef.current;
     if (!container) return;
     const limit = Math.ceil(container.clientHeight / rowHeight) + BUFFER_ROWS * 2;
-    fetchViewport(0, limit);
-  }, [fetchViewport, rowHeight]);
+    fetchViewport(0, limit).catch((e: unknown) => toastError(String(e), { title: "Couldn't load history" }));
+  }, [fetchViewport, rowHeight, toastError]);
 
   // Resolve gravatars for the authors in view (deduped + cached in the store).
   useEffect(() => {
@@ -420,10 +427,12 @@ export function CommitGraph({
             offset >= loadedStart && (offset + limit <= loadedEnd || loadedEnd >= vp.totalCount);
           if (covered) return;
         }
-        fetchViewport(offset, limit);
+        fetchViewport(offset, limit).catch((e: unknown) =>
+          toastError(String(e), { title: "Couldn't load history" }),
+        );
       });
     },
-    [fetchViewport, syncHeaderScroll, rowHeight],
+    [fetchViewport, syncHeaderScroll, rowHeight, toastError],
   );
 
   useEffect(() => {
@@ -448,9 +457,9 @@ export function CommitGraph({
     container.scrollTop = target;
     const offset = Math.max(0, Math.floor(target / rowHeight) - BUFFER_ROWS);
     const limit = Math.ceil(container.clientHeight / rowHeight) + BUFFER_ROWS * 2;
-    fetchViewport(offset, limit);
+    fetchViewport(offset, limit).catch((e: unknown) => toastError(String(e), { title: "Couldn't load history" }));
     useGraphStore.setState({ scrollToRow: null });
-  }, [scrollToRow, fetchViewport, rowHeight]);
+  }, [scrollToRow, fetchViewport, rowHeight, toastError]);
 
   // ⌘/Ctrl+F opens the graph search. Only mounted with the graph view, so it
   // won't fire while a diff editor has the panel.
@@ -469,17 +478,21 @@ export function CommitGraph({
   const handleMerge = useCallback(
     (source: string, target: string) => {
       void (async () => {
-        await runMerge({
-          source,
-          target,
-          currentBranch: currentRepo?.headBranch ?? null,
-          checkoutBranch,
-          startMerge,
-        });
-        await refresh();
+        try {
+          await runMerge({
+            source,
+            target,
+            currentBranch: currentRepo?.headBranch ?? null,
+            checkoutBranch,
+            startMerge,
+          });
+          await refresh();
+        } catch (e) {
+          toastError(String(e), { title: "Merge failed" });
+        }
       })();
     },
-    [currentRepo, checkoutBranch, startMerge, refresh],
+    [currentRepo, checkoutBranch, startMerge, refresh, toastError],
   );
 
   const drag = useGraphDragDrop({
@@ -524,7 +537,11 @@ export function CommitGraph({
       selectCommit(node.oid, mode);
       onCommitSelect?.();
     },
-    [drag, selectCommit, selectWorkingTree, onViewChanges, onCommitSelect],
+    // drag.consumeClick is independently stable (empty-dep useCallback in useGraphDragDrop);
+    // depending on the whole `drag` object would recreate this callback on every drag-state
+    // change and defeat memo(GraphRow) downstream, which is exactly what this task fixes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [drag.consumeClick, selectCommit, selectWorkingTree, onViewChanges, onCommitSelect],
   );
 
   const handleRowContextMenu = useCallback(
@@ -622,7 +639,7 @@ export function CommitGraph({
         return [
           {
             label: "Pop stash",
-            onSelect: () => runStashOp(() => stash.pop(index), "Popped stash"),
+            onSelect: () => void runStashOp(() => stashPop(index), "Popped stash"),
           },
           {
             label: "Rename stash…",
@@ -634,14 +651,14 @@ export function CommitGraph({
             danger: true,
             onSelect: () => {
               if (window.confirm(`Delete stash "${node.summary}"?`)) {
-                void runStashOp(() => stash.drop(index), "Deleted stash");
+                void runStashOp(() => stashDrop(index), "Deleted stash");
               }
             },
           },
         ];
       }
       const items: MenuItem[] = [
-        { label: "Checkout this commit", onSelect: () => runBranchOp(() => checkoutCommit(node.oid)) },
+        { label: "Checkout this commit", onSelect: () => void runBranchOp(() => checkoutCommit(node.oid)) },
       ];
 
       // When this commit is part of a multi-commit selection, offer to squash the
@@ -649,7 +666,10 @@ export function CommitGraph({
       // unpushed, includes the branch tip) and reports a clear error otherwise.
       if (viewport && selection.range.size > 1 && selection.range.has(node.oid)) {
         const plan = buildSquashPlan(viewport.nodes, selection.range);
-        if (plan) {
+        // Refuse a plan whose size doesn't match the full selection — some selected
+        // rows scrolled out of the loaded slice, so "Squash N" must not offer a
+        // smaller, silently-wrong N.
+        if (plan && plan.oids.length === selection.range.size) {
           items.push({
             label: `Squash ${plan.oids.length} commits…`,
             onSelect: () => setSquash(plan),
@@ -672,10 +692,10 @@ export function CommitGraph({
         { label: "New branch here…", onSelect: () => setPrompt({ kind: "new-branch", oid: node.oid }) },
         { label: "Create tag here…", onSelect: () => setPrompt({ kind: "create-tag", oid: node.oid }) },
         { separator: true },
-        { label: "Revert commit", onSelect: () => handleRevertCommit(node.oid, true) },
+        { label: "Revert commit", onSelect: () => void handleRevertCommit(node.oid, true) },
         {
           label: "Revert without committing",
-          onSelect: () => handleRevertCommit(node.oid, false),
+          onSelect: () => void handleRevertCommit(node.oid, false),
         },
       );
 
@@ -687,7 +707,7 @@ export function CommitGraph({
         for (const branch of ffBranches) {
           items.push({
             label: `Fast-forward ${branch} to here`,
-            onSelect: () => runBranchOp(() => fastForwardBranch(branch, node.oid)),
+            onSelect: () => void runBranchOp(() => fastForwardBranch(branch, node.oid)),
           });
         }
       }
@@ -700,17 +720,20 @@ export function CommitGraph({
           if (!isCurrent) {
             items.push({
               label: `Checkout ${branch.name}`,
-              onSelect: () => runBranchOp(() => checkoutBranch(branch.name)),
+              // checkoutBranch now refreshes the graph internally — routing
+              // through runBranchOp would just refresh a second time.
+              onSelect: () => void checkoutBranch(branch.name).catch((e: unknown) => toastError(String(e))),
             });
           }
           items.push({
             label: `Push ${branch.name}`,
-            onSelect: () => handlePushBranch(branch.name),
+            onSelect: () => void handlePushBranch(branch.name),
           });
           if (!isCurrent && operationStatus.kind !== "merge") {
             items.push({
               label: `Merge ${branch.name} into current`,
-              onSelect: () => startMerge(branch.name),
+              onSelect: () =>
+                void startMerge(branch.name).catch((e: unknown) => toastError(String(e), { title: "Merge failed" })),
             });
           }
           items.push({
@@ -721,11 +744,7 @@ export function CommitGraph({
             items.push({
               label: `Delete ${branch.name}`,
               danger: true,
-              onSelect: () => {
-                if (window.confirm(`Delete branch "${branch.name}"?`)) {
-                  runBranchOp(() => deleteBranch(branch.name));
-                }
-              },
+              onSelect: () => setPendingDeleteBranch(branch.name),
             });
           }
         }
@@ -741,7 +760,7 @@ export function CommitGraph({
           if (!onRemote) {
             items.push({
               label: `Push tag ${tag.name}`,
-              onSelect: () => runTagOp(() => pushTag(tag.name), `Pushed tag ${tag.name}`),
+              onSelect: () => void runTagOp(() => pushTag(tag.name), `Pushed tag ${tag.name}`),
             });
           }
           items.push({
@@ -762,16 +781,20 @@ export function CommitGraph({
     setPrompt(null);
     if (!current) return;
     if (current.kind === "new-branch") {
-      await runBranchOp(async () => {
+      // createBranch/checkoutBranch each refresh the graph internally now —
+      // routing through runBranchOp would just refresh a second (and third) time.
+      try {
         await createBranch(value, current.oid);
         await checkoutBranch(value);
-      });
+      } catch (e) {
+        toastError(String(e));
+      }
     } else if (current.kind === "create-tag") {
       await runBranchOp(() => createTag(value, current.oid));
     } else if (current.kind === "stash") {
-      await runStashOp(() => stash.create(value), "Stashed changes");
+      await runStashOp(() => stashCreate(value), "Stashed changes");
     } else if (current.kind === "rename-stash") {
-      await runStashOp(() => stash.rename(current.index, value), "Renamed stash");
+      await runStashOp(() => stashRename(current.index, value), "Renamed stash");
     } else {
       await runBranchOp(() => renameBranch(current.branch, value));
     }
@@ -1078,6 +1101,22 @@ export function CommitGraph({
         />
       )}
 
+      {pendingDeleteBranch && (
+        <ConfirmDialog
+          title="Delete branch"
+          message={`Delete "${pendingDeleteBranch}"? Git Wasp deletes branches unconditionally (unlike "git branch -d"), so if it has commits not merged or pushed anywhere else, they will be permanently lost.`}
+          confirmLabel="Delete"
+          onConfirm={() => {
+            const name = pendingDeleteBranch;
+            setPendingDeleteBranch(null);
+            // deleteBranch now refreshes the graph internally — routing
+            // through runBranchOp would just refresh a second time.
+            deleteBranch(name).catch((e) => toastError(String(e)));
+          }}
+          onCancel={() => setPendingDeleteBranch(null)}
+        />
+      )}
+
       {tagDelete && (
         <TagDeleteDialog
           name={tagDelete.name}
@@ -1125,7 +1164,7 @@ export function CommitGraph({
                 ? "Stash"
                 : "Create"
           }
-          onConfirm={handlePromptConfirm}
+          onConfirm={(value) => void handlePromptConfirm(value)}
           onCancel={() => setPrompt(null)}
         />
       )}

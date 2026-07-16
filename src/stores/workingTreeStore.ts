@@ -41,6 +41,10 @@ interface WorkingTreeStore {
   loadHeadCommit: () => Promise<void>;
   loadIdentity: () => Promise<void>;
   startWatching: () => Promise<() => void>;
+  /** Clear everything repo-scoped (selection, staging diff, status, HEAD info)
+   *  so a previous repo's state can't linger into a newly-activated one.
+   *  `identity` is user-level, not repo-scoped, so it's left alone. */
+  reset: () => void;
 }
 
 // After staging `path` (which was the file open in the diff view), move the
@@ -49,6 +53,7 @@ interface WorkingTreeStore {
 // selected (it slots back into `target`). See `nextSelectionAfterStaging`.
 async function reselectAfterStaging(
   set: (partial: Partial<WorkingTreeStore>) => void,
+  get: () => WorkingTreeStore,
   path: string,
   prevChanges: string[],
   status: WorkingTreeStatus,
@@ -60,7 +65,7 @@ async function reselectAfterStaging(
     path: target,
     staged: false,
   });
-  set({ stageDiff });
+  if (get().selectedPath === target && get().stageMode === "unstaged") set({ stageDiff });
 }
 
 export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
@@ -85,6 +90,14 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
   refreshAll: async () => {
     const status = await invoke<WorkingTreeStatus>("refresh_working_tree");
     set({ status });
+    const { selectedPath, stageMode } = get();
+    if (selectedPath && stageMode) {
+      const stageDiff = await invoke<StageFileContents>("get_stage_file_contents", {
+        path: selectedPath,
+        staged: stageMode === "staged",
+      });
+      if (get().selectedPath === selectedPath && get().stageMode === stageMode) set({ stageDiff });
+    }
     await useGraphStore.getState().refresh();
   },
 
@@ -96,7 +109,8 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
     set({ selectedPath: path, stageMode: mode });
     const staged = mode === "staged";
     const stageDiff = await invoke<StageFileContents>("get_stage_file_contents", { path, staged });
-    set({ stageDiff });
+    // Drop a late response if the selection has since moved on (mirrors commitFileStore.selectFile).
+    if (get().selectedPath === path && get().stageMode === mode) set({ stageDiff });
   },
 
   clearSelectedFile: () => set({ selectedPath: null, stageMode: null, stageDiff: null }),
@@ -107,7 +121,7 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
     const status = await invoke<WorkingTreeStatus>("stage_file", { path });
     set({ status });
     // If the diff view was open on this file, advance to the next unstaged one.
-    if (wasSelected) await reselectAfterStaging(set, path, prevChanges, status);
+    if (wasSelected) await reselectAfterStaging(set, get, path, prevChanges, status);
   },
 
   unstageFile: async (path: string) => {
@@ -154,7 +168,7 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
     const status = await invoke<WorkingTreeStatus>("discard_all");
     set({ status, selectedPath: null, stageDiff: null });
     // Keep the graph's working-tree node in sync after a bulk discard.
-    useGraphStore.getState().refresh();
+    await useGraphStore.getState().refresh();
   },
 
   createCommit: async (message: string) => {
@@ -167,7 +181,7 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
     await invoke("amend_commit_message", { message });
     await get().loadHeadCommit();
     // The reworded commit is a new oid, so refresh the graph too.
-    useGraphStore.getState().refresh();
+    await useGraphStore.getState().refresh();
   },
 
   loadHeadCommit: async () => {
@@ -190,9 +204,26 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
         // no longer rescans the working tree on every call (it was costing a
         // full statuses() walk per scroll tick on large repos), so this
         // explicit, debounced refresh is what keeps it in sync now.
+        debounceTimer = null;
         void get().refreshAll();
       }, 300);
     });
-    return unlisten;
+    // The debounce timer must be torn down alongside the listener — otherwise
+    // a fs event that arrives just before unlisten() still fires a refresh
+    // (and setState) after the caller (e.g. an unmounting StagingPanel) has
+    // moved on.
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      unlisten();
+    };
   },
+
+  reset: () =>
+    set({
+      status: null,
+      selectedPath: null,
+      stageMode: null,
+      stageDiff: null,
+      headCommit: null,
+    }),
 }));

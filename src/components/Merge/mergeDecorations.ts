@@ -29,12 +29,18 @@ export function buildPaneDecorations(
   side: Side,
 ): DecorationSet {
   const ranges: Range<Decoration>[] = [];
+  // Byte offset in `content` to resume searching from. Blocks appear in order in
+  // the reconstructed pane text, so each search starts where the previous block's
+  // match ended — this makes a duplicate-content match resolve to the NEXT
+  // occurrence rather than always the first (see content.indexOf below).
+  let searchFrom = 0;
 
   for (const block of blocks) {
     const sideText = side === "ours" ? block.oursText : block.theirsText;
     if (!sideText) continue;
-    const base = content.indexOf(sideText);
+    const base = content.indexOf(sideText, searchFrom);
     if (base === -1) continue;
+    searchFrom = base + sideText.length;
 
     const diff = diffSides(block.oursText, block.theirsText);
     const charRanges: CharRange[] = side === "ours" ? diff.oursChars : diff.theirsChars;

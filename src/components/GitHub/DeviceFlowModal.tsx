@@ -40,13 +40,13 @@ export function DeviceFlowModal({
         // RFC 8628: a slow_down response means we must increase the polling
         // interval by at least 5 seconds, for this and all subsequent polls.
         if (result.slowDown) delayMs += 5_000;
-        timer = setTimeout(tick, delayMs);
+        timer = setTimeout(() => void tick(), delayMs);
       } catch (e) {
         if (!cancelled) setError(String(e));
       }
     };
 
-    timer = setTimeout(tick, delayMs);
+    timer = setTimeout(() => void tick(), delayMs);
     return () => {
       cancelled = true;
       clearTimeout(timer);
@@ -59,7 +59,7 @@ export function DeviceFlowModal({
   };
 
   const handleOpenBrowser = () => {
-    if (deviceFlowInit) openUrl(deviceFlowInit.verificationUri);
+    if (deviceFlowInit) openUrl(deviceFlowInit.verificationUri).catch((e: unknown) => setError(String(e)));
   };
 
   return (

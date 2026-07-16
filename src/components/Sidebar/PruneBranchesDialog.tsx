@@ -51,7 +51,7 @@ export function PruneBranchesDialog({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       // Best-effort prune fetch: if it fails (offline, no remote) we still list
       // from the current refs rather than blocking the whole dialog.
       try {
@@ -261,7 +261,7 @@ export function PruneBranchesDialog({ onClose }: { onClose: () => void }) {
           {branches.length > 0 && (
             <Button
               variant="danger"
-              onClick={handleDelete}
+              onClick={() => void handleDelete()}
               loading={deleting}
               disabled={deleting || selected.size === 0}
             >

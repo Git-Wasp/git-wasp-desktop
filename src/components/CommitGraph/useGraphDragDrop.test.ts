@@ -111,4 +111,13 @@ describe("useGraphDragDrop (DOM pills)", () => {
     expect(result.current.consumeClick()).toBe(true);
     expect(result.current.consumeClick()).toBe(false);
   });
+
+  it("returns a referentially stable object across renders when nothing changed", () => {
+    const onMerge = vi.fn();
+    const onStartPullRequest = vi.fn();
+    const { result, rerender } = renderHook(() => useGraphDragDrop({ onMerge, onStartPullRequest }));
+    const first = result.current;
+    rerender();
+    expect(result.current).toBe(first);
+  });
 });

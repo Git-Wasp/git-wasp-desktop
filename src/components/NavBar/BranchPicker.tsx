@@ -73,9 +73,16 @@ export function BranchPicker() {
 
   const handleSelect = async (entry: BranchEntry) => {
     if (entry.isCurrent) return;
-    if (entry.kind === "local") await checkoutBranch(entry.name);
-    else await checkoutRemoteBranch(entry.name);
-    await refresh();
+    if (entry.kind === "local") {
+      // checkoutBranch now refreshes the graph internally — an explicit
+      // refresh() here would just refresh a second time.
+      await checkoutBranch(entry.name);
+    } else {
+      // checkoutRemoteBranch isn't one of the self-refreshing repoStore
+      // actions, so it still needs an explicit refresh.
+      await checkoutRemoteBranch(entry.name);
+      await refresh();
+    }
   };
 
   return (

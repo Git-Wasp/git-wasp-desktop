@@ -22,7 +22,7 @@ function routeInvoke(overrides: Record<string, unknown> = {}) {
     ],
   };
   const table = { ...defaults, ...overrides };
-  mockInvoke.mockImplementation(async (cmd: string) => table[cmd]);
+  mockInvoke.mockImplementation((cmd: string) => Promise.resolve(table[cmd]));
 }
 
 beforeEach(() => {
@@ -213,9 +213,9 @@ describe("NewPRForm", () => {
   it("does not create the PR if the pre-push fails", async () => {
     makeHeadUnpushed();
     routeInvoke();
-    mockInvoke.mockImplementation(async (cmd: string) => {
-      if (cmd === "push_branch") throw new Error("push rejected");
-      return undefined;
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "push_branch") return Promise.reject(new Error("push rejected"));
+      return Promise.resolve(undefined);
     });
     const onCreated = vi.fn();
 

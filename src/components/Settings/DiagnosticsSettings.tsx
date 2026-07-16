@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "../ui/Button";
+import { useToastStore } from "../../stores/toastStore";
 import {
   getDiagnosticsInfo,
   openLogDir,
@@ -96,7 +97,7 @@ export function DiagnosticsSettings() {
 
       <Toggle
         checked={info?.enabled ?? false}
-        onChange={handleToggle}
+        onChange={(next) => void handleToggle(next)}
         label="Enable diagnostic logging"
       />
 
@@ -107,7 +108,14 @@ export function DiagnosticsSettings() {
           </span>
           <code style={pathStyle}>{info.logFile}</code>
           <div>
-            <Button type="button" onClick={() => openLogDir()}>
+            <Button
+              type="button"
+              onClick={() =>
+                void openLogDir().catch((e: unknown) =>
+                  useToastStore.getState().error(String(e), { title: "Couldn't open log folder" }),
+                )
+              }
+            >
               Open log folder
             </Button>
           </div>

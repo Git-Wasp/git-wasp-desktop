@@ -1,4 +1,5 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { Profiler } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { CommitGraph } from "./CommitGraph";
@@ -67,7 +68,7 @@ beforeEach(() => {
       ledger: ["commit", "author", "branch", "hash", "date"],
       split: ["hash", "commit", "author", "branch", "date"],
     },
-    fetchViewport: vi.fn(),
+    fetchViewport: vi.fn().mockResolvedValue(undefined),
     refresh: vi.fn(),
     selectCommit,
     searchOpen: false,
@@ -181,9 +182,9 @@ describe("CommitGraph columns", () => {
     render(<CommitGraph />);
     const handle = screen.getByRole("separator", { name: "Resize graph column" });
 
-    act(() => handle.dispatchEvent(new MouseEvent("pointerdown", { clientX: 100, bubbles: true })));
-    act(() => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 140, bubbles: true })));
-    act(() => window.dispatchEvent(new MouseEvent("pointerup", { clientX: 140, bubbles: true })));
+    void act(() => handle.dispatchEvent(new MouseEvent("pointerdown", { clientX: 100, bubbles: true })));
+    void act(() => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 140, bubbles: true })));
+    void act(() => window.dispatchEvent(new MouseEvent("pointerup", { clientX: 140, bubbles: true })));
 
     expect(localStorage.getItem("graphCol:graph")).toBe("196"); // 156 default + 40
   });
@@ -193,9 +194,9 @@ describe("CommitGraph columns", () => {
     render(<CommitGraph />);
     const handle = screen.getByRole("separator", { name: "Resize author column" });
 
-    act(() => handle.dispatchEvent(new MouseEvent("pointerdown", { clientX: 100, bubbles: true })));
-    act(() => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 130, bubbles: true })));
-    act(() => window.dispatchEvent(new MouseEvent("pointerup", { clientX: 130, bubbles: true })));
+    void act(() => handle.dispatchEvent(new MouseEvent("pointerdown", { clientX: 100, bubbles: true })));
+    void act(() => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 130, bubbles: true })));
+    void act(() => window.dispatchEvent(new MouseEvent("pointerup", { clientX: 130, bubbles: true })));
 
     expect(localStorage.getItem("graphCol:author")).toBe("210"); // 180 default + 30
   });
@@ -234,9 +235,9 @@ describe("CommitGraph columns", () => {
       });
 
     // Drag the Date header label onto the Commit header → Date moves before Commit.
-    act(() => fireEvent.pointerDown(screen.getByText("Date"), { clientX: 400, clientY: 10 }));
+    void act(() => fireEvent.pointerDown(screen.getByText("Date"), { clientX: 400, clientY: 10 }));
     fireWindow("pointermove", 440, 10); // past the drag threshold
-    act(() => fireEvent.pointerEnter(container.querySelector('[data-header="commit"]')!));
+    void act(() => fireEvent.pointerEnter(container.querySelector('[data-header="commit"]')!));
     fireWindow("pointerup", 440, 10);
 
     expect(useGraphStore.getState().columnOrder.ledger).toEqual([
@@ -469,6 +470,32 @@ describe("CommitGraph context menu", () => {
     expect(screen.queryByText(/Squash/)).toBeNull();
   });
 
+  it("does not offer squash when a selected commit scrolled out of the loaded viewport slice", () => {
+    // Selection spans 3 commits, but only 2 are in the currently loaded
+    // viewport (the 3rd scrolled out of view) — buildSquashPlan would happily
+    // return a smaller, silently-wrong 2-commit plan from just the loaded
+    // nodes, so the call site must refuse to offer it at all.
+    const aOid = "a".repeat(40);
+    const bOid = "b".repeat(40);
+    const cOid = "c".repeat(40);
+    useGraphStore.setState({
+      viewport: {
+        totalCount: 3,
+        offset: 0,
+        nodes: [
+          node({ oid: aOid, summary: "first commit", isHead: true, row: 0 }),
+          node({ oid: bOid, summary: "second commit", row: 1 }),
+          // cOid (row 2) is selected but not in the loaded viewport slice.
+        ],
+      },
+      selection: { anchor: aOid, focus: cOid, range: new Set([aOid, bOid, cOid]) },
+    });
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("second commit"));
+
+    expect(screen.queryByText(/Squash/)).toBeNull();
+  });
+
   it("offers squash when several commits are selected and keeps the selection", () => {
     const aOid = "a".repeat(40);
     const bOid = "b".repeat(40);
@@ -596,6 +623,76 @@ describe("CommitGraph context menu", () => {
     await waitFor(() =>
       expect(useRepoStore.getState().createTag).toHaveBeenCalledWith("v1.0", "b".repeat(40)),
     );
+  });
+
+  it("requires confirmation before deleting a branch (not a native window.confirm)", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockImplementation(() => {
+      throw new Error("window.confirm should not be used");
+    });
+    useGraphStore.setState({
+      viewport: {
+        totalCount: 2,
+        offset: 0,
+        nodes: [
+          node({
+            oid: "a".repeat(40),
+            summary: "first commit",
+            branchLabels: [{ name: "main", isRemote: false, isTag: false }],
+            isHead: true,
+            row: 0,
+          }),
+          node({
+            oid: "b".repeat(40),
+            summary: "second commit",
+            branchLabels: [{ name: "feature", isRemote: false, isTag: false }],
+            row: 1,
+          }),
+        ],
+      },
+    });
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("second commit"));
+    fireEvent.click(screen.getByText("Delete feature"));
+
+    expect(useRepoStore.getState().deleteBranch).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("dialog", { name: "Delete branch" });
+    expect(within(dialog).getByText(/feature/)).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByText("Delete"));
+    await waitFor(() => expect(useRepoStore.getState().deleteBranch).toHaveBeenCalledWith("feature"));
+
+    confirmSpy.mockRestore();
+  });
+
+  it("does not delete a branch when the confirmation is cancelled", () => {
+    useGraphStore.setState({
+      viewport: {
+        totalCount: 2,
+        offset: 0,
+        nodes: [
+          node({
+            oid: "a".repeat(40),
+            summary: "first commit",
+            branchLabels: [{ name: "main", isRemote: false, isTag: false }],
+            isHead: true,
+            row: 0,
+          }),
+          node({
+            oid: "b".repeat(40),
+            summary: "second commit",
+            branchLabels: [{ name: "feature", isRemote: false, isTag: false }],
+            row: 1,
+          }),
+        ],
+      },
+    });
+    render(<CommitGraph />);
+    fireEvent.contextMenu(screen.getByText("second commit"));
+    fireEvent.click(screen.getByText("Delete feature"));
+    fireEvent.click(screen.getByText("Cancel"));
+
+    expect(useRepoStore.getState().deleteBranch).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("shows a copy-link action only when a remote is detected, and copies the URL", () => {
@@ -760,7 +857,7 @@ describe("CommitGraph stash", () => {
     render(<CommitGraph />);
     fireEvent.contextMenu(screen.getByText("WIP on main: experiment"));
     fireEvent.click(screen.getByText("Rename stash…"));
-    const input = screen.getByRole("textbox") as HTMLInputElement;
+    const input = screen.getByRole<HTMLInputElement>("textbox");
     expect(input.value).toBe("WIP on main: experiment");
     fireEvent.change(input, { target: { value: "renamed" } });
     fireEvent.click(screen.getByRole("button", { name: /^rename$/i }));
@@ -832,7 +929,7 @@ describe("CommitGraph tags", () => {
     fireEvent.contextMenu(screen.getByText("release commit"));
     fireEvent.click(screen.getByText("Delete tag v1.0"));
     // On-remote tag → the checkbox is present and checked by default.
-    const checkbox = screen.getByRole("checkbox") as HTMLInputElement;
+    const checkbox = screen.getByRole<HTMLInputElement>("checkbox");
     expect(checkbox.checked).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: /^delete$/i }));
     await waitFor(() => expect(useTagStore.getState().deleteTag).toHaveBeenCalledWith("v1.0", true));
@@ -859,5 +956,28 @@ describe("CommitGraph search", () => {
     const otherRow = container.querySelector(`[data-oid="${"b".repeat(40)}"]`);
     expect(matchRow).not.toHaveAttribute("data-muted");
     expect(otherRow).toHaveAttribute("data-muted", "true");
+  });
+});
+
+describe("CommitGraph subscription granularity", () => {
+  it("does not re-render when useStashStore's state object identity changes but no field CommitGraph reads actually changed", () => {
+    const onRender = vi.fn();
+    render(
+      <Profiler id="commit-graph" onRender={onRender}>
+        <CommitGraph />
+      </Profiler>,
+    );
+    const rendersBefore = onRender.mock.calls.length;
+
+    act(() => {
+      // Merging an empty object still creates a brand-new store state object.
+      // A bare `useStashStore()` subscription re-renders on any such identity
+      // bump; granular `useStashStore((s) => s.field)` selectors only re-render
+      // when the specific selected field value itself changes, which it doesn't
+      // here.
+      useStashStore.setState({});
+    });
+
+    expect(onRender.mock.calls.length).toBe(rendersBefore);
   });
 });

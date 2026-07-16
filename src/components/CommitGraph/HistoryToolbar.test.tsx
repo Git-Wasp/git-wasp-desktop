@@ -7,6 +7,7 @@ import { useGraphStore } from "../../stores/graphStore";
 import { useRepoStore } from "../../stores/repoStore";
 import { useGithubStore } from "../../stores/githubStore";
 import { useMergeStore } from "../../stores/mergeStore";
+import { useToastStore } from "../../stores/toastStore";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -85,6 +86,21 @@ describe("HistoryToolbar", () => {
 
     await waitFor(() => expect(useRepoStore.getState().createBranch).toHaveBeenCalledWith("feat/x"));
     expect(useRepoStore.getState().checkoutBranch).toHaveBeenCalledWith("feat/x");
+  });
+
+  it("shows a toast instead of throwing when creating a branch fails", async () => {
+    useRepoStore.setState({ createBranch: vi.fn().mockRejectedValue(new Error("already exists")) });
+    const error = vi.fn();
+    useToastStore.setState({ error });
+
+    render(<HistoryToolbar />);
+    fireEvent.click(screen.getByRole("button", { name: /new branch/i }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "feat/x" } });
+    fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: already exists", { title: "Couldn't create branch" }),
+    );
   });
 
   it("jumps to the checked-out commit and leaves the uncommitted view", () => {

@@ -26,7 +26,7 @@ beforeEach(() => {
     unstageFile: vi.fn().mockResolvedValue(undefined),
     createCommit: vi.fn().mockResolvedValue(undefined),
     discardAll: vi.fn().mockResolvedValue(undefined),
-    loadIdentity: vi.fn(),
+    loadIdentity: vi.fn().mockResolvedValue(undefined),
   });
   useGraphStore.setState({ fetchViewport: vi.fn().mockResolvedValue(undefined) });
 });

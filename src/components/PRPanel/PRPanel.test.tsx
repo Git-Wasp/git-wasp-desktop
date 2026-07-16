@@ -101,4 +101,31 @@ describe("PRPanel", () => {
 
     expect(screen.getByText(/no github remote/i)).toBeTruthy();
   });
+
+  it("reloads pull requests when the active repo path changes, even with the same remote host", async () => {
+    useRepoStore.setState({
+      currentRepo: { name: "repoA", path: "/repoA", headBranch: "main" },
+      activeRepoPath: "/repoA",
+      recentRepos: [],
+      branches: [],
+    });
+    mockInvoke.mockResolvedValueOnce(fakePrs);
+    const { rerender } = render(<PRPanel />);
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("list_pull_requests", { host: "github.com" }));
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
+
+    // Switch to a different repo whose remote is on the same host — the
+    // effect must re-key on activeRepoPath, not just remoteInfo.host.
+    mockInvoke.mockResolvedValueOnce([]);
+    useRepoStore.setState({
+      currentRepo: { name: "repoB", path: "/repoB", headBranch: "main" },
+      activeRepoPath: "/repoB",
+      recentRepos: [],
+      branches: [],
+    });
+    rerender(<PRPanel />);
+
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(2));
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "list_pull_requests", { host: "github.com" });
+  });
 });

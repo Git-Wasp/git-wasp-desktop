@@ -138,7 +138,7 @@ export function GitIdentitySettings() {
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-        <Button variant="primary" size="sm" disabled={!canSave} loading={saving} onClick={handleSave}>
+        <Button variant="primary" size="sm" disabled={!canSave} loading={saving} onClick={() => void handleSave()}>
           Save
         </Button>
       </div>

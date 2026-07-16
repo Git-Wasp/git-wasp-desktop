@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useGraphStore } from "../graphStore";
+import { useToastStore } from "../toastStore";
 import type { GraphViewport } from "../../types/graph";
 
 const mockInvoke = vi.mocked(invoke);
@@ -69,7 +70,7 @@ describe("graphStore", () => {
     // First call stays pending; the second resolves immediately.
     let resolveOlder: (v: GraphViewport) => void = () => {};
     mockInvoke
-      .mockImplementationOnce(() => new Promise((res) => { resolveOlder = res as (v: GraphViewport) => void; }))
+      .mockImplementationOnce(() => new Promise((res) => { resolveOlder = res; }))
       .mockResolvedValueOnce(newer);
 
     const p1 = useGraphStore.getState().fetchViewport(0, 10); // id 1, pending
@@ -154,6 +155,23 @@ describe("graphStore", () => {
     expect(selection.range.has("bbb")).toBe(true);
     expect(selection.range.has("ccc")).toBe(true);
     expect(selection.range.size).toBe(3);
+  });
+
+  it("range-select still resolves the full run when the anchor has scrolled out of the current viewport", () => {
+    const nodesByRow = new Map<number, ReturnType<typeof makeNode>>();
+    for (let row = 0; row <= 11; row++) {
+      nodesByRow.set(row, makeNode(row, `c${row}`));
+    }
+
+    useGraphStore.setState({
+      viewport: { nodes: [nodesByRow.get(10)!, nodesByRow.get(11)!], totalCount: 20, offset: 10, headRow: null },
+      nodesByRow,
+    });
+    useGraphStore.getState().selectCommit("c0", "replace"); // anchor at row 0, now off-viewport
+    // Viewport is unaffected by the anchor selection — still only rows 10-11.
+    useGraphStore.getState().selectCommit("c11", "range"); // shift-click at row 11
+
+    expect(useGraphStore.getState().selection.range.size).toBe(12); // rows 0..11 inclusive
   });
 
   it("selectCommit toggle adds and removes individual commits (discontiguous)", () => {
@@ -349,7 +367,7 @@ describe("graphStore", () => {
     ]);
     // The split order is untouched.
     expect(useGraphStore.getState().columnOrder.split[0]).toBe("hash");
-    const persisted = JSON.parse(localStorage.getItem("graphColumnOrder")!);
+    const persisted = JSON.parse(localStorage.getItem("graphColumnOrder")!) as { ledger: string[] };
     expect(persisted.ledger[0]).toBe("date");
   });
 
@@ -388,6 +406,16 @@ describe("graphStore", () => {
       const s = useGraphStore.getState();
       expect(s.searchHits).toEqual([]);
       expect(s.searchIndex).toBe(-1);
+    });
+
+    it("shows a toast instead of throwing when the backend search fails", async () => {
+      mockInvoke.mockRejectedValueOnce(new Error("index locked"));
+      const error = vi.fn();
+      useToastStore.setState({ error });
+
+      await useGraphStore.getState().runSearch("fix");
+
+      expect(error).toHaveBeenCalledWith("Error: index locked", { title: "Search failed" });
     });
 
     it("nextMatch and prevMatch wrap around and scroll to the hit", async () => {

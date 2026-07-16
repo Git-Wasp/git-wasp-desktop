@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BranchLabel } from "../../types/graph";
 
 const DRAG_THRESHOLD = 4;
@@ -115,18 +115,34 @@ export function useGraphDragDrop({ onMerge, onStartPullRequest }: UseGraphDragDr
     setMenu(null);
   }, [menu, onStartPullRequest]);
 
-  return {
-    onPillPointerDown,
-    onPillPointerEnter,
-    onPillPointerLeave,
-    dragging,
-    ghostPos,
-    dragSource,
-    dropTarget,
-    menu,
-    closeMenu,
-    consumeClick,
-    confirmMerge,
-    confirmStartPullRequest,
-  };
+  return useMemo(
+    () => ({
+      onPillPointerDown,
+      onPillPointerEnter,
+      onPillPointerLeave,
+      dragging,
+      ghostPos,
+      dragSource,
+      dropTarget,
+      menu,
+      closeMenu,
+      consumeClick,
+      confirmMerge,
+      confirmStartPullRequest,
+    }),
+    [
+      onPillPointerDown,
+      onPillPointerEnter,
+      onPillPointerLeave,
+      dragging,
+      ghostPos,
+      dragSource,
+      dropTarget,
+      menu,
+      closeMenu,
+      consumeClick,
+      confirmMerge,
+      confirmStartPullRequest,
+    ],
+  );
 }

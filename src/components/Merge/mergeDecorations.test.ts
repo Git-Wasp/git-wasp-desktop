@@ -39,4 +39,23 @@ describe("buildPaneDecorations", () => {
     const set = buildPaneDecorations("unrelated content", [block], "ours");
     expect(set.size).toBe(0);
   });
+
+  it("places the second block's line decoration on its own lines when two blocks share identical side text", () => {
+    // Two blocks whose "ours" text is identical ("same\n") back to back — the
+    // first-match indexOf bug would place both blocks' line decorations on line 1.
+    const dup: ConflictBlock[] = [
+      { startLine: 1, midLine: 1, endLine: 1, oursText: "same\n", theirsText: "x\n" },
+      { startLine: 2, midLine: 2, endLine: 2, oursText: "same\n", theirsText: "y\n" },
+    ];
+    const set = buildPaneDecorations("same\nsame\n", dup, "ours");
+    const lines: number[] = [];
+    const cursor = set.iter();
+    while (cursor.value) {
+      const cls = (cursor.value.spec as { class?: string }).class;
+      if (cls === "cm-diff-del-line") lines.push(cursor.from);
+      cursor.next();
+    }
+    // Line starts at offset 0 (line 1) and offset 5 (line 2) in "same\nsame\n".
+    expect(lines).toEqual([0, 5]);
+  });
 });

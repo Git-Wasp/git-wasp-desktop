@@ -1,8 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { TabBar } from "./TabBar";
 import { useRepoStore } from "../../stores/repoStore";
+import { useToastStore } from "../../stores/toastStore";
 
 const repoA = { name: "alpha", path: "/repos/alpha", headBranch: "main" };
 const repoB = { name: "beta", path: "/repos/beta", headBranch: "dev" };
@@ -58,6 +59,34 @@ describe("TabBar", () => {
 
     expect(newTab).toHaveBeenCalledTimes(1);
     expect(activateRepo).not.toHaveBeenCalled();
+  });
+
+  it("shows a toast instead of throwing when activating a repo fails (e.g. a deleted repo)", async () => {
+    activateRepo.mockRejectedValue(new Error("no such file or directory"));
+    const error = vi.fn();
+    useToastStore.setState({ error });
+
+    render(<TabBar />);
+    fireEvent.click(screen.getByText("alpha"));
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: no such file or directory", {
+        title: "Couldn't switch repository",
+      }),
+    );
+  });
+
+  it("shows a toast instead of throwing when closing a repo fails", async () => {
+    closeRepo.mockRejectedValue(new Error("boom"));
+    const error = vi.fn();
+    useToastStore.setState({ error });
+
+    render(<TabBar />);
+    fireEvent.click(screen.getByRole("button", { name: "Close alpha" }));
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: boom", { title: "Couldn't close repository" }),
+    );
   });
 
   it("still shows the New tab button when no repositories are open", () => {

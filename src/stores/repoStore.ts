@@ -30,6 +30,13 @@ interface RepoStore {
   branches: BranchInfo[];
   openRepos: RepoInfo[];
   activeRepoPath: string | null;
+  /** Monotonic counter bumped once per repo-switch (reloadActiveRepo,
+   *  closeRepo's no-repos-left branch, newTab). Repo-scoped stores capture
+   *  this at the start of an in-flight fetch and discard the result if it has
+   *  moved by the time the fetch resolves — the same guard shape as
+   *  graphStore's `fetchId`, but shared globally since it must be visible to
+   *  other stores rather than a fetch-local counter. */
+  activationEpoch: number;
   openRepo: (path: string) => Promise<void>;
   loadCurrentRepo: () => Promise<void>;
   loadOpenRepos: () => Promise<void>;
@@ -46,7 +53,7 @@ interface RepoStore {
    *  reload the branch list so the "current branch" marker stays accurate. A
    *  no-op when HEAD is unchanged, so it's cheap to call on focus / on a poll. */
   syncHead: () => Promise<void>;
-  checkoutBranch: (name: string) => Promise<void>;
+  checkoutBranch: (name: string) => Promise<boolean>;
   checkoutRemoteBranch: (remoteRef: string) => Promise<void>;
   checkoutCommit: (oid: string) => Promise<void>;
   createTag: (name: string, oid: string, message?: string) => Promise<void>;
@@ -72,10 +79,14 @@ export const useRepoStore = create<RepoStore>((set, get) => {
   // Reload everything that's scoped to the active repo: graph, branches, and
   // the working-tree / merge status. Called whenever the active tab changes.
   const reloadActiveRepo = async (repo: RepoInfo) => {
-    set({ currentRepo: repo, activeRepoPath: repo.path });
+    set({ currentRepo: repo, activeRepoPath: repo.path, activationEpoch: get().activationEpoch + 1 });
     // Clear the previous repo's graph (rows, cache, selection) so it doesn't
     // linger — the graph shows its loading skeleton until the new fetch lands.
     useGraphStore.getState().reset();
+    // Likewise the previous repo's working-tree selection/diff/status — otherwise
+    // a file selected in the old repo (or its stale diff) could linger into the
+    // newly-activated one until the fresh status lands.
+    useWorkingTreeStore.getState().reset();
     await Promise.all([
       useGraphStore.getState().fetchViewport(0, GRAPH_INITIAL_LIMIT),
       get().loadBranches(),
@@ -90,6 +101,7 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     branches: [],
     openRepos: [],
     activeRepoPath: null,
+    activationEpoch: 0,
 
     openRepo: async (path: string) => {
       const repo = await invoke<RepoInfo>("open_repo", { path });
@@ -129,8 +141,14 @@ export const useRepoStore = create<RepoStore>((set, get) => {
       if (next) {
         await reloadActiveRepo(next);
       } else {
-        set({ currentRepo: null, activeRepoPath: null, branches: [] });
+        set({
+          currentRepo: null,
+          activeRepoPath: null,
+          branches: [],
+          activationEpoch: get().activationEpoch + 1,
+        });
         useGraphStore.getState().reset();
+        useWorkingTreeStore.getState().reset();
       }
     },
 
@@ -139,13 +157,26 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     // re-activates it. Frontend-only — the backend's active repo is re-synced on
     // the next activate/open.
     newTab: () => {
-      set({ currentRepo: null, activeRepoPath: null, branches: [] });
+      set({
+        currentRepo: null,
+        activeRepoPath: null,
+        branches: [],
+        activationEpoch: get().activationEpoch + 1,
+      });
       useGraphStore.getState().reset();
+      useWorkingTreeStore.getState().reset();
     },
 
+    // Called from several independent components (Sidebar, RepoPicker,
+    // WelcomeView) on mount — catching here, rather than at each call site,
+    // means a single fix covers all of them.
     loadRecentRepos: async () => {
-      const repos = await invoke<RepoEntry[]>("get_recent_repos");
-      set({ recentRepos: repos });
+      try {
+        const repos = await invoke<RepoEntry[]>("get_recent_repos");
+        set({ recentRepos: repos });
+      } catch (e) {
+        useToastStore.getState().error(String(e), { title: "Couldn't load recent repositories" });
+      }
     },
 
     removeRecent: async (path: string) => {
@@ -164,9 +195,11 @@ export const useRepoStore = create<RepoStore>((set, get) => {
         stashPrompt(`switching to "${name}"`),
         () => notifyParked(name),
       );
-      if (!repo) return; // user cancelled the auto-stash
+      if (!repo) return false; // user cancelled the auto-stash
       set({ currentRepo: repo });
       await get().loadBranches();
+      await useGraphStore.getState().refresh();
+      return true;
     },
 
     // Check out a remote-tracking branch (e.g. "origin/feature"): the backend
@@ -221,6 +254,7 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     createBranch: async (name: string, startPoint?: string) => {
       await invoke("create_branch", { name, startPoint: startPoint ?? null });
       await get().loadBranches();
+      await useGraphStore.getState().refresh();
     },
 
     fastForwardBranch: async (branch: string, target: string) => {
@@ -242,6 +276,7 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     deleteBranch: async (name: string) => {
       await invoke("delete_branch", { name });
       await get().loadBranches();
+      await useGraphStore.getState().refresh();
     },
 
     listPrunableBranches: async () => {

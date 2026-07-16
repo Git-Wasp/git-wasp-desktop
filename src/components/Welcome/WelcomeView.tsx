@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useRepoStore } from "../../stores/repoStore";
 import { useGithubStore } from "../../stores/githubStore";
+import { useToastStore } from "../../stores/toastStore";
 import { Button } from "../ui/Button";
 import { GitHubIcon } from "../ui/icons";
 import { WaspLogo } from "../ui/WaspLogo";
@@ -38,14 +39,27 @@ export function WelcomeView() {
   const [showCloneDialog, setShowCloneDialog] = useState(false);
 
   useEffect(() => {
-    loadRecentRepos();
+    void loadRecentRepos();
   }, [loadRecentRepos]);
 
   const host = remoteInfo?.host ?? "github.com";
 
   const handleOpenFolder = async () => {
     const selected = await open({ directory: true, multiple: false });
-    if (typeof selected === "string") await openRepo(selected);
+    if (typeof selected !== "string") return;
+    try {
+      await openRepo(selected);
+    } catch (e) {
+      useToastStore.getState().error(String(e), { title: "Couldn't open repository" });
+    }
+  };
+
+  const handleOpenRecent = async (path: string) => {
+    try {
+      await openRepo(path);
+    } catch (e) {
+      useToastStore.getState().error(String(e), { title: "Couldn't open repository" });
+    }
   };
 
   return (
@@ -97,7 +111,7 @@ export function WelcomeView() {
         </div>
 
         <div style={{ display: "flex", gap: "var(--space-2)" }}>
-          <Button variant="primary" onClick={handleOpenFolder}>
+          <Button variant="primary" onClick={() => void handleOpenFolder()}>
             Open repository…
           </Button>
           <Button onClick={() => setShowCloneDialog(true)}>
@@ -123,7 +137,7 @@ export function WelcomeView() {
               <button
                 key={r.path}
                 type="button"
-                onClick={() => openRepo(r.path)}
+                onClick={() => void handleOpenRecent(r.path)}
                 title={r.path}
                 style={recentRowStyle}
                 onMouseEnter={(e) => (e.currentTarget.style.background = "var(--color-bg-hover)")}

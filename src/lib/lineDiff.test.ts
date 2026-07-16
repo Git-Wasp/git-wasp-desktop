@@ -12,6 +12,7 @@ import {
   headPaneText,
   hunkLines,
   inlineText,
+  isDiffTooLargeForLineDiff,
   overviewMarks,
   worktreeChangedLines,
   worktreePaneText,
@@ -46,6 +47,22 @@ describe("diffLines", () => {
     const rows = diffLines(head, worktree);
     expect(headPaneText(rows)).toBe(head);
     expect(worktreePaneText(rows)).toBe(worktree);
+  });
+
+  it("diffLines trims a large common prefix/suffix before diffing (returns correct rows, fast)", () => {
+    const shared = Array.from({ length: 5000 }, (_, i) => `line${i}`).join("\n");
+    const head = `${shared}\nOLD\n${shared}`;
+    const worktree = `${shared}\nNEW\n${shared}`;
+
+    const start = performance.now();
+    const rows = diffLines(head, worktree);
+    const elapsed = performance.now() - start;
+
+    expect(elapsed).toBeLessThan(200); // was ~10k² cells without trimming
+    const removed = rows.filter((r) => r.kind === "removed").map((r) => r.text);
+    const added = rows.filter((r) => r.kind === "added").map((r) => r.text);
+    expect(removed).toEqual(["OLD"]);
+    expect(added).toEqual(["NEW"]);
   });
 
   it("still reports a real (non-whitespace) change when ignoring whitespace", () => {
@@ -105,6 +122,24 @@ describe("composeStagedText", () => {
     // matching git's line-level staging semantics.
     const addedA = rows.findIndex((r) => r.kind === "added" && r.text === "A");
     expect(composeStagedText(rows, new Set([addedA]))).toBe("a\nA\nb\nc\n");
+  });
+
+  it("ignoreWhitespace: staging a real change does not also stage a hidden whitespace-only change", () => {
+    const head = "line1\nline2\nline3\n";
+    const worktree = "line1 changed\nline2\nline3  \n"; // line1 real change, line3 whitespace-only
+    const rows = diffLines(head, worktree, { ignoreWhitespace: true });
+
+    // line1's change is a real added/removed pair; line3 folded to context.
+    const changed = changedRowIndices(rows);
+    expect(changed.length).toBeGreaterThan(0);
+
+    // Stage only line1's change (nothing else).
+    const staged = new Set(changed);
+    const result = composeStagedText(rows, staged);
+
+    // line3 must come back as HEAD's text ("line3\n"), not the worktree's
+    // trailing-whitespace variant — the hidden change must NOT be staged.
+    expect(result).toBe("line1 changed\nline2\nline3\n");
   });
 });
 
@@ -269,5 +304,14 @@ describe("hunkLines", () => {
     expect(added).toMatchObject({ text: "L5", oldNo: null, newNo: 5 });
     // Headers carry no source row or line numbers.
     expect(out[0]).toMatchObject({ kind: "header", rowIndex: null, oldNo: null, newNo: null });
+  });
+});
+
+describe("isDiffTooLargeForLineDiff", () => {
+  it("flags a file whose untrimmed middle exceeds the cap", () => {
+    const head = Array.from({ length: 5000 }, (_, i) => `h${i}`).join("\n");
+    const worktree = Array.from({ length: 5000 }, (_, i) => `w${i}`).join("\n"); // no shared prefix/suffix
+    expect(isDiffTooLargeForLineDiff(head, worktree)).toBe(true);
+    expect(isDiffTooLargeForLineDiff("a\nb\n", "a\nc\n")).toBe(false);
   });
 });

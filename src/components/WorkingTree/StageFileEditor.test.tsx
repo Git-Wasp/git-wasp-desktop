@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { StageFileEditor } from "./StageFileEditor";
@@ -24,6 +24,15 @@ const removed: StageFileContents = {
 const modified: StageFileContents = {
   headContent: "a\nb\nc\n",
   worktreeContent: "a\nB\nc\n",
+  isBinary: false,
+  worktreeExists: true,
+};
+
+// Two independent modifications, so the rendered diff carries (at least) two
+// distinct per-line stage toggles to click.
+const twoChanges: StageFileContents = {
+  headContent: "a\nb\nc\nd\ne\n",
+  worktreeContent: "a\nB\nc\nD\ne\n",
   isBinary: false,
   worktreeExists: true,
 };
@@ -170,6 +179,39 @@ describe("StageFileEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Unstage all" }));
 
     expect(onApplyIndex.mock.calls[0]).toEqual(["f.txt", "a\nc\n"]);
+  });
+
+  it("ignores a second line-toggle while the first is still applying", async () => {
+    let resolveFirst: () => void;
+    // `onApplyIndex`'s declared prop type is `(path, content) => void` (its
+    // real-world caller, App.tsx, is fire-and-forget) — but the component
+    // guards overlapping toggles via `Promise.resolve(onApplyIndex(...))`, so
+    // this test's mock returns a real promise and is cast past the narrower
+    // declared type to prove that guard actually waits for it.
+    const onApplyIndex = vi.fn(
+      () =>
+        new Promise<void>((r) => {
+          resolveFirst = r;
+        }),
+    ) as unknown as (path: string, content: string) => void;
+    const { container } = renderEditor(twoChanges, { onApplyIndex });
+
+    const toggles = await waitFor(() => {
+      const buttons = Array.from(container.querySelectorAll<HTMLButtonElement>(".cm-stage-toggle"));
+      expect(buttons.length).toBeGreaterThanOrEqual(2);
+      return buttons;
+    });
+
+    fireEvent.click(toggles[0]);
+    fireEvent.click(toggles[1]); // fired before the first resolves
+
+    expect(onApplyIndex).toHaveBeenCalledTimes(1); // second click ignored, not composed from stale rows
+
+    resolveFirst!();
+    // Once the first apply resolves, a subsequent toggle is honoured again.
+    await new Promise((r) => setTimeout(r, 0)); // let the in-flight promise's `.finally` settle
+    fireEvent.click(toggles[1]);
+    expect(onApplyIndex).toHaveBeenCalledTimes(2);
   });
 
   it("defaults to the split view with both panes and a view-mode toggle", () => {
@@ -359,7 +401,7 @@ describe("StageFileEditor", () => {
       expect(container.querySelector('[data-testid="head-pane"]')).toBeNull();
       expect(screen.queryByRole("button", { name: "Inline view" })).toBeNull();
 
-      const img = screen.getByAltText(/preview/i) as HTMLImageElement;
+      const img = screen.getByAltText<HTMLImageElement>(/preview/i);
       expect(img.src).toBe("data:image/png;base64,AAAA");
 
       fireEvent.click(screen.getByRole("button", { name: /stage whole file/i }));
@@ -369,7 +411,7 @@ describe("StageFileEditor", () => {
     it("shows both before/after images for a modified image", () => {
       renderEditor(modifiedImage, { path: "logo.png" });
 
-      const imgs = screen.getAllByAltText(/preview/i) as HTMLImageElement[];
+      const imgs = screen.getAllByAltText(/preview/i);
       expect(imgs.map((i) => i.getAttribute("src"))).toEqual([
         "data:image/png;base64,OLD0",
         "data:image/png;base64,NEW1",
@@ -442,7 +484,7 @@ describe("StageFileEditor", () => {
     });
   });
 
-  it("falls back to whole-file staging for binary files", async () => {
+  it("falls back to whole-file staging for binary files", () => {
     const onStageWholeFile = vi.fn();
     const binary: StageFileContents = {
       headContent: "",
@@ -456,5 +498,61 @@ describe("StageFileEditor", () => {
     expect(screen.queryByRole("button", { name: "Stage all" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Stage whole file" }));
     expect(onStageWholeFile).toHaveBeenCalledWith("logo.png");
+  });
+
+  it("falls back to whole-file staging instead of a line diff when the file is too large", () => {
+    const onStageWholeFile = vi.fn();
+    const huge: StageFileContents = {
+      headContent: Array.from({ length: 5000 }, (_, i) => `h${i}`).join("\n"),
+      worktreeContent: Array.from({ length: 5000 }, (_, i) => `w${i}`).join("\n"),
+      isBinary: false,
+      worktreeExists: true,
+    };
+    const { container } = renderEditor(huge, { path: "bundle.min.js", onStageWholeFile });
+
+    expect(screen.getByText(/too large to diff line-by-line/i)).toBeInTheDocument();
+    expect(container.querySelector('[data-testid="head-pane"]')).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Stage whole file" }));
+    expect(onStageWholeFile).toHaveBeenCalledWith("bundle.min.js");
+  });
+
+  describe("discard confirmation", () => {
+    it("prompts for confirmation before discarding, and discards only after confirming", () => {
+      const onDiscardFile = vi.fn();
+      renderEditor(inserted, { onDiscardFile });
+      fireEvent.click(screen.getByRole("button", { name: "Discard file" }));
+
+      expect(onDiscardFile).not.toHaveBeenCalled();
+      const dialog = screen.getByRole("dialog", { name: "Discard changes" });
+      expect(within(dialog).getByText(/f\.txt/)).toBeInTheDocument();
+
+      fireEvent.click(within(dialog).getByText("Discard"));
+      expect(onDiscardFile).toHaveBeenCalledWith("f.txt");
+    });
+
+    it("does not discard when the confirmation is cancelled", () => {
+      const onDiscardFile = vi.fn();
+      renderEditor(inserted, { onDiscardFile });
+      fireEvent.click(screen.getByRole("button", { name: "Discard file" }));
+      fireEvent.click(screen.getByText("Cancel"));
+
+      expect(onDiscardFile).not.toHaveBeenCalled();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+  });
+
+  it("shows a too-large message with no stage button in read-only mode", () => {
+    const huge: StageFileContents = {
+      headContent: Array.from({ length: 5000 }, (_, i) => `h${i}`).join("\n"),
+      worktreeContent: Array.from({ length: 5000 }, (_, i) => `w${i}`).join("\n"),
+      isBinary: false,
+      worktreeExists: true,
+    };
+    render(
+      <StageFileEditor readOnly path="bundle.min.js" contents={huge} onStageWholeFile={vi.fn()} />,
+    );
+
+    expect(screen.getByText(/too large to diff line-by-line/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stage whole file" })).not.toBeInTheDocument();
   });
 });

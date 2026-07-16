@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import "@testing-library/jest-dom";
@@ -33,6 +33,34 @@ const mergeStatus: OperationStatus = {
   sourceBranch: "feature",
   conflicts: [textConflict, binaryConflict],
 };
+
+// Two normal-edit (text) conflicts, used for the unsaved-edits / dirty-tracking
+// tests below, which need a second *text* conflict to switch to (unlike
+// `binaryConflict`, which never has an editable result pane).
+const conflictA: ConflictedFile = { ...textConflict, path: "a.txt" };
+const conflictB: ConflictedFile = {
+  path: "b.txt",
+  kind: "normalEdit",
+  oursContent: "current b\n",
+  theirsContent: "source b\n",
+  baseContent: "base b\n",
+  seededResult: "<<<<<<< HEAD\ncurrent b\n=======\nsource b\n>>>>>>> feature\n",
+  conflictBlocks: [{ startLine: 1, midLine: 2, endLine: 3, oursText: "current b\n", theirsText: "source b\n" }],
+};
+
+const twoFileMergeStatus: OperationStatus = {
+  kind: "merge",
+  sourceBranch: "feature",
+  conflicts: [conflictA, conflictB],
+};
+
+// Produces a *real* unsaved edit: clicks "Accept current", which dispatches an
+// actual change into the result pane's live CodeMirror `EditorView` (the same
+// code path a real keystroke drives), rather than faking a dirty flag.
+async function makeSelectedFileDirty() {
+  await waitFor(() => expect(screen.getByRole("button", { name: "Accept current" })).toBeInTheDocument());
+  fireEvent.click(screen.getByRole("button", { name: "Accept current" }));
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -122,5 +150,150 @@ describe("MergeEditor", () => {
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("merge_resolve_with_side", { path: "assets/logo.png", side: "theirs" });
     });
+  });
+
+  it("Abort asks for confirmation when at least one conflict has unsaved edits", async () => {
+    useMergeStore.setState({ status: twoFileMergeStatus });
+
+    render(<MergeEditor />);
+    await makeSelectedFileDirty();
+
+    fireEvent.click(screen.getByRole("button", { name: /abort merge/i }));
+
+    expect(screen.getByRole("dialog", { name: /abort/i })).toBeInTheDocument();
+    expect(mockInvoke).not.toHaveBeenCalledWith("merge_abort");
+  });
+
+  it("confirming the abort dialog discards the unsaved edits and aborts the merge", async () => {
+    useMergeStore.setState({ status: twoFileMergeStatus });
+    mockInvoke.mockResolvedValueOnce(undefined); // merge_abort
+    mockInvoke.mockResolvedValueOnce({ kind: "none" }); // operation_status
+
+    render(<MergeEditor />);
+    await makeSelectedFileDirty();
+    fireEvent.click(screen.getByRole("button", { name: /abort merge/i }));
+
+    const dialog = screen.getByRole("dialog", { name: /abort/i });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Abort merge" }));
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("merge_abort");
+    });
+    expect(screen.queryByRole("dialog", { name: /abort/i })).not.toBeInTheDocument();
+  });
+
+  it("cancelling the abort dialog leaves the merge in progress", async () => {
+    useMergeStore.setState({ status: twoFileMergeStatus });
+
+    render(<MergeEditor />);
+    await makeSelectedFileDirty();
+    fireEvent.click(screen.getByRole("button", { name: /abort merge/i }));
+
+    const dialog = screen.getByRole("dialog", { name: /abort/i });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog", { name: /abort/i })).not.toBeInTheDocument();
+    expect(mockInvoke).not.toHaveBeenCalledWith("merge_abort");
+  });
+
+  it("switching files with unsaved edits prompts before discarding them", async () => {
+    useMergeStore.setState({ status: twoFileMergeStatus });
+
+    render(<MergeEditor />);
+    await makeSelectedFileDirty(); // a.txt (selected by default) now has an unsaved edit
+
+    fireEvent.click(screen.getByText("b.txt"));
+
+    expect(screen.getByRole("dialog", { name: /unsaved/i })).toBeInTheDocument();
+  });
+
+  it("confirming the unsaved-edits dialog switches files and clears the previous file's dirty flag", async () => {
+    useMergeStore.setState({ status: twoFileMergeStatus });
+
+    render(<MergeEditor />);
+    await makeSelectedFileDirty();
+    fireEvent.click(screen.getByText("b.txt"));
+
+    const dialog = screen.getByRole("dialog", { name: /unsaved/i });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Discard and switch" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: /unsaved/i })).not.toBeInTheDocument();
+    });
+
+    // a.txt's edit was discarded, so switching back to it is no longer "dirty".
+    fireEvent.click(screen.getByText("a.txt"));
+    expect(screen.queryByRole("dialog", { name: /unsaved/i })).not.toBeInTheDocument();
+  });
+
+  it("cancelling the unsaved-edits dialog stays on the current file", async () => {
+    useMergeStore.setState({ status: twoFileMergeStatus });
+
+    render(<MergeEditor />);
+    await makeSelectedFileDirty();
+    fireEvent.click(screen.getByText("b.txt"));
+
+    const dialog = screen.getByRole("dialog", { name: /unsaved/i });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog", { name: /unsaved/i })).not.toBeInTheDocument();
+    // Still on a.txt: its still-dirty result pane should still show the
+    // resolved-via-Accept-current text rather than b.txt's seeded markers.
+    expect(screen.getByTestId("result-pane")).not.toHaveTextContent("current b");
+  });
+
+  it("switching to a file with no unsaved edits does not prompt", async () => {
+    useMergeStore.setState({ status: twoFileMergeStatus });
+
+    render(<MergeEditor />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Accept current" })).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText("b.txt"));
+
+    expect(screen.queryByRole("dialog", { name: /unsaved/i })).not.toBeInTheDocument();
+  });
+
+  it("marking a file resolved clears its dirty flag so aborting afterwards needs no confirmation", async () => {
+    useMergeStore.setState({ status: { kind: "merge", sourceBranch: "feature", conflicts: [conflictA] } });
+    mockInvoke.mockResolvedValueOnce([]); // merge_resolve
+    mockInvoke.mockResolvedValueOnce({ kind: "merge", sourceBranch: "feature", conflicts: [] }); // operation_status
+    mockInvoke.mockResolvedValueOnce(undefined); // merge_abort
+    mockInvoke.mockResolvedValueOnce({ kind: "none" }); // operation_status
+
+    render(<MergeEditor />);
+    await makeSelectedFileDirty();
+    fireEvent.click(screen.getByRole("button", { name: "Mark resolved" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "a.txt" })).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /abort merge/i }));
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("merge_abort");
+    });
+    expect(screen.queryByRole("dialog", { name: /abort/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps a file's dirty flag set when marking it resolved fails, so Abort still prompts", async () => {
+    useMergeStore.setState({ status: { kind: "merge", sourceBranch: "feature", conflicts: [conflictA] } });
+    mockInvoke.mockRejectedValueOnce(new Error("backend rejected merge_resolve_file")); // merge_resolve_file fails
+
+    render(<MergeEditor />);
+    await makeSelectedFileDirty();
+    fireEvent.click(screen.getByRole("button", { name: "Mark resolved" }));
+
+    // The failed resolve surfaces an error and leaves the file in the
+    // conflict list — it must NOT have been silently dropped from dirtyPaths.
+    await waitFor(() => {
+      expect(screen.getByText(/backend rejected merge_resolve_file/)).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "a.txt" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /abort merge/i }));
+
+    expect(screen.getByRole("dialog", { name: /abort/i })).toBeInTheDocument();
+    expect(mockInvoke).not.toHaveBeenCalledWith("merge_abort");
   });
 });

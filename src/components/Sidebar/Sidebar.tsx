@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { useRepoStore } from "../../stores/repoStore";
-import { useGraphStore, GRAPH_INITIAL_LIMIT } from "../../stores/graphStore";
+import { useGraphStore } from "../../stores/graphStore";
 import { useGithubStore } from "../../stores/githubStore";
 import { useRemoteStore } from "../../stores/remoteStore";
 import { useMergeStore } from "../../stores/mergeStore";
@@ -16,6 +16,7 @@ import { RemoteActions } from "./RemoteActions";
 import { CloneDialog } from "../GitHub/CloneDialog";
 import { PruneBranchesDialog } from "./PruneBranchesDialog";
 import { PromptDialog } from "../common/PromptDialog";
+import { ConfirmDialog } from "../common/ConfirmDialog";
 import { VirtualList } from "../ui/VirtualList";
 
 // Fixed row height for the virtualised branch lists — sized to fit the ⋮ menu
@@ -48,7 +49,7 @@ const branchEmptyHintStyle: CSSProperties = {
 export function Sidebar({ width = 220 }: { width?: number }) {
   const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, removeRecent, checkoutBranch, createBranch, deleteBranch, createTag } =
     useRepoStore();
-  const { fetchViewport, revealCommit, refresh } = useGraphStore();
+  const { revealCommit, refresh } = useGraphStore();
   const { remoteInfo } = useGithubStore();
   const { aheadBehind, push, fastForwardToUpstream } = useRemoteStore();
   const { status: operationStatus, startMerge } = useMergeStore();
@@ -61,13 +62,15 @@ export function Sidebar({ width = 220 }: { width?: number }) {
   const [selectedRecentPath, setSelectedRecentPath] = useState<string | null>(null);
   // The branch being tagged via "Create tag…" (its tip oid), while the name is entered.
   const [tagBranch, setTagBranch] = useState<{ name: string; oid: string } | null>(null);
+  // The branch awaiting delete confirmation.
+  const [pendingDeleteBranch, setPendingDeleteBranch] = useState<string | null>(null);
 
   // GitHub connection is managed in Settings now; the host is still needed for
   // the "Clone from GitHub…" dialog.
   const githubHost = remoteInfo?.host ?? "github.com";
 
   useEffect(() => {
-    loadRecentRepos();
+    void loadRecentRepos();
   }, [loadRecentRepos]);
 
   // Branch list, ahead/behind, and remote detection are loaded at the app root
@@ -75,29 +78,46 @@ export function Sidebar({ width = 220 }: { width?: number }) {
   // collapsed (and thus unmounted).
 
   const handleRecentClick = async (path: string) => {
-    await openRepo(path);
+    try {
+      await openRepo(path);
+    } catch (e) {
+      toastError(String(e), { title: "Couldn't open repository" });
+    }
   };
 
   const handleCreateBranch = async () => {
     if (!newBranchName.trim()) return;
-    await createBranch(newBranchName.trim());
-    setNewBranchName("");
-    setShowNewBranch(false);
-    await fetchViewport(0, GRAPH_INITIAL_LIMIT);
+    try {
+      await createBranch(newBranchName.trim());
+      setNewBranchName("");
+      setShowNewBranch(false);
+    } catch (e) {
+      toastError(String(e), { title: "Couldn't create branch" });
+    }
   };
 
   const handleDeleteBranch = async (name: string) => {
-    await deleteBranch(name);
-    await fetchViewport(0, GRAPH_INITIAL_LIMIT);
+    try {
+      await deleteBranch(name);
+    } catch (e) {
+      toastError(String(e), { title: "Couldn't delete branch" });
+    }
   };
 
   const handleCheckoutBranch = async (name: string) => {
-    await checkoutBranch(name);
-    await fetchViewport(0, GRAPH_INITIAL_LIMIT);
+    try {
+      await checkoutBranch(name);
+    } catch (e) {
+      toastError(String(e), { title: "Couldn't checkout branch" });
+    }
   };
 
   const handleMergeBranch = async (name: string) => {
-    await startMerge(name);
+    try {
+      await startMerge(name);
+    } catch (e) {
+      toastError(String(e), { title: "Merge failed" });
+    }
   };
 
   const handleCreateTag = async (tagName: string) => {
@@ -149,7 +169,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
           <LaptopIcon />
         </span>
         <div
-          onClick={() => revealCommit(b.oid)}
+          onClick={() => void revealCommit(b.oid)}
           title={`Show ${b.name} in the commit graph`}
           style={{
             flex: 1,
@@ -187,25 +207,31 @@ export function Sidebar({ width = 220 }: { width?: number }) {
           items={[
             ...(b.isHead
               ? []
-              : [{ label: "Checkout branch", onSelect: () => handleCheckoutBranch(b.name) }]),
+              : [{ label: "Checkout branch", onSelect: () => void handleCheckoutBranch(b.name) }]),
             // A clean fast-forward is available: behind the upstream with no local
             // commits ahead. Advances the branch pointer without checking it out.
             ...(ab && ab.behind > 0 && ab.ahead === 0
               ? [
                   {
                     label: `Fast-forward to ${b.upstream ?? "upstream"}`,
-                    onSelect: () => handleFastForwardToUpstream(b.name),
+                    onSelect: () => void handleFastForwardToUpstream(b.name),
                   },
                 ]
               : []),
-            { label: "Push branch", onSelect: () => handlePushBranch(b.name) },
+            { label: "Push branch", onSelect: () => void handlePushBranch(b.name) },
             { label: "Create tag…", onSelect: () => setTagBranch({ name: b.name, oid: b.oid }) },
             ...(b.isHead || operationStatus.kind === "merge"
               ? []
-              : [{ label: "Merge into current branch", onSelect: () => handleMergeBranch(b.name) }]),
+              : [{ label: "Merge into current branch", onSelect: () => void handleMergeBranch(b.name) }]),
             ...(b.isHead
               ? []
-              : [{ label: "Delete branch", destructive: true, onSelect: () => handleDeleteBranch(b.name) }]),
+              : [
+                  {
+                    label: "Delete branch",
+                    destructive: true,
+                    onSelect: () => setPendingDeleteBranch(b.name),
+                  },
+                ]),
           ]}
         />
       </div>
@@ -218,7 +244,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
         <GitHubIcon />
       </span>
       <div
-        onClick={() => revealCommit(b.oid)}
+        onClick={() => void revealCommit(b.oid)}
         title={`Show ${b.name} in the commit graph`}
         style={{
           flex: 1,
@@ -302,8 +328,22 @@ export function Sidebar({ width = 220 }: { width?: number }) {
           title="Create tag"
           label="Tag name"
           confirmLabel="Create"
-          onConfirm={handleCreateTag}
+          onConfirm={(tagName) => void handleCreateTag(tagName)}
           onCancel={() => setTagBranch(null)}
+        />
+      )}
+
+      {pendingDeleteBranch && (
+        <ConfirmDialog
+          title="Delete branch"
+          message={`Delete "${pendingDeleteBranch}"? Git Wasp deletes branches unconditionally (unlike "git branch -d"), so if it has commits not merged or pushed anywhere else, they will be permanently lost.`}
+          confirmLabel="Delete"
+          onConfirm={() => {
+            const name = pendingDeleteBranch;
+            setPendingDeleteBranch(null);
+            void handleDeleteBranch(name);
+          }}
+          onCancel={() => setPendingDeleteBranch(null)}
         />
       )}
 
@@ -337,7 +377,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
                 value={newBranchName}
                 onChange={(e) => setNewBranchName(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") handleCreateBranch();
+                  if (e.key === "Enter") void handleCreateBranch();
                   if (e.key === "Escape") {
                     setShowNewBranch(false);
                     setNewBranchName("");
@@ -346,7 +386,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
                 placeholder="branch-name"
                 style={{ flex: 1, fontFamily: "var(--font-family-mono)" }}
               />
-              <Button variant="primary" size="sm" onClick={handleCreateBranch}>
+              <Button variant="primary" size="sm" onClick={() => void handleCreateBranch()}>
                 Create
               </Button>
             </div>
@@ -419,7 +459,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
               <RowMenu
                 label={`${r.name} actions`}
                 items={[
-                  { label: "Open repository", onSelect: () => handleRecentClick(r.path) },
+                  { label: "Open repository", onSelect: () => void handleRecentClick(r.path) },
                   {
                     label: "Remove from recent",
                     destructive: true,

@@ -12,7 +12,7 @@ beforeEach(() => {
 describe("GraphColorSettings", () => {
   it("defaults to the theme palette", () => {
     render(<GraphColorSettings />);
-    expect((screen.getByLabelText("Graph palette") as HTMLSelectElement).value).toBe("theme");
+    expect(screen.getByLabelText<HTMLSelectElement>("Graph palette").value).toBe("theme");
   });
 
   it("applies and persists a chosen palette", () => {
@@ -28,6 +28,6 @@ describe("GraphColorSettings", () => {
   it("restores the persisted palette on mount", () => {
     localStorage.setItem("graphPalette", "pastel");
     render(<GraphColorSettings />);
-    expect((screen.getByLabelText("Graph palette") as HTMLSelectElement).value).toBe("pastel");
+    expect(screen.getByLabelText<HTMLSelectElement>("Graph palette").value).toBe("pastel");
   });
 });

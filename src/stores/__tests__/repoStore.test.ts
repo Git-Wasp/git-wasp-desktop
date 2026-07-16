@@ -2,14 +2,23 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useRepoStore } from "../repoStore";
 import { useGraphStore } from "../graphStore";
+import { useWorkingTreeStore } from "../workingTreeStore";
 import { useAutoStashStore } from "../autoStashStore";
+import { useToastStore } from "../toastStore";
 import { AUTO_STASH_SENTINEL } from "../../lib/autoStash";
 
 const mockInvoke = vi.mocked(invoke);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useRepoStore.setState({ currentRepo: null, recentRepos: [], branches: [], openRepos: [], activeRepoPath: null });
+  useRepoStore.setState({
+    currentRepo: null,
+    recentRepos: [],
+    branches: [],
+    openRepos: [],
+    activeRepoPath: null,
+    activationEpoch: 0,
+  });
   // reloadActiveRepo (triggered by openRepo/activateRepo/closeRepo) drives
   // graphStore's fetchViewport, which now caches fetched rows — reset it too
   // so one test's cached (possibly empty) viewport can't mask another's
@@ -81,6 +90,16 @@ describe("repoStore", () => {
     expect(useRepoStore.getState().recentRepos).toEqual(repos);
   });
 
+  it("shows a toast instead of throwing when loadRecentRepos fails", async () => {
+    mockInvoke.mockRejectedValueOnce(new Error("boom"));
+    const error = vi.fn();
+    useToastStore.setState({ error });
+
+    await useRepoStore.getState().loadRecentRepos();
+
+    expect(error).toHaveBeenCalledWith("Error: boom", { title: "Couldn't load recent repositories" });
+  });
+
   it("removeRecent drops the entry and stores the returned list", async () => {
     const remaining = [{ path: "/b", name: "b", pinned: false, lastOpened: 0 }];
     mockInvoke.mockResolvedValueOnce(remaining);
@@ -103,6 +122,34 @@ describe("repoStore", () => {
       autoStash: false,
     });
     expect(useRepoStore.getState().currentRepo).toEqual(updatedRepo);
+  });
+
+  it("checkoutBranch refreshes the graph so the new HEAD's rows aren't served from a stale cache", async () => {
+    const updatedRepo = { name: "r", path: "/p", headBranch: "feature" };
+    const refreshSpy = vi.spyOn(useGraphStore.getState(), "refresh").mockResolvedValue();
+    mockInvoke.mockResolvedValueOnce(updatedRepo).mockResolvedValueOnce([]); // checkout_branch, list_branches
+
+    await useRepoStore.getState().checkoutBranch("feature");
+
+    expect(refreshSpy).toHaveBeenCalled();
+  });
+
+  it("createBranch refreshes the graph so the new branch's rows aren't served from a stale cache", async () => {
+    const refreshSpy = vi.spyOn(useGraphStore.getState(), "refresh").mockResolvedValue();
+    mockInvoke.mockResolvedValueOnce(undefined).mockResolvedValueOnce([]); // create_branch, list_branches
+
+    await useRepoStore.getState().createBranch("feature");
+
+    expect(refreshSpy).toHaveBeenCalled();
+  });
+
+  it("deleteBranch refreshes the graph so the deleted branch's rows aren't served from a stale cache", async () => {
+    const refreshSpy = vi.spyOn(useGraphStore.getState(), "refresh").mockResolvedValue();
+    mockInvoke.mockResolvedValueOnce(undefined).mockResolvedValueOnce([]); // delete_branch, list_branches
+
+    await useRepoStore.getState().deleteBranch("feature");
+
+    expect(refreshSpy).toHaveBeenCalled();
   });
 
   it("checkoutRemoteBranch calls checkout_remote_branch and updates currentRepo", async () => {
@@ -165,7 +212,7 @@ describe("repoStore", () => {
     const promise = useRepoStore.getState().checkoutBranch("feature");
     await vi.waitFor(() => expect(useAutoStashStore.getState().pending).not.toBeNull());
     useAutoStashStore.getState().respond(false);
-    await expect(promise).resolves.toBeUndefined();
+    await expect(promise).resolves.toBe(false);
 
     expect(mockInvoke).toHaveBeenCalledTimes(1); // no retry
     expect(useRepoStore.getState().currentRepo).toBeNull();
@@ -205,6 +252,16 @@ describe("repoStore", () => {
     expect(s.activeRepoPath).toBe("/b");
   });
 
+  it("activateRepo resets workingTreeStore before reloading the new repo's status", async () => {
+    const repoB = { name: "b", path: "/b", headBranch: "main" };
+    mockByCommand({ activate_repo: repoB });
+    const resetSpy = vi.spyOn(useWorkingTreeStore.getState(), "reset");
+
+    await useRepoStore.getState().activateRepo(repoB.path);
+
+    expect(resetSpy).toHaveBeenCalled();
+  });
+
   it("closeRepo falls back to the remaining active repo", async () => {
     const repoA = { name: "a", path: "/a", headBranch: "main" };
     mockByCommand({ close_repo: repoA, list_open_repos: [repoA] });
@@ -230,5 +287,36 @@ describe("repoStore", () => {
     expect(s.currentRepo).toBeNull();
     expect(s.activeRepoPath).toBeNull();
     expect(s.openRepos).toEqual([]);
+  });
+
+  it("activationEpoch bumps exactly once per repo-switch path", async () => {
+    expect(useRepoStore.getState().activationEpoch).toBe(0);
+
+    // openRepo (routes through reloadActiveRepo) — one bump.
+    const repoA = { name: "a", path: "/a", headBranch: "main" };
+    mockByCommand({ open_repo: repoA, list_open_repos: [repoA] });
+    await useRepoStore.getState().openRepo("/a");
+    expect(useRepoStore.getState().activationEpoch).toBe(1);
+
+    // activateRepo (routes through reloadActiveRepo) — one bump.
+    const repoB = { name: "b", path: "/b", headBranch: "main" };
+    mockByCommand({ activate_repo: repoB });
+    await useRepoStore.getState().activateRepo("/b");
+    expect(useRepoStore.getState().activationEpoch).toBe(2);
+
+    // closeRepo falling back to a remaining repo (routes through
+    // reloadActiveRepo internally) — one bump, not two.
+    mockByCommand({ close_repo: repoA, list_open_repos: [repoA] });
+    await useRepoStore.getState().closeRepo("/b");
+    expect(useRepoStore.getState().activationEpoch).toBe(3);
+
+    // closeRepo's no-repos-left branch — one bump.
+    mockByCommand({ close_repo: null, list_open_repos: [] });
+    await useRepoStore.getState().closeRepo("/a");
+    expect(useRepoStore.getState().activationEpoch).toBe(4);
+
+    // newTab — one bump.
+    useRepoStore.getState().newTab();
+    expect(useRepoStore.getState().activationEpoch).toBe(5);
   });
 });

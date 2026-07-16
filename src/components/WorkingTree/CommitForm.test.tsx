@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { CommitForm } from "./CommitForm";
@@ -10,7 +11,7 @@ let createCommit: ReturnType<typeof vi.fn<(message: string) => Promise<void>>>;
 let amendCommitMessage: ReturnType<typeof vi.fn<(message: string) => Promise<void>>>;
 let discardAll: ReturnType<typeof vi.fn<() => Promise<void>>>;
 let createBranch: ReturnType<typeof vi.fn<(name: string, startPoint?: string) => Promise<void>>>;
-let checkoutBranch: ReturnType<typeof vi.fn<(name: string) => Promise<void>>>;
+let checkoutBranch: ReturnType<typeof vi.fn<(name: string) => Promise<boolean>>>;
 let fastForwardBranch: ReturnType<typeof vi.fn<(branch: string, target: string) => Promise<void>>>;
 let listFastForwardableBranches: ReturnType<typeof vi.fn<(target: string) => Promise<string[]>>>;
 
@@ -20,13 +21,13 @@ beforeEach(() => {
   amendCommitMessage = vi.fn<(message: string) => Promise<void>>().mockResolvedValue(undefined);
   discardAll = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
   createBranch = vi.fn<(name: string, startPoint?: string) => Promise<void>>().mockResolvedValue(undefined);
-  checkoutBranch = vi.fn<(name: string) => Promise<void>>().mockResolvedValue(undefined);
+  checkoutBranch = vi.fn<(name: string) => Promise<boolean>>().mockResolvedValue(true);
   fastForwardBranch = vi.fn<(branch: string, target: string) => Promise<void>>().mockResolvedValue(undefined);
   listFastForwardableBranches = vi.fn<(target: string) => Promise<string[]>>().mockResolvedValue([]);
   useWorkingTreeStore.setState({
     identity: { name: "A", email: "a@a" },
     headCommit: null,
-    loadIdentity: vi.fn(),
+    loadIdentity: vi.fn().mockResolvedValue(undefined),
     loadHeadCommit: vi.fn().mockResolvedValue(undefined),
     createCommit,
     amendCommitMessage,
@@ -119,8 +120,8 @@ describe("CommitForm", () => {
 
     // Entering amend mode prefills subject + body and allows commit with nothing staged.
     fireEvent.click(screen.getByLabelText(/amend last commit/i));
-    expect((screen.getByPlaceholderText(/summary/i) as HTMLInputElement).value).toBe("Old subject");
-    expect((screen.getByPlaceholderText(/description/i) as HTMLTextAreaElement).value).toBe("Old body");
+    expect(screen.getByPlaceholderText<HTMLInputElement>(/summary/i).value).toBe("Old subject");
+    expect(screen.getByPlaceholderText<HTMLTextAreaElement>(/description/i).value).toBe("Old body");
 
     const amendButton = screen.getByRole("button", { name: /^amend/i });
     expect(amendButton).toBeEnabled();
@@ -189,6 +190,36 @@ describe("CommitForm", () => {
 
       await waitFor(() => expect(fastForwardBranch).toHaveBeenCalledWith("main", "abc123"));
       expect(checkoutBranch).toHaveBeenCalledWith("main");
+    });
+
+    it("Cmd+Enter from the summary input routes through branch creation, not a bare commit, while detached", async () => {
+      detach();
+      render(<CommitForm stagedCount={1} />);
+      await userEvent.type(screen.getByPlaceholderText("Summary (required)"), "msg");
+      fireEvent.change(screen.getByLabelText(/new branch name/i), { target: { value: "fix/bug" } });
+      // Refocus the summary input — changing the branch-name field above moved focus.
+      screen.getByPlaceholderText("Summary (required)").focus();
+      await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
+
+      // Proof the routing mechanism itself fired handleCreateBranchAndCommit, not
+      // handleCommit's own internal !canCommit no-op: createBranch/checkoutBranch
+      // only happen on the detached-recovery path.
+      await waitFor(() => expect(createBranch).toHaveBeenCalledWith("fix/bug"));
+      expect(checkoutBranch).toHaveBeenCalledWith("fix/bug");
+      expect(createCommit).toHaveBeenCalledWith("msg");
+    });
+
+    it("Cmd+Enter from the body textarea also routes through branch creation while detached", async () => {
+      detach();
+      render(<CommitForm stagedCount={1} />);
+      await userEvent.type(screen.getByPlaceholderText("Summary (required)"), "msg");
+      fireEvent.change(screen.getByLabelText(/new branch name/i), { target: { value: "fix/bug" } });
+      await userEvent.type(screen.getByPlaceholderText(/description/i), "details");
+      await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
+
+      await waitFor(() => expect(createBranch).toHaveBeenCalledWith("fix/bug"));
+      expect(checkoutBranch).toHaveBeenCalledWith("fix/bug");
+      expect(createCommit).toHaveBeenCalledWith("msg\n\ndetails");
     });
   });
 
