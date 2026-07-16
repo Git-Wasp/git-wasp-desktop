@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { CommitForm } from "./CommitForm";
@@ -189,6 +190,15 @@ describe("CommitForm", () => {
 
       await waitFor(() => expect(fastForwardBranch).toHaveBeenCalledWith("main", "abc123"));
       expect(checkoutBranch).toHaveBeenCalledWith("main");
+    });
+
+    it("Cmd+Enter does not create an orphaned commit while detached", async () => {
+      detach();
+      render(<CommitForm stagedCount={1} />);
+      await userEvent.type(screen.getByPlaceholderText("Summary (required)"), "msg");
+      await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
+
+      expect(createCommit).not.toHaveBeenCalledWith("msg");
     });
   });
 

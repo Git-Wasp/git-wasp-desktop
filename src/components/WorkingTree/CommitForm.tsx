@@ -88,7 +88,7 @@ export function CommitForm({
   const hasSubject = subject.trim().length > 0;
   // Amending the message needs no staged changes; a normal commit does.
   const canCommit =
-    hasSubject && !committing && (amending || stagedCount > 0);
+    !detached && hasSubject && !committing && (amending || stagedCount > 0);
 
   const composeMessage = () =>
     body.trim() ? `${subject.trim()}\n\n${body.trim()}` : subject.trim();
@@ -238,7 +238,10 @@ export function CommitForm({
         onChange={(e) => setSubject(e.target.value)}
         placeholder="Summary (required)"
         onKeyDown={(e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") handleCommit();
+          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+            if (detached) handleCreateBranchAndCommit();
+            else handleCommit();
+          }
         }}
       />
 
@@ -267,7 +270,10 @@ export function CommitForm({
             outline: "none",
           }}
           onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") handleCommit();
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+              if (detached) handleCreateBranchAndCommit();
+              else handleCommit();
+            }
           }}
         />
       ) : (
