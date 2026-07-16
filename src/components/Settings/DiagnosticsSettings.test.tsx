@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { DiagnosticsSettings } from "./DiagnosticsSettings";
+import { useToastStore } from "../../stores/toastStore";
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -52,5 +53,19 @@ describe("DiagnosticsSettings", () => {
     fireEvent.click(await screen.findByRole("button", { name: /open log folder/i }));
 
     await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("open_log_dir"));
+  });
+
+  it("shows a toast instead of throwing when revealing the log folder fails", async () => {
+    mockInvoke.mockResolvedValueOnce(info); // get_diagnostics_info
+    mockInvoke.mockRejectedValueOnce(new Error("no file manager")); // open_log_dir
+    const error = vi.fn();
+    useToastStore.setState({ error });
+
+    render(<DiagnosticsSettings />);
+    fireEvent.click(await screen.findByRole("button", { name: /open log folder/i }));
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: no file manager", { title: "Couldn't open log folder" }),
+    );
   });
 });

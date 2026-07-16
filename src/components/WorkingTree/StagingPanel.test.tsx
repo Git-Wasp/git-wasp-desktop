@@ -176,6 +176,18 @@ describe("StagingPanel toasts on failed mutations", () => {
       expect(error).toHaveBeenCalledWith("Error: boom", { title: "Couldn't load diff" }),
     );
   });
+
+  it("shows a toast instead of throwing when the initial status load fails", async () => {
+    useWorkingTreeStore.setState({ loadStatus: vi.fn().mockRejectedValue(new Error("boom")) });
+    const error = vi.fn();
+    useToastStore.setState({ error });
+
+    render(<StagingPanel />);
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: boom", { title: "Couldn't load working tree status" }),
+    );
+  });
 });
 
 describe("StagingPanel stash changes", () => {

@@ -488,7 +488,7 @@ export function CommitGraph({
           });
           await refresh();
         } catch (e) {
-          toastError(String(e));
+          toastError(String(e), { title: "Merge failed" });
         }
       })();
     },

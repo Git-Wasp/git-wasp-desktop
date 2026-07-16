@@ -14,9 +14,18 @@ export function StashPanel() {
   const [loading, setLoading] = useState(false);
   const [pendingDrop, setPendingDrop] = useState<StashEntry | null>(null);
 
+  // Catches internally (rather than at each call site) since it's called both
+  // from the mount/repo-switch effect below (nothing else to catch it there)
+  // and from handleApply/handlePop's own try/catch — a reload failure after a
+  // successful apply/pop is a distinct, worth-surfacing problem in its own
+  // right, not the same failure as the apply/pop itself.
   const reload = async () => {
-    const entries = await invoke<StashEntry[]>("stash_list_cmd");
-    setStashes(entries);
+    try {
+      const entries = await invoke<StashEntry[]>("stash_list_cmd");
+      setStashes(entries);
+    } catch (e) {
+      useToastStore.getState().error(String(e), { title: "Couldn't load stashes" });
+    }
   };
 
   useEffect(() => {

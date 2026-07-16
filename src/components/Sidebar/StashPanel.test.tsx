@@ -125,6 +125,21 @@ describe("StashPanel", () => {
     );
   });
 
+  it("shows a toast instead of throwing when the initial stash list load fails", async () => {
+    const error = vi.fn();
+    useToastStore.setState({ error });
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "stash_list_cmd") return Promise.reject(new Error("offline"));
+      return Promise.resolve(undefined);
+    });
+
+    render(<StashPanel />);
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: offline", { title: "Couldn't load stashes" }),
+    );
+  });
+
   it("does not drop a stash when the confirmation is cancelled", async () => {
     render(<StashPanel />);
     await screen.findByText("WIP on main: experiment");

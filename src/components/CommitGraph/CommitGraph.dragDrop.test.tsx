@@ -123,6 +123,8 @@ describe("CommitGraph drag-and-drop (DOM pills)", () => {
     const dialog = screen.getByRole("dialog", { name: /merge branch/i });
     fireEvent.click(within(dialog).getByRole("button", { name: "Merge" }));
 
-    await waitFor(() => expect(error).toHaveBeenCalledWith("Error: conflict"));
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: conflict", { title: "Merge failed" }),
+    );
   });
 });

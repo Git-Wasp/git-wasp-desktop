@@ -4,6 +4,7 @@ import { useRepoStore } from "../repoStore";
 import { useGraphStore } from "../graphStore";
 import { useWorkingTreeStore } from "../workingTreeStore";
 import { useAutoStashStore } from "../autoStashStore";
+import { useToastStore } from "../toastStore";
 import { AUTO_STASH_SENTINEL } from "../../lib/autoStash";
 
 const mockInvoke = vi.mocked(invoke);
@@ -87,6 +88,16 @@ describe("repoStore", () => {
     mockInvoke.mockResolvedValueOnce(repos);
     await useRepoStore.getState().loadRecentRepos();
     expect(useRepoStore.getState().recentRepos).toEqual(repos);
+  });
+
+  it("shows a toast instead of throwing when loadRecentRepos fails", async () => {
+    mockInvoke.mockRejectedValueOnce(new Error("boom"));
+    const error = vi.fn();
+    useToastStore.setState({ error });
+
+    await useRepoStore.getState().loadRecentRepos();
+
+    expect(error).toHaveBeenCalledWith("Error: boom", { title: "Couldn't load recent repositories" });
   });
 
   it("removeRecent drops the entry and stores the returned list", async () => {

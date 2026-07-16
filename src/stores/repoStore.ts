@@ -167,9 +167,16 @@ export const useRepoStore = create<RepoStore>((set, get) => {
       useWorkingTreeStore.getState().reset();
     },
 
+    // Called from several independent components (Sidebar, RepoPicker,
+    // WelcomeView) on mount — catching here, rather than at each call site,
+    // means a single fix covers all of them.
     loadRecentRepos: async () => {
-      const repos = await invoke<RepoEntry[]>("get_recent_repos");
-      set({ recentRepos: repos });
+      try {
+        const repos = await invoke<RepoEntry[]>("get_recent_repos");
+        set({ recentRepos: repos });
+      } catch (e) {
+        useToastStore.getState().error(String(e), { title: "Couldn't load recent repositories" });
+      }
     },
 
     removeRecent: async (path: string) => {

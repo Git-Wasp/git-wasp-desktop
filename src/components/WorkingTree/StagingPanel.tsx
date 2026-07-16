@@ -187,7 +187,9 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
   };
 
   useEffect(() => {
-    void loadStatus();
+    loadStatus().catch((e: unknown) =>
+      useToastStore.getState().error(String(e), { title: "Couldn't load working tree status" }),
+    );
     let cancelled = false;
     let unlisten: (() => void) | null = null;
     startWatching().then((fn) => {
