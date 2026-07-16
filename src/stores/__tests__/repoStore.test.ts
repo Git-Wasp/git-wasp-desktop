@@ -113,6 +113,34 @@ describe("repoStore", () => {
     expect(useRepoStore.getState().currentRepo).toEqual(updatedRepo);
   });
 
+  it("checkoutBranch refreshes the graph so the new HEAD's rows aren't served from a stale cache", async () => {
+    const updatedRepo = { name: "r", path: "/p", headBranch: "feature" };
+    const refreshSpy = vi.spyOn(useGraphStore.getState(), "refresh").mockResolvedValue();
+    mockInvoke.mockResolvedValueOnce(updatedRepo).mockResolvedValueOnce([]); // checkout_branch, list_branches
+
+    await useRepoStore.getState().checkoutBranch("feature");
+
+    expect(refreshSpy).toHaveBeenCalled();
+  });
+
+  it("createBranch refreshes the graph so the new branch's rows aren't served from a stale cache", async () => {
+    const refreshSpy = vi.spyOn(useGraphStore.getState(), "refresh").mockResolvedValue();
+    mockInvoke.mockResolvedValueOnce(undefined).mockResolvedValueOnce([]); // create_branch, list_branches
+
+    await useRepoStore.getState().createBranch("feature");
+
+    expect(refreshSpy).toHaveBeenCalled();
+  });
+
+  it("deleteBranch refreshes the graph so the deleted branch's rows aren't served from a stale cache", async () => {
+    const refreshSpy = vi.spyOn(useGraphStore.getState(), "refresh").mockResolvedValue();
+    mockInvoke.mockResolvedValueOnce(undefined).mockResolvedValueOnce([]); // delete_branch, list_branches
+
+    await useRepoStore.getState().deleteBranch("feature");
+
+    expect(refreshSpy).toHaveBeenCalled();
+  });
+
   it("checkoutRemoteBranch calls checkout_remote_branch and updates currentRepo", async () => {
     const updatedRepo = { name: "r", path: "/p", headBranch: "release" };
     mockInvoke.mockResolvedValueOnce(updatedRepo); // checkout_remote_branch

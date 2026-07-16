@@ -191,6 +191,7 @@ export const useRepoStore = create<RepoStore>((set, get) => {
       if (!repo) return false; // user cancelled the auto-stash
       set({ currentRepo: repo });
       await get().loadBranches();
+      await useGraphStore.getState().refresh();
       return true;
     },
 
@@ -246,6 +247,7 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     createBranch: async (name: string, startPoint?: string) => {
       await invoke("create_branch", { name, startPoint: startPoint ?? null });
       await get().loadBranches();
+      await useGraphStore.getState().refresh();
     },
 
     fastForwardBranch: async (branch: string, target: string) => {
@@ -267,6 +269,7 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     deleteBranch: async (name: string) => {
       await invoke("delete_branch", { name });
       await get().loadBranches();
+      await useGraphStore.getState().refresh();
     },
 
     listPrunableBranches: async () => {

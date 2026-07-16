@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { useRepoStore } from "../../stores/repoStore";
-import { useGraphStore, GRAPH_INITIAL_LIMIT } from "../../stores/graphStore";
+import { useGraphStore } from "../../stores/graphStore";
 import { useGithubStore } from "../../stores/githubStore";
 import { useRemoteStore } from "../../stores/remoteStore";
 import { useMergeStore } from "../../stores/mergeStore";
@@ -49,7 +49,7 @@ const branchEmptyHintStyle: CSSProperties = {
 export function Sidebar({ width = 220 }: { width?: number }) {
   const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, removeRecent, checkoutBranch, createBranch, deleteBranch, createTag } =
     useRepoStore();
-  const { fetchViewport, revealCommit, refresh } = useGraphStore();
+  const { revealCommit, refresh } = useGraphStore();
   const { remoteInfo } = useGithubStore();
   const { aheadBehind, push, fastForwardToUpstream } = useRemoteStore();
   const { status: operationStatus, startMerge } = useMergeStore();
@@ -86,17 +86,14 @@ export function Sidebar({ width = 220 }: { width?: number }) {
     await createBranch(newBranchName.trim());
     setNewBranchName("");
     setShowNewBranch(false);
-    await fetchViewport(0, GRAPH_INITIAL_LIMIT);
   };
 
   const handleDeleteBranch = async (name: string) => {
     await deleteBranch(name);
-    await fetchViewport(0, GRAPH_INITIAL_LIMIT);
   };
 
   const handleCheckoutBranch = async (name: string) => {
     await checkoutBranch(name);
-    await fetchViewport(0, GRAPH_INITIAL_LIMIT);
   };
 
   const handleMergeBranch = async (name: string) => {

@@ -152,7 +152,6 @@ export function CommitForm({
     try {
       await fastForwardBranch(branch, headCommit.oid);
       await checkoutBranch(branch);
-      await fetchViewport(0, GRAPH_INITIAL_LIMIT);
       onCommitted?.();
     } catch (e) {
       setError(String(e));

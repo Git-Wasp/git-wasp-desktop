@@ -714,10 +714,9 @@ export function CommitGraph({
           if (!isCurrent) {
             items.push({
               label: `Checkout ${branch.name}`,
-              onSelect: () =>
-                runBranchOp(async () => {
-                  await checkoutBranch(branch.name);
-                }),
+              // checkoutBranch now refreshes the graph internally — routing
+              // through runBranchOp would just refresh a second time.
+              onSelect: () => checkoutBranch(branch.name).catch((e) => toastError(String(e))),
             });
           }
           items.push({
@@ -775,10 +774,14 @@ export function CommitGraph({
     setPrompt(null);
     if (!current) return;
     if (current.kind === "new-branch") {
-      await runBranchOp(async () => {
+      // createBranch/checkoutBranch each refresh the graph internally now —
+      // routing through runBranchOp would just refresh a second (and third) time.
+      try {
         await createBranch(value, current.oid);
         await checkoutBranch(value);
-      });
+      } catch (e) {
+        toastError(String(e));
+      }
     } else if (current.kind === "create-tag") {
       await runBranchOp(() => createTag(value, current.oid));
     } else if (current.kind === "stash") {
@@ -1099,7 +1102,9 @@ export function CommitGraph({
           onConfirm={() => {
             const name = pendingDeleteBranch;
             setPendingDeleteBranch(null);
-            runBranchOp(() => deleteBranch(name));
+            // deleteBranch now refreshes the graph internally — routing
+            // through runBranchOp would just refresh a second time.
+            deleteBranch(name).catch((e) => toastError(String(e)));
           }}
           onCancel={() => setPendingDeleteBranch(null)}
         />

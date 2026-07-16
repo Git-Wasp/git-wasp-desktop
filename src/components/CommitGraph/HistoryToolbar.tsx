@@ -162,7 +162,6 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
     setShowNewBranch(false);
     await createBranch(name);
     await checkoutBranch(name);
-    await refresh();
   };
 
   const pullItems: MenuItem[] = [
