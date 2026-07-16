@@ -1395,7 +1395,7 @@ mod tests {
 
         assert_eq!(
             fs::read_to_string(dir.path().join("file.txt")).unwrap(),
-            "staged change\n",
+            normalise("staged change\n"),
             "discard must restore from the index, not wipe staged work back to HEAD"
         );
     }
