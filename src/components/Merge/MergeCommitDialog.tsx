@@ -47,7 +47,10 @@ export function MergeCommitDialog() {
       onKeyDown={(e) => {
         if (e.key === "Escape") {
           e.preventDefault();
-          void run(abortMerge);
+          // A clean (no-conflict) merge has no in-progress resolution work to
+          // lose, but Escape is still the conventional "dismiss" key, not
+          // "destroy my merge" — do nothing rather than abort. The user
+          // aborts explicitly via the Abort merge button.
         }
       }}
       style={{

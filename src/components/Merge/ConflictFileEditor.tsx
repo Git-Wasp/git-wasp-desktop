@@ -24,6 +24,7 @@ import { Button } from "../ui/Button";
 interface ConflictFileEditorProps {
   file: ConflictedFile;
   onMarkResolved: (path: string, content: string) => void;
+  onDirtyChange?: (path: string, dirty: boolean) => void;
 }
 
 type BlockSelection = { current: Set<number>; source: Set<number> };
@@ -170,7 +171,7 @@ function ReadOnlyPane({
   );
 }
 
-export function ConflictFileEditor({ file, onMarkResolved }: ConflictFileEditorProps) {
+export function ConflictFileEditor({ file, onMarkResolved, onDirtyChange }: ConflictFileEditorProps) {
   const resultContainerRef = useRef<HTMLDivElement>(null);
   const resultViewRef = useRef<EditorView | null>(null);
   const [resultContent, setResultContent] = useState(file.seededResult ?? "");
@@ -236,7 +237,9 @@ export function ConflictFileEditor({ file, onMarkResolved }: ConflictFileEditorP
           ),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
-              setResultContent(update.state.doc.toString());
+              const next = update.state.doc.toString();
+              setResultContent(next);
+              onDirtyChange?.(file.path, next !== (file.seededResult ?? ""));
             }
           }),
         ],
@@ -245,6 +248,9 @@ export function ConflictFileEditor({ file, onMarkResolved }: ConflictFileEditorP
     });
     resultViewRef.current = view;
     const unregister = registerEditorView(view);
+    // A freshly (re)built doc always starts equal to its seeded result — clear
+    // any stale dirty flag left over from before this file/seed switch.
+    onDirtyChange?.(file.path, false);
 
     return () => {
       unregister();

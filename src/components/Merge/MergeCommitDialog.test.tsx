@@ -68,4 +68,19 @@ describe("MergeCommitDialog", () => {
     fireEvent.change(screen.getByLabelText("Merge commit message"), { target: { value: "  " } });
     expect(screen.getByRole("button", { name: /complete merge/i })).toBeDisabled();
   });
+
+  it("Escape does not abort the merge — it does nothing (or asks first), never a silent abort", async () => {
+    startCleanMerge("feat/x");
+    render(<MergeCommitDialog />);
+
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Complete merge" }), { key: "Escape" });
+
+    // Give any (incorrect) fire-and-forget abort a tick to have been invoked.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockInvoke).not.toHaveBeenCalledWith("merge_abort");
+    // The dialog is still up — a clean merge with no conflicts has no
+    // in-progress resolution work, but Escape must not destroy it either.
+    expect(screen.getByRole("dialog", { name: "Complete merge" })).toBeInTheDocument();
+  });
 });

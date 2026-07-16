@@ -201,4 +201,32 @@ describe("ConflictFileEditor", () => {
       expect(screen.getByTestId("result-pane")).toHaveTextContent("current text");
     });
   });
+
+  it("reports dirty via onDirtyChange when the result diverges from the seeded text via a real editor edit", async () => {
+    const onDirtyChange = vi.fn();
+    render(<ConflictFileEditor file={file} onMarkResolved={vi.fn()} onDirtyChange={onDirtyChange} />);
+
+    // Mount seeds resultContent === file.seededResult, so the initial report is "clean".
+    await waitFor(() => expect(onDirtyChange).toHaveBeenCalledWith("src/lib.rs", false));
+    onDirtyChange.mockClear();
+
+    // "Accept current" dispatches a real change into the live CodeMirror
+    // EditorView (the same `updateListener`/`docChanged` path a keystroke
+    // takes) — this is not a mocked/simulated dirty flag.
+    await waitFor(() => expect(screen.getByRole("button", { name: "Accept current" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Accept current" }));
+
+    await waitFor(() => {
+      expect(onDirtyChange).toHaveBeenCalledWith("src/lib.rs", true);
+    });
+  });
+
+  it("does not require onDirtyChange — it remains an optional prop", async () => {
+    expect(() =>
+      render(<ConflictFileEditor file={file} onMarkResolved={vi.fn()} />),
+    ).not.toThrow();
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Accept current" })).toBeInTheDocument());
+    expect(() => fireEvent.click(screen.getByRole("button", { name: "Accept current" }))).not.toThrow();
+  });
 });
