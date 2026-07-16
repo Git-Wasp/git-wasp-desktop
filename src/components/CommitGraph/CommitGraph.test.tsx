@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { Profiler } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { CommitGraph } from "./CommitGraph";
@@ -955,5 +956,28 @@ describe("CommitGraph search", () => {
     const otherRow = container.querySelector(`[data-oid="${"b".repeat(40)}"]`);
     expect(matchRow).not.toHaveAttribute("data-muted");
     expect(otherRow).toHaveAttribute("data-muted", "true");
+  });
+});
+
+describe("CommitGraph subscription granularity", () => {
+  it("does not re-render when useStashStore's state object identity changes but no field CommitGraph reads actually changed", () => {
+    const onRender = vi.fn();
+    render(
+      <Profiler id="commit-graph" onRender={onRender}>
+        <CommitGraph />
+      </Profiler>,
+    );
+    const rendersBefore = onRender.mock.calls.length;
+
+    act(() => {
+      // Merging an empty object still creates a brand-new store state object.
+      // A bare `useStashStore()` subscription re-renders on any such identity
+      // bump; granular `useStashStore((s) => s.field)` selectors only re-render
+      // when the specific selected field value itself changes, which it doesn't
+      // here.
+      useStashStore.setState({});
+    });
+
+    expect(onRender.mock.calls.length).toBe(rendersBefore);
   });
 });

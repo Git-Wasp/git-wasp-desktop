@@ -263,8 +263,12 @@ export function CommitGraph({
 } = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { viewport, selection, fetchViewport, selectCommit, selectWorkingTree, refresh } =
-    useGraphStore();
+  const viewport = useGraphStore((s) => s.viewport);
+  const selection = useGraphStore((s) => s.selection);
+  const fetchViewport = useGraphStore((s) => s.fetchViewport);
+  const selectCommit = useGraphStore((s) => s.selectCommit);
+  const selectWorkingTree = useGraphStore((s) => s.selectWorkingTree);
+  const refresh = useGraphStore((s) => s.refresh);
   const scrollToRow = useGraphStore((s) => s.scrollToRow);
   const focusCurrentBranch = useGraphStore((s) => s.focusCurrentBranch);
   const searchOpen = useGraphStore((s) => s.searchOpen);
@@ -279,19 +283,17 @@ export function CommitGraph({
   // these) and where the commit body line goes (below / beside / hidden).
   const graphDensity = useGraphStore((s) => s.graphDensity);
   const { rowHeight, dotRadius, bodyPlacement } = GRAPH_DENSITY[graphDensity];
-  const {
-    currentRepo,
-    createBranch,
-    checkoutBranch,
-    renameBranch,
-    deleteBranch,
-    checkoutCommit,
-    createTag,
-    revertCommit,
-    squashCommits,
-    fastForwardBranch,
-    listFastForwardableBranches,
-  } = useRepoStore();
+  const currentRepo = useRepoStore((s) => s.currentRepo);
+  const createBranch = useRepoStore((s) => s.createBranch);
+  const checkoutBranch = useRepoStore((s) => s.checkoutBranch);
+  const renameBranch = useRepoStore((s) => s.renameBranch);
+  const deleteBranch = useRepoStore((s) => s.deleteBranch);
+  const checkoutCommit = useRepoStore((s) => s.checkoutCommit);
+  const createTag = useRepoStore((s) => s.createTag);
+  const revertCommit = useRepoStore((s) => s.revertCommit);
+  const squashCommits = useRepoStore((s) => s.squashCommits);
+  const fastForwardBranch = useRepoStore((s) => s.fastForwardBranch);
+  const listFastForwardableBranches = useRepoStore((s) => s.listFastForwardableBranches);
   const remoteInfo = useGithubStore((s) => s.remoteInfo);
   const startMerge = useMergeStore((s) => s.startMerge);
   const operationStatus = useMergeStore((s) => s.status);
@@ -299,7 +301,10 @@ export function CommitGraph({
   const requestAvatars = useAvatarStore((s) => s.request);
   const toastError = useToastStore((s) => s.error);
   const toastSuccess = useToastStore((s) => s.success);
-  const stash = useStashStore();
+  const stashCreate = useStashStore((s) => s.create);
+  const stashPop = useStashStore((s) => s.pop);
+  const stashDrop = useStashStore((s) => s.drop);
+  const stashRename = useStashStore((s) => s.rename);
   const remoteTags = useTagStore((s) => s.remoteTags);
   const pushTag = useTagStore((s) => s.pushTag);
   const deleteTag = useTagStore((s) => s.deleteTag);
@@ -624,7 +629,7 @@ export function CommitGraph({
         return [
           {
             label: "Pop stash",
-            onSelect: () => runStashOp(() => stash.pop(index), "Popped stash"),
+            onSelect: () => runStashOp(() => stashPop(index), "Popped stash"),
           },
           {
             label: "Rename stash…",
@@ -636,7 +641,7 @@ export function CommitGraph({
             danger: true,
             onSelect: () => {
               if (window.confirm(`Delete stash "${node.summary}"?`)) {
-                void runStashOp(() => stash.drop(index), "Deleted stash");
+                void runStashOp(() => stashDrop(index), "Deleted stash");
               }
             },
           },
@@ -773,9 +778,9 @@ export function CommitGraph({
     } else if (current.kind === "create-tag") {
       await runBranchOp(() => createTag(value, current.oid));
     } else if (current.kind === "stash") {
-      await runStashOp(() => stash.create(value), "Stashed changes");
+      await runStashOp(() => stashCreate(value), "Stashed changes");
     } else if (current.kind === "rename-stash") {
-      await runStashOp(() => stash.rename(current.index, value), "Renamed stash");
+      await runStashOp(() => stashRename(current.index, value), "Renamed stash");
     } else {
       await runBranchOp(() => renameBranch(current.branch, value));
     }
