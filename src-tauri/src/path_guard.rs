@@ -8,6 +8,7 @@ use std::path::Path;
 pub fn validate_repo_relative(path: &str) -> anyhow::Result<()> {
     let rel = Path::new(path);
     if rel.is_absolute()
+        || rel.has_root()
         || rel
             .components()
             .any(|c| c == std::path::Component::ParentDir)

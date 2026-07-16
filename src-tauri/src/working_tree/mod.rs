@@ -1394,8 +1394,8 @@ mod tests {
         discard_file(&repo, "file.txt").unwrap();
 
         assert_eq!(
-            fs::read_to_string(dir.path().join("file.txt")).unwrap(),
-            normalise("staged change\n"),
+            normalise(&fs::read_to_string(dir.path().join("file.txt")).unwrap()),
+            "staged change\n",
             "discard must restore from the index, not wipe staged work back to HEAD"
         );
     }
