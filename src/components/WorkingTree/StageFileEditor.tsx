@@ -78,8 +78,12 @@ interface StageFileEditorProps {
    *  mode, which has no staging affordances. */
   stageMode?: "staged" | "unstaged";
   /** Write the file's new index blob — the mechanism behind an immediate
-   *  per-line stage/unstage. The editor composes the blob for the toggled line. */
-  onApplyIndex?: (path: string, content: string) => void;
+   *  per-line stage/unstage. The editor composes the blob for the toggled line.
+   *  May optionally return a promise; the per-line toggle guard (`toggleRow`)
+   *  awaits it (via `Promise.resolve(...)`) to know when the write has
+   *  actually landed, so callers should return their write's promise rather
+   *  than firing it and discarding it. */
+  onApplyIndex?: (path: string, content: string) => void | Promise<void>;
   /** Stage a binary / deleted file wholesale (line-level staging N/A). */
   onStageWholeFile?: (path: string) => void;
   onDiscardFile?: (path: string) => void;
@@ -820,9 +824,12 @@ export function StageFileEditor({
 
   // File-level convenience: stage every remaining line (compose = working-tree
   // side) or unstage every line (compose = HEAD side), applied to the index now.
-  const handleStageAll = () =>
-    onApplyIndex?.(path, composeStagedText(rows, new Set(changedRowIndices(rows))));
-  const handleUnstageAll = () => onApplyIndex?.(path, composeStagedText(rows, new Set()));
+  const handleStageAll = () => {
+    void onApplyIndex?.(path, composeStagedText(rows, new Set(changedRowIndices(rows))));
+  };
+  const handleUnstageAll = () => {
+    void onApplyIndex?.(path, composeStagedText(rows, new Set()));
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>

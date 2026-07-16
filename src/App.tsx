@@ -341,9 +341,13 @@ export default function App() {
                     contents={wtStageDiff}
                     stageMode={wtStageMode ?? "unstaged"}
                     onApplyIndex={(path, content) => {
-                      applyIndexContent(path, content).catch((e: unknown) =>
-                        useToastStore.getState().error(String(e), { title: "Stage failed" }),
-                      );
+                      // Return the promise (not fire-and-forget): StageFileEditor's
+                      // per-line toggle guard awaits this to know when the index
+                      // write has actually landed, so a second toggle fired before
+                      // it resolves is ignored rather than composed from stale rows.
+                      return applyIndexContent(path, content).catch((e: unknown) => {
+                        useToastStore.getState().error(String(e), { title: "Stage failed" });
+                      });
                     }}
                     onStageWholeFile={(path) => {
                       stageFile(path).catch((e: unknown) =>
