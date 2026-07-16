@@ -275,4 +275,25 @@ describe("MergeEditor", () => {
     });
     expect(screen.queryByRole("dialog", { name: /abort/i })).not.toBeInTheDocument();
   });
+
+  it("keeps a file's dirty flag set when marking it resolved fails, so Abort still prompts", async () => {
+    useMergeStore.setState({ status: { kind: "merge", sourceBranch: "feature", conflicts: [conflictA] } });
+    mockInvoke.mockRejectedValueOnce(new Error("backend rejected merge_resolve_file")); // merge_resolve_file fails
+
+    render(<MergeEditor />);
+    await makeSelectedFileDirty();
+    fireEvent.click(screen.getByRole("button", { name: "Mark resolved" }));
+
+    // The failed resolve surfaces an error and leaves the file in the
+    // conflict list — it must NOT have been silently dropped from dirtyPaths.
+    await waitFor(() => {
+      expect(screen.getByText(/backend rejected merge_resolve_file/)).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "a.txt" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /abort merge/i }));
+
+    expect(screen.getByRole("dialog", { name: /abort/i })).toBeInTheDocument();
+    expect(mockInvoke).not.toHaveBeenCalledWith("merge_abort");
+  });
 });

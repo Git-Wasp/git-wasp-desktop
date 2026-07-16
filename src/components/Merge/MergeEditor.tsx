@@ -106,15 +106,20 @@ export function MergeEditor() {
   }
 
   function handleMarkResolved(path: string, content: string) {
-    void runAction(() => resolveFile(path, content));
-    // Resolving a file removes it from the conflict list — it can no longer
-    // be switched to or aborted-with-unsaved-edits, so drop any leftover
-    // dirty flag for it now rather than leaving a stale entry behind.
-    setDirtyPaths((prev) => {
-      if (!prev.has(path)) return prev;
-      const next = new Set(prev);
-      next.delete(path);
-      return next;
+    void runAction(async () => {
+      await resolveFile(path, content);
+      // Only once resolving has actually succeeded does the file leave the
+      // conflict list — it can no longer be switched to or
+      // aborted-with-unsaved-edits, so only now drop its dirty flag. If
+      // `resolveFile` rejects, `runAction`'s catch stops execution before
+      // this line, so a still-conflicted, still-edited file stays flagged
+      // dirty and Abort/switch still prompt.
+      setDirtyPaths((prev) => {
+        if (!prev.has(path)) return prev;
+        const next = new Set(prev);
+        next.delete(path);
+        return next;
+      });
     });
   }
 
