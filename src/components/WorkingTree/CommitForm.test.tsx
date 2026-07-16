@@ -192,13 +192,34 @@ describe("CommitForm", () => {
       expect(checkoutBranch).toHaveBeenCalledWith("main");
     });
 
-    it("Cmd+Enter does not create an orphaned commit while detached", async () => {
+    it("Cmd+Enter from the summary input routes through branch creation, not a bare commit, while detached", async () => {
       detach();
       render(<CommitForm stagedCount={1} />);
       await userEvent.type(screen.getByPlaceholderText("Summary (required)"), "msg");
+      fireEvent.change(screen.getByLabelText(/new branch name/i), { target: { value: "fix/bug" } });
+      // Refocus the summary input — changing the branch-name field above moved focus.
+      screen.getByPlaceholderText("Summary (required)").focus();
       await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
 
-      expect(createCommit).not.toHaveBeenCalledWith("msg");
+      // Proof the routing mechanism itself fired handleCreateBranchAndCommit, not
+      // handleCommit's own internal !canCommit no-op: createBranch/checkoutBranch
+      // only happen on the detached-recovery path.
+      await waitFor(() => expect(createBranch).toHaveBeenCalledWith("fix/bug"));
+      expect(checkoutBranch).toHaveBeenCalledWith("fix/bug");
+      expect(createCommit).toHaveBeenCalledWith("msg");
+    });
+
+    it("Cmd+Enter from the body textarea also routes through branch creation while detached", async () => {
+      detach();
+      render(<CommitForm stagedCount={1} />);
+      await userEvent.type(screen.getByPlaceholderText("Summary (required)"), "msg");
+      fireEvent.change(screen.getByLabelText(/new branch name/i), { target: { value: "fix/bug" } });
+      await userEvent.type(screen.getByPlaceholderText(/description/i), "details");
+      await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
+
+      await waitFor(() => expect(createBranch).toHaveBeenCalledWith("fix/bug"));
+      expect(checkoutBranch).toHaveBeenCalledWith("fix/bug");
+      expect(createCommit).toHaveBeenCalledWith("msg\n\ndetails");
     });
   });
 
