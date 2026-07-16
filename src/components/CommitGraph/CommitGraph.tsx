@@ -526,7 +526,7 @@ export function CommitGraph({
       selectCommit(node.oid, mode);
       onCommitSelect?.();
     },
-    [drag, selectCommit, selectWorkingTree, onViewChanges, onCommitSelect],
+    [drag.consumeClick, selectCommit, selectWorkingTree, onViewChanges, onCommitSelect],
   );
 
   const handleRowContextMenu = useCallback(
