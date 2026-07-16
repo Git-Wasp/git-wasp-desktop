@@ -531,6 +531,10 @@ export function CommitGraph({
       selectCommit(node.oid, mode);
       onCommitSelect?.();
     },
+    // drag.consumeClick is independently stable (empty-dep useCallback in useGraphDragDrop);
+    // depending on the whole `drag` object would recreate this callback on every drag-state
+    // change and defeat memo(GraphRow) downstream, which is exactly what this task fixes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [drag.consumeClick, selectCommit, selectWorkingTree, onViewChanges, onCommitSelect],
   );
 
