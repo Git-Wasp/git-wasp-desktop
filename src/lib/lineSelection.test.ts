@@ -64,4 +64,19 @@ describe("blockLineRanges", () => {
   it("skips blocks whose side text is absent", () => {
     expect(blockLineRanges("nothing here", [mkBlock("a\n", "b\n")], "ours")).toEqual([]);
   });
+
+  it("does not misplace a block's range when two blocks share identical side text", () => {
+    const content = "same\ntext\nsame\ntext\n"; // two identical 2-line stanzas back to back
+    const blocks: ConflictBlock[] = [
+      { oursText: "same\ntext\n", theirsText: "x\n", startLine: 1, endLine: 2 },
+      { oursText: "same\ntext\n", theirsText: "y\n", startLine: 3, endLine: 4 },
+    ] as ConflictBlock[];
+
+    const ranges = blockLineRanges(content, blocks, "ours");
+
+    expect(ranges).toEqual([
+      { blockIndex: 0, start: 1, end: 2 },
+      { blockIndex: 1, start: 3, end: 4 }, // NOT { start: 1, end: 2 } again via indexOf's first-match bug
+    ]);
+  });
 });

@@ -18,15 +18,21 @@ export function blockLineRanges(
   side: "ours" | "theirs",
 ): BlockLineRange[] {
   const result: BlockLineRange[] = [];
+  // Byte offset in `content` to resume searching from. Blocks appear in order in
+  // the reconstructed pane text, so each search starts where the previous block's
+  // match ended — this makes a duplicate-content match resolve to the NEXT
+  // occurrence rather than always the first (see content.indexOf below).
+  let searchFrom = 0;
   blocks.forEach((block, blockIndex) => {
     const sideText = side === "ours" ? block.oursText : block.theirsText;
     if (!sideText) return;
-    const base = content.indexOf(sideText);
+    const base = content.indexOf(sideText, searchFrom);
     if (base === -1) return;
     const lineCount = splitBlockLines(sideText).length;
     if (lineCount === 0) return;
     const start = content.slice(0, base).split("\n").length; // newlines-before + 1
     result.push({ blockIndex, start, end: start + lineCount - 1 });
+    searchFrom = base + sideText.length;
   });
   return result;
 }
