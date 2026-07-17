@@ -104,6 +104,7 @@ pub fn run() {
             commands::commit::get_identity_config,
             commands::commit::set_identity,
             avatar::get_avatar,
+            avatar::get_avatars,
             // Stash
             commands::stash::stash_save_cmd,
             commands::stash::stash_list_cmd,
