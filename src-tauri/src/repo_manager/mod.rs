@@ -1114,6 +1114,63 @@ mod tests {
         (dir, repo)
     }
 
+    /// Task B1 spike gate (docs/superpowers/perf-baseline.md): reproduces the
+    /// problem the per-repo-locking task exists to fix, with a real number —
+    /// not simulated by `BENCH_REPO_PATH`, since the point isn't repo size,
+    /// it's that `repos: Mutex<Vec<OpenRepo>>` is one lock shared by every
+    /// open tab. A slow operation on tab A (stood in for by a `sleep` inside
+    /// the `with_repo_mut` closure, in place of a real network fetch) holds
+    /// that single mutex for its whole duration, so a totally unrelated,
+    /// otherwise-cheap operation on tab B (`get_working_tree_status`) can't
+    /// even start until A finishes — this test measures how long B is stuck
+    /// waiting. Deterministic (fixed sleep, no bench repo needed), so it runs
+    /// as part of the normal suite, unlike the `BENCH_REPO_PATH` harness.
+    #[test]
+    fn tab_a_slow_op_blocks_tab_b_on_todays_shared_repos_lock() {
+        let (dir_a, _) = make_git_repo_with_commit();
+        let (dir_b, _) = make_git_repo_with_commit();
+        let manager = std::sync::Arc::new(RepoManager::new());
+        // `open`'s returned `RepoInfo.path` is git2's canonicalised workdir
+        // path, which can differ from the raw tempdir string (e.g. macOS
+        // resolves `/var/...` to `/private/var/...`) — `activate` matches on
+        // that canonical form, so tests must use it too (see
+        // `activate_switches_the_active_tab` for the same pattern).
+        let info_a = manager.open(dir_a.path().to_str().unwrap()).unwrap();
+        let info_b = manager.open(dir_b.path().to_str().unwrap()).unwrap();
+        manager.activate(&info_a.path).unwrap();
+
+        const SLOW_OP_MS: u64 = 150;
+        let m2 = std::sync::Arc::clone(&manager);
+        let handle = std::thread::spawn(move || {
+            // Stands in for a real long/network op (e.g. fetch) on tab A.
+            m2.with_repo_mut(|_repo| {
+                std::thread::sleep(std::time::Duration::from_millis(SLOW_OP_MS));
+            })
+            .unwrap();
+        });
+        // Give the spawned thread a head start so it acquires the lock first.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+
+        let t0 = std::time::Instant::now();
+        manager.activate(&info_b.path).unwrap();
+        manager
+            .with_repo(|repo| crate::working_tree::get_working_tree_status(repo))
+            .unwrap()
+            .unwrap();
+        let blocked = t0.elapsed();
+
+        handle.join().unwrap();
+        println!(
+            "tab B (get_working_tree_status) blocked for {blocked:?} while tab A's {SLOW_OP_MS}ms \
+             op held the shared repos lock"
+        );
+        assert!(
+            blocked >= std::time::Duration::from_millis(100),
+            "expected tab A's slow op to block tab B under today's single shared repos lock, \
+             but tab B only waited {blocked:?} — has the locking already changed?"
+        );
+    }
+
     /// Perf harness (Phase 0 of docs/superpowers/perf-baseline.md): opens the
     /// repo at `BENCH_REPO_PATH` directly (no `RepoManager` needed — the same
     /// seam a Tauri command uses) and times `list_branches` on it. Ignored by
