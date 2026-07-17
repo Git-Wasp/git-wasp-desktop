@@ -45,7 +45,7 @@ export default function App() {
     clear: clearCommitFile,
   } = useCommitFileStore();
   const { init, setPrDraft, detectRemote } = useGithubStore();
-  const loadAheadBehind = useRemoteStore((s) => s.loadAheadBehind);
+  const invalidateAheadBehind = useRemoteStore((s) => s.invalidateAheadBehind);
   const loadRemoteTags = useTagStore((s) => s.loadRemoteTags);
   const { status: operationStatus, loadStatus } = useMergeStore();
   const { initTheme } = useThemeStore();
@@ -162,16 +162,22 @@ export default function App() {
   const repoPath = currentRepo?.path ?? null;
   useEffect(() => {
     if (!repoPath) return;
+    // Ahead/behind is fetched per-branch, on demand, by each sidebar row
+    // (see remoteStore.requestAheadBehind) — but a previous repo's cached
+    // counts could collide by branch name (e.g. both have "main"), so clear
+    // them on every repo switch rather than leaving them to be overwritten
+    // only when/if that same-named row happens to re-request.
+    invalidateAheadBehind();
     void (async () => {
       try {
-        await Promise.all([loadBranches(), detectRemote(), loadAheadBehind()]);
+        await Promise.all([loadBranches(), detectRemote()]);
       } catch (e) {
         useToastStore.getState().error(String(e), { title: "Couldn't load repository state" });
       }
     })();
     // Best-effort: populates the tag local/remote indicator (network ls-remote).
     void loadRemoteTags();
-  }, [repoPath, loadBranches, detectRemote, loadAheadBehind, loadRemoteTags]);
+  }, [repoPath, loadBranches, detectRemote, invalidateAheadBehind, loadRemoteTags]);
 
   // A repo switch invalidates whatever the right panel was showing (a commit or
   // uncommitted-diff selection from the previous repo) — fall back to the
@@ -255,7 +261,10 @@ export default function App() {
     const onFocus = () => {
       void useRepoStore.getState().syncHead();
       void useWorkingTreeStore.getState().refreshAll();
-      void useRemoteStore.getState().loadAheadBehind().catch(() => {});
+      // A terminal `git fetch`/checkout while backgrounded could change any
+      // branch's ahead/behind — invalidate so currently-rendered rows
+      // re-request fresh counts instead of showing stale ones.
+      useRemoteStore.getState().invalidateAheadBehind();
     };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);

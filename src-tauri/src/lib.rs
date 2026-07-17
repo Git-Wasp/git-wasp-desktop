@@ -74,7 +74,7 @@ pub fn run() {
             commands::branch::create_branch,
             commands::branch::rename_branch,
             commands::branch::delete_branch,
-            commands::branch::get_ahead_behind,
+            commands::branch::branch_ahead_behind,
             commands::branch::fast_forward_branch,
             commands::branch::fast_forward_to_upstream,
             commands::branch::list_fast_forwardable_branches,

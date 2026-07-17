@@ -43,9 +43,9 @@ beforeEach(() => {
     recentRepos: [],
     branches: [
       // feat/x is already pushed (has an upstream) so the default flow is a plain "Create".
-      { name: "feat/x", isRemote: false, isHead: true, upstream: "origin/feat/x", oid: "a", ahead: null, behind: null },
-      { name: "main", isRemote: false, isHead: false, upstream: "origin/main", oid: "b", ahead: null, behind: null },
-      { name: "origin/main", isRemote: true, isHead: false, upstream: null, oid: "c", ahead: null, behind: null },
+      { name: "feat/x", isRemote: false, isHead: true, upstream: "origin/feat/x", oid: "a" },
+      { name: "main", isRemote: false, isHead: false, upstream: "origin/main", oid: "b" },
+      { name: "origin/main", isRemote: true, isHead: false, upstream: null, oid: "c" },
     ],
   });
 });
@@ -169,9 +169,9 @@ describe("NewPRForm", () => {
   function makeHeadUnpushed() {
     useRepoStore.setState({
       branches: [
-        { name: "feat/x", isRemote: false, isHead: true, upstream: null, oid: "a", ahead: null, behind: null },
-        { name: "main", isRemote: false, isHead: false, upstream: "origin/main", oid: "b", ahead: null, behind: null },
-        { name: "origin/main", isRemote: true, isHead: false, upstream: null, oid: "c", ahead: null, behind: null },
+        { name: "feat/x", isRemote: false, isHead: true, upstream: null, oid: "a" },
+        { name: "main", isRemote: false, isHead: false, upstream: "origin/main", oid: "b" },
+        { name: "origin/main", isRemote: true, isHead: false, upstream: null, oid: "c" },
       ],
     });
   }

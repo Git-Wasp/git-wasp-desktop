@@ -12,8 +12,6 @@ const branch = (name: string, isHead = false, isRemote = false): BranchInfo => (
   isHead,
   upstream: null,
   oid: name,
-  ahead: null,
-  behind: null,
 });
 
 beforeEach(() => {

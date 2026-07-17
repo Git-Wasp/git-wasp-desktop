@@ -72,11 +72,12 @@ beforeEach(() => {
   });
 
   useRemoteStore.setState({
-    aheadBehind: [],
+    aheadBehind: new Map(),
+    aheadBehindEpoch: 0,
     isFetching: false,
     isPulling: false,
     isPushing: false,
-    loadAheadBehind: vi.fn().mockResolvedValue(undefined),
+    invalidateAheadBehind: vi.fn(),
     fetch: vi.fn().mockResolvedValue({ updatedRefs: [] }),
     pull: vi.fn().mockResolvedValue({ status: "fastForwarded" }),
     push: vi.fn().mockResolvedValue(undefined),

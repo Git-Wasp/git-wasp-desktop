@@ -562,8 +562,6 @@ impl RepoManager {
                 is_head: false,
                 upstream: None,
                 oid,
-                ahead: None,
-                behind: None,
             })
         })?
     }
@@ -936,14 +934,14 @@ pub fn restore_session(app: &tauri::App) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Lists every branch (local and remote-tracking) with cheap-to-derive
+/// metadata only. Ahead/behind counts used to be computed here for every
+/// local branch eagerly (one `graph_ahead_behind` walk per branch); that's
+/// dead weight the frontend never read from this list — it's fetched
+/// per-branch, on demand, via the `branch_ahead_behind` command instead (see
+/// `remote_ops::branch_ahead_behind`), so this stays cheap regardless of how
+/// many branches a monorepo has.
 pub fn list_branches(repo: &Repository) -> anyhow::Result<Vec<BranchInfo>> {
-    let ahead_behind_map: std::collections::HashMap<String, (usize, usize)> =
-        crate::remote_ops::compute_ahead_behind(repo)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|ab| (ab.branch, (ab.ahead, ab.behind)))
-            .collect();
-
     let mut branches = Vec::new();
     for branch in repo.branches(None).context("failed to list branches")? {
         let (branch, branch_type) = branch.context("invalid branch reference")?;
@@ -959,18 +957,12 @@ pub fn list_branches(repo: &Repository) -> anyhow::Result<Vec<BranchInfo>> {
             .upstream()
             .ok()
             .and_then(|u| u.name().ok().flatten().map(|s| s.to_string()));
-        let (ahead, behind) = ahead_behind_map
-            .get(&name)
-            .map(|&(a, b)| (Some(a), Some(b)))
-            .unwrap_or((None, None));
         branches.push(BranchInfo {
             name,
             is_remote,
             is_head,
             upstream,
             oid,
-            ahead,
-            behind,
         });
     }
     Ok(branches)

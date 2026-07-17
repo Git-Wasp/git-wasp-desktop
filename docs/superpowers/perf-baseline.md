@@ -215,3 +215,48 @@ full lane-assignment walk over the same commits; a real bench repo at that
 scale (not generated here — see "Bench repo" above on why) would be needed to
 confirm the crossover point rather than extrapolate it. Worth flagging to the
 user as a follow-up rather than claiming a clean win on this specific number.
+
+## Task B3 — lazy ahead/behind
+
+No spike gate for this one (unlike B1/B2, the plan didn't ask for one) — but
+worth recording what actually changed, since the scope ended up wider than
+the plan's literal file list.
+
+The plan named `repo_manager::list_branches` as the eager-ahead/behind
+offender. Turned out that specific computation was **dead code on the
+frontend already** — nothing read `BranchInfo.ahead`/`.behind` (confirmed by
+search before touching anything). The real eager-for-all-branches cost was a
+separate command, `get_ahead_behind`, called on every repo load, every window
+focus, and after every push/pull/fetch/fast-forward, powering the sidebar's
+branch list directly via `remoteStore.aheadBehind` — one `graph_ahead_behind`
+walk per local branch, every time, regardless of which branches were even
+visible.
+
+Given the choice between the literal (safe, but doesn't fix the real cost)
+and wider (fixes the real cost, more surface) scope, chose wider:
+
+- **Backend:** `list_branches` no longer computes ahead/behind at all (the
+  dead map is gone). `compute_ahead_behind`/`get_ahead_behind`/`AheadBehind`
+  removed entirely (fully dead after the switch below). New
+  `remote_ops::branch_ahead_behind(repo, name) -> (usize, usize)` and
+  `commands::branch::branch_ahead_behind` command — one branch, on demand,
+  erroring (not silently omitting) when there's no upstream.
+- **Frontend:** `remoteStore` replaced its eager `aheadBehind: AheadBehind[]`
+  + `loadAheadBehind()` with a per-branch cache (`Map<name, entry>`) and
+  `requestAheadBehind(name)`, deduped per name per "epoch". `fetch`/`pull`/
+  `push`/`fastForwardToUpstream` and a repo switch/window focus all call
+  `invalidateAheadBehind()` (clear + bump epoch) instead of re-fetching
+  everything eagerly. `Sidebar`'s branch row became a real component
+  (`LocalBranchRow`) with its own `useEffect` requesting ahead/behind on
+  mount — since `VirtualList` only mounts visible rows, this gets "only
+  visible branches" for free, no viewport-tracking plumbing needed.
+- Also removed the now-dead `BranchInfo.ahead`/`.behind` fields (Rust struct,
+  TS type, and every test fixture literal) rather than leave them emitting
+  `None`/`null` forever.
+
+No benchmark for this one — the win is qualitative (branch-count-many
+`graph_ahead_behind` walks on every load/focus/push/pull/fetch, replaced by
+one walk per branch a user actually has expanded/visible), not something the
+10k-commit/21-branch bench repo would show meaningfully differently from a
+50k-commit one (this cost scales with *branch* count, which wasn't varied
+across bench runs).

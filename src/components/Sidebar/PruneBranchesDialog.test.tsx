@@ -13,7 +13,6 @@ function routeInvoke(prunable: PrunableBranch[], over: Record<string, unknown> =
   const table: Record<string, unknown> = {
     fetch_remote: { updatedRefs: [] },
     list_prunable_branches: prunable,
-    get_ahead_behind: [],
     list_branches: [],
     delete_branch: undefined,
     ...over,

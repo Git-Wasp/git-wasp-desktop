@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useRemoteStore } from "../remoteStore";
-import { useRepoStore } from "../repoStore";
 
 const mockInvoke = vi.mocked(invoke);
 
 beforeEach(() => {
   vi.clearAllMocks();
   useRemoteStore.setState({
-    aheadBehind: [],
+    aheadBehind: new Map(),
+    aheadBehindEpoch: 0,
     isFetching: false,
     isPulling: false,
     isPushing: false,
@@ -16,49 +16,75 @@ beforeEach(() => {
   });
 });
 
-describe("remoteStore", () => {
-  it("loadAheadBehind populates aheadBehind from get_ahead_behind", async () => {
-    const aheadBehind = [{ branch: "main", upstream: "origin/main", ahead: 1, behind: 2 }];
-    mockInvoke.mockResolvedValueOnce(aheadBehind);
+const flush = () => new Promise((r) => setTimeout(r, 0));
 
-    await useRemoteStore.getState().loadAheadBehind();
+describe("remoteStore ahead/behind (per-branch, on demand)", () => {
+  it("requestAheadBehind fetches and stores ahead/behind for one branch", async () => {
+    mockInvoke.mockResolvedValueOnce([1, 2]);
 
-    expect(mockInvoke).toHaveBeenCalledWith("get_ahead_behind");
-    expect(useRemoteStore.getState().aheadBehind).toEqual(aheadBehind);
+    useRemoteStore.getState().requestAheadBehind("main");
+    expect(mockInvoke).toHaveBeenCalledWith("branch_ahead_behind", { name: "main" });
+    expect(useRemoteStore.getState().aheadBehind.get("main")).toBe("loading");
+
+    await flush();
+
+    expect(useRemoteStore.getState().aheadBehind.get("main")).toEqual({ ahead: 1, behind: 2 });
   });
 
-  it("loadAheadBehind discards a late response from before a repo switch", async () => {
-    let resolveA: (v: { branch: string; upstream: string; ahead: number; behind: number }[]) => void;
-    const pendingA = new Promise<{ branch: string; upstream: string; ahead: number; behind: number }[]>((r) => {
-      resolveA = r;
+  it("requestAheadBehind does not re-request an already-requested branch", async () => {
+    mockInvoke.mockResolvedValue([0, 0]);
+
+    useRemoteStore.getState().requestAheadBehind("main");
+    useRemoteStore.getState().requestAheadBehind("main");
+    await flush();
+
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("requestAheadBehind marks a branch as none when the invoke rejects (e.g. no upstream)", async () => {
+    mockInvoke.mockRejectedValueOnce(new Error("branch 'main' has no upstream"));
+
+    useRemoteStore.getState().requestAheadBehind("main");
+    await flush();
+
+    expect(useRemoteStore.getState().aheadBehind.get("main")).toBe("none");
+  });
+
+  it("invalidateAheadBehind clears cached entries and bumps the epoch", () => {
+    useRemoteStore.setState({ aheadBehind: new Map([["main", { ahead: 1, behind: 0 }]]) });
+
+    useRemoteStore.getState().invalidateAheadBehind();
+
+    expect(useRemoteStore.getState().aheadBehind.size).toBe(0);
+    expect(useRemoteStore.getState().aheadBehindEpoch).toBe(1);
+  });
+
+  it("a stale in-flight response from before an invalidation does not clobber post-invalidation state", async () => {
+    let resolveStale: (v: [number, number]) => void;
+    const pending = new Promise<[number, number]>((r) => {
+      resolveStale = r;
     });
-    mockInvoke.mockImplementationOnce(() => pendingA); // repo A's slow get_ahead_behind
+    mockInvoke.mockImplementationOnce(() => pending);
 
-    const loadA = useRemoteStore.getState().loadAheadBehind();
-    useRepoStore.setState({ activationEpoch: useRepoStore.getState().activationEpoch + 1 }); // repo switch happens
+    useRemoteStore.getState().requestAheadBehind("main"); // starts in epoch 0
+    useRemoteStore.getState().invalidateAheadBehind(); // epoch -> 1, map cleared
 
-    const aheadBehindB = [{ branch: "main", upstream: "origin/main", ahead: 5, behind: 0 }];
-    mockInvoke.mockResolvedValueOnce(aheadBehindB); // repo B's own (fast) loadAheadBehind call
-    await useRemoteStore.getState().loadAheadBehind();
+    mockInvoke.mockResolvedValueOnce([9, 9]);
+    useRemoteStore.getState().requestAheadBehind("main"); // fresh request in epoch 1
+    await flush();
+    expect(useRemoteStore.getState().aheadBehind.get("main")).toEqual({ ahead: 9, behind: 9 });
 
-    resolveA!([{ branch: "main", upstream: "origin/main", ahead: 1, behind: 2 }]); // repo A's late response
-    await loadA;
+    resolveStale!([1, 2]); // epoch 0's late response
+    await flush();
 
-    expect(useRemoteStore.getState().aheadBehind).toEqual(aheadBehindB); // not clobbered by A's stale data
+    // Must not overwrite the epoch-1 result with epoch 0's stale data.
+    expect(useRemoteStore.getState().aheadBehind.get("main")).toEqual({ ahead: 9, behind: 9 });
   });
+});
 
-  it("loadAheadBehind clears aheadBehind on failure", async () => {
-    useRemoteStore.setState({ aheadBehind: [{ branch: "main", upstream: "origin/main", ahead: 1, behind: 2 }] });
-    mockInvoke.mockRejectedValueOnce(new Error("offline"));
-
-    await expect(useRemoteStore.getState().loadAheadBehind()).rejects.toThrow("offline");
-
-    expect(useRemoteStore.getState().aheadBehind).toEqual([]);
-  });
-
-  it("fetch sets isFetching during the call and reloads ahead/behind", async () => {
+describe("remoteStore remote operations", () => {
+  it("fetch sets isFetching during the call and invalidates ahead/behind on success", async () => {
     mockInvoke.mockResolvedValueOnce({ updatedRefs: ["refs/heads/main"] }); // fetch_remote
-    mockInvoke.mockResolvedValueOnce([]); // get_ahead_behind
 
     const promise = useRemoteStore.getState().fetch();
     expect(useRemoteStore.getState().isFetching).toBe(true);
@@ -67,6 +93,7 @@ describe("remoteStore", () => {
     expect(mockInvoke).toHaveBeenCalledWith("fetch_remote", { remoteName: null, prune: false });
     expect(result).toEqual({ updatedRefs: ["refs/heads/main"] });
     expect(useRemoteStore.getState().isFetching).toBe(false);
+    expect(useRemoteStore.getState().aheadBehindEpoch).toBe(1);
   });
 
   it("fetch records lastError and resets isFetching on failure", async () => {
@@ -78,9 +105,8 @@ describe("remoteStore", () => {
     expect(useRemoteStore.getState().lastError).toContain("network unreachable");
   });
 
-  it("pull sets isPulling, forwards the mode, and reloads ahead/behind on success", async () => {
+  it("pull sets isPulling, forwards the mode, and invalidates ahead/behind on success", async () => {
     mockInvoke.mockResolvedValueOnce({ status: "fastForwarded" }); // pull_branch
-    mockInvoke.mockResolvedValueOnce([]); // get_ahead_behind
 
     const promise = useRemoteStore.getState().pull("ffOrMerge", "origin", "main");
     expect(useRemoteStore.getState().isPulling).toBe(true);
@@ -94,11 +120,11 @@ describe("remoteStore", () => {
     });
     expect(result).toEqual({ status: "fastForwarded" });
     expect(useRemoteStore.getState().isPulling).toBe(false);
+    expect(useRemoteStore.getState().aheadBehindEpoch).toBe(1);
   });
 
-  it("push sets isPushing and reloads ahead/behind on success", async () => {
+  it("push sets isPushing and invalidates ahead/behind on success", async () => {
     mockInvoke.mockResolvedValueOnce(undefined); // push_branch
-    mockInvoke.mockResolvedValueOnce([]); // get_ahead_behind
 
     const promise = useRemoteStore.getState().push();
     expect(useRemoteStore.getState().isPushing).toBe(true);
@@ -106,5 +132,15 @@ describe("remoteStore", () => {
 
     expect(mockInvoke).toHaveBeenCalledWith("push_branch", { remoteName: null, branch: null });
     expect(useRemoteStore.getState().isPushing).toBe(false);
+    expect(useRemoteStore.getState().aheadBehindEpoch).toBe(1);
+  });
+
+  it("fastForwardToUpstream invalidates ahead/behind on success", async () => {
+    mockInvoke.mockResolvedValueOnce(undefined); // fast_forward_to_upstream
+
+    await useRemoteStore.getState().fastForwardToUpstream("main");
+
+    expect(mockInvoke).toHaveBeenCalledWith("fast_forward_to_upstream", { branch: "main" });
+    expect(useRemoteStore.getState().aheadBehindEpoch).toBe(1);
   });
 });

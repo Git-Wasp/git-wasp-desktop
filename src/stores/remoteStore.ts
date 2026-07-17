@@ -1,20 +1,37 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
-import type { AheadBehind, FetchResult, PullResult } from "../types/github";
+import type { FetchResult, PullResult } from "../types/github";
 import { logOperationError } from "../lib/logger";
 import { withAutoStash } from "../lib/autoStash";
-import { useRepoStore } from "./repoStore";
 
 export type PullMode = "ffOnly" | "ffOrMerge";
 
+type AheadBehindEntry = { ahead: number; behind: number } | "loading" | "none";
+
 interface RemoteStore {
-  aheadBehind: AheadBehind[];
+  /** Per-branch ahead/behind, fetched on demand (only for branches a row has
+   *  actually requested — see `requestAheadBehind`) instead of eagerly for
+   *  every branch on every repo load/focus/push/pull/fetch. Absence of a key
+   *  means "not yet requested". */
+  aheadBehind: Map<string, AheadBehindEntry>;
+  /** Bumped by `invalidateAheadBehind`. Included in the effect dependency
+   *  that drives `requestAheadBehind` (see Sidebar's branch row) so
+   *  currently-rendered rows re-request fresh data after a repo-wide
+   *  operation, and guards in-flight requests from a since-invalidated epoch
+   *  from writing stale data into the new one. */
+  aheadBehindEpoch: number;
   isFetching: boolean;
   isPulling: boolean;
   isPushing: boolean;
   lastError: string | null;
 
-  loadAheadBehind: () => Promise<void>;
+  /** Resolve ahead/behind for one branch. Deduped — a no-op if this branch
+   *  was already requested in the current epoch. */
+  requestAheadBehind: (name: string) => void;
+  /** Discard all cached ahead/behind counts and bump the epoch, so
+   *  currently-rendered rows re-request fresh data (e.g. after a fetch/pull/
+   *  push/fast-forward, or a repo switch) instead of showing stale counts. */
+  invalidateAheadBehind: () => void;
   fetch: (remoteName?: string, prune?: boolean) => Promise<FetchResult>;
   // Resolves to `undefined` when a pull is blocked by uncommitted changes and
   // the user cancels the auto-stash prompt.
@@ -27,24 +44,40 @@ interface RemoteStore {
 }
 
 export const useRemoteStore = create<RemoteStore>((set, get) => ({
-  aheadBehind: [],
+  aheadBehind: new Map(),
+  aheadBehindEpoch: 0,
   isFetching: false,
   isPulling: false,
   isPushing: false,
   lastError: null,
 
-  loadAheadBehind: async () => {
-    const epoch = useRepoStore.getState().activationEpoch;
-    try {
-      const aheadBehind = await invoke<AheadBehind[]>("get_ahead_behind");
-      if (useRepoStore.getState().activationEpoch !== epoch) return; // superseded by a repo switch
-      set({ aheadBehind });
-    } catch (e) {
-      // Clear stale ahead/behind counts from a previous repo rather than
-      // leaving them displayed alongside a failed refresh.
-      if (useRepoStore.getState().activationEpoch === epoch) set({ aheadBehind: [] });
-      throw e;
-    }
+  requestAheadBehind: (name: string) => {
+    const { aheadBehind, aheadBehindEpoch } = get();
+    if (aheadBehind.has(name)) return;
+    const next = new Map(aheadBehind);
+    next.set(name, "loading");
+    set({ aheadBehind: next });
+
+    void (async () => {
+      try {
+        const [ahead, behind] = await invoke<[number, number]>("branch_ahead_behind", { name });
+        // Dropped, not written, if invalidateAheadBehind moved the epoch on
+        // while this was in flight — a newer request may already own this key.
+        if (get().aheadBehindEpoch !== aheadBehindEpoch) return;
+        const m = new Map(get().aheadBehind);
+        m.set(name, { ahead, behind });
+        set({ aheadBehind: m });
+      } catch {
+        if (get().aheadBehindEpoch !== aheadBehindEpoch) return;
+        const m = new Map(get().aheadBehind);
+        m.set(name, "none");
+        set({ aheadBehind: m });
+      }
+    })();
+  },
+
+  invalidateAheadBehind: () => {
+    set((s) => ({ aheadBehind: new Map(), aheadBehindEpoch: s.aheadBehindEpoch + 1 }));
   },
 
   fetch: async (remoteName?: string, prune?: boolean) => {
@@ -54,7 +87,7 @@ export const useRemoteStore = create<RemoteStore>((set, get) => ({
         remoteName: remoteName ?? null,
         prune: prune ?? false,
       });
-      await get().loadAheadBehind();
+      get().invalidateAheadBehind();
       return result;
     } catch (e) {
       set({ lastError: logOperationError("fetch", e) });
@@ -84,7 +117,7 @@ export const useRemoteStore = create<RemoteStore>((set, get) => ({
           confirmLabel: "Stash & pull",
         },
       );
-      await get().loadAheadBehind();
+      get().invalidateAheadBehind();
       return result;
     } catch (e) {
       set({ lastError: logOperationError("pull", e) });
@@ -98,7 +131,7 @@ export const useRemoteStore = create<RemoteStore>((set, get) => ({
     set({ isPushing: true, lastError: null });
     try {
       await invoke("push_branch", { remoteName: remoteName ?? null, branch: branch ?? null });
-      await get().loadAheadBehind();
+      get().invalidateAheadBehind();
     } catch (e) {
       set({ lastError: logOperationError("push", e) });
       throw e;
@@ -111,7 +144,7 @@ export const useRemoteStore = create<RemoteStore>((set, get) => ({
     set({ lastError: null });
     try {
       await invoke("fast_forward_to_upstream", { branch });
-      await get().loadAheadBehind();
+      get().invalidateAheadBehind();
     } catch (e) {
       set({ lastError: logOperationError("fast-forward", e) });
       throw e;

@@ -18,6 +18,7 @@ import { PruneBranchesDialog } from "./PruneBranchesDialog";
 import { PromptDialog } from "../common/PromptDialog";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { VirtualList } from "../ui/VirtualList";
+import type { BranchInfo } from "../../types/repo";
 
 // Fixed row height for the virtualised branch lists — sized to fit the ⋮ menu
 // button (24px, `control-height-sm`) plus the row's vertical padding (2×4px).
@@ -46,12 +47,124 @@ const branchEmptyHintStyle: CSSProperties = {
   fontStyle: "italic",
 };
 
+/**
+ * One row in the Local branches list. Ahead/behind is fetched on demand for
+ * this specific branch (not eagerly for every branch — see
+ * `remoteStore.requestAheadBehind`): `VirtualList` only mounts rows currently
+ * in view, so this effect firing only for mounted rows is what makes the
+ * fetch "per visible row" without any extra viewport-tracking plumbing.
+ */
+function LocalBranchRow({
+  b,
+  onReveal,
+  onCheckout,
+  onFastForward,
+  onPush,
+  onCreateTag,
+  onMerge,
+  onDelete,
+  canMerge,
+}: {
+  b: BranchInfo;
+  onReveal: (oid: string) => void;
+  onCheckout: (name: string) => void;
+  onFastForward: (name: string) => void;
+  onPush: (name: string) => void;
+  onCreateTag: (name: string, oid: string) => void;
+  onMerge: (name: string) => void;
+  onDelete: (name: string) => void;
+  canMerge: boolean;
+}) {
+  const entry = useRemoteStore((s) => s.aheadBehind.get(b.name));
+  const epoch = useRemoteStore((s) => s.aheadBehindEpoch);
+  const requestAheadBehind = useRemoteStore((s) => s.requestAheadBehind);
+
+  useEffect(() => {
+    requestAheadBehind(b.name);
+  }, [b.name, epoch, requestAheadBehind]);
+
+  const ab = entry && entry !== "loading" && entry !== "none" ? entry : null;
+  const showAheadBehind = ab && (ab.ahead > 0 || ab.behind > 0);
+
+  return (
+    <div className="sidebar-row" style={branchRowStyle}>
+      <span style={branchIconStyle} title="Local branch">
+        <LaptopIcon />
+      </span>
+      <div
+        onClick={() => onReveal(b.oid)}
+        title={`Show ${b.name} in the commit graph`}
+        style={{
+          flex: 1,
+          fontSize: "var(--font-size-sm)",
+          fontFamily: "var(--font-family-mono)",
+          color: b.isHead ? "var(--color-accent-primary)" : "var(--color-text-secondary)",
+          cursor: "pointer",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          background: b.isHead ? "var(--color-bg-elevated)" : "transparent",
+          borderRadius: "var(--radius-sm)",
+          padding: "1px var(--space-2)",
+        }}
+      >
+        {b.isHead ? "▸ " : ""}
+        {b.name}
+      </div>
+      {showAheadBehind && (
+        <span
+          style={{
+            fontSize: "var(--font-size-xs)",
+            color: "var(--color-text-muted)",
+            fontFamily: "var(--font-family-mono)",
+            flexShrink: 0,
+          }}
+        >
+          {ab.ahead > 0 && `↑${ab.ahead}`}
+          {ab.ahead > 0 && ab.behind > 0 && " "}
+          {ab.behind > 0 && `↓${ab.behind}`}
+        </span>
+      )}
+      <RowMenu
+        label={`${b.name} actions`}
+        items={[
+          ...(b.isHead ? [] : [{ label: "Checkout branch", onSelect: () => onCheckout(b.name) }]),
+          // A clean fast-forward is available: behind the upstream with no local
+          // commits ahead. Advances the branch pointer without checking it out.
+          ...(ab && ab.behind > 0 && ab.ahead === 0
+            ? [
+                {
+                  label: `Fast-forward to ${b.upstream ?? "upstream"}`,
+                  onSelect: () => onFastForward(b.name),
+                },
+              ]
+            : []),
+          { label: "Push branch", onSelect: () => onPush(b.name) },
+          { label: "Create tag…", onSelect: () => onCreateTag(b.name, b.oid) },
+          ...(b.isHead || !canMerge
+            ? []
+            : [{ label: "Merge into current branch", onSelect: () => onMerge(b.name) }]),
+          ...(b.isHead
+            ? []
+            : [
+                {
+                  label: "Delete branch",
+                  destructive: true,
+                  onSelect: () => onDelete(b.name),
+                },
+              ]),
+        ]}
+      />
+    </div>
+  );
+}
+
 export function Sidebar({ width = 220 }: { width?: number }) {
   const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, removeRecent, checkoutBranch, createBranch, deleteBranch, createTag } =
     useRepoStore();
   const { revealCommit, refresh } = useGraphStore();
   const { remoteInfo } = useGithubStore();
-  const { aheadBehind, push, fastForwardToUpstream } = useRemoteStore();
+  const { push, fastForwardToUpstream } = useRemoteStore();
   const { status: operationStatus, startMerge } = useMergeStore();
   const toastSuccess = useToastStore((s) => s.success);
   const toastError = useToastStore((s) => s.error);
@@ -160,83 +273,19 @@ export function Sidebar({ width = 220 }: { width?: number }) {
 
   // Row renderers for the virtualised branch lists (see VirtualList). One row per
   // branch; the list only mounts the visible slice, so this is called for those.
-  const renderLocalBranch = (b: (typeof localBranches)[number]) => {
-    const ab = aheadBehind.find((x) => x.branch === b.name);
-    const showAheadBehind = ab && (ab.ahead > 0 || ab.behind > 0);
-    return (
-      <div className="sidebar-row" style={branchRowStyle}>
-        <span style={branchIconStyle} title="Local branch">
-          <LaptopIcon />
-        </span>
-        <div
-          onClick={() => void revealCommit(b.oid)}
-          title={`Show ${b.name} in the commit graph`}
-          style={{
-            flex: 1,
-            fontSize: "var(--font-size-sm)",
-            fontFamily: "var(--font-family-mono)",
-            color: b.isHead ? "var(--color-accent-primary)" : "var(--color-text-secondary)",
-            cursor: "pointer",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            background: b.isHead ? "var(--color-bg-elevated)" : "transparent",
-            borderRadius: "var(--radius-sm)",
-            padding: "1px var(--space-2)",
-          }}
-        >
-          {b.isHead ? "▸ " : ""}
-          {b.name}
-        </div>
-        {showAheadBehind && (
-          <span
-            style={{
-              fontSize: "var(--font-size-xs)",
-              color: "var(--color-text-muted)",
-              fontFamily: "var(--font-family-mono)",
-              flexShrink: 0,
-            }}
-          >
-            {ab.ahead > 0 && `↑${ab.ahead}`}
-            {ab.ahead > 0 && ab.behind > 0 && " "}
-            {ab.behind > 0 && `↓${ab.behind}`}
-          </span>
-        )}
-        <RowMenu
-          label={`${b.name} actions`}
-          items={[
-            ...(b.isHead
-              ? []
-              : [{ label: "Checkout branch", onSelect: () => void handleCheckoutBranch(b.name) }]),
-            // A clean fast-forward is available: behind the upstream with no local
-            // commits ahead. Advances the branch pointer without checking it out.
-            ...(ab && ab.behind > 0 && ab.ahead === 0
-              ? [
-                  {
-                    label: `Fast-forward to ${b.upstream ?? "upstream"}`,
-                    onSelect: () => void handleFastForwardToUpstream(b.name),
-                  },
-                ]
-              : []),
-            { label: "Push branch", onSelect: () => void handlePushBranch(b.name) },
-            { label: "Create tag…", onSelect: () => setTagBranch({ name: b.name, oid: b.oid }) },
-            ...(b.isHead || operationStatus.kind === "merge"
-              ? []
-              : [{ label: "Merge into current branch", onSelect: () => void handleMergeBranch(b.name) }]),
-            ...(b.isHead
-              ? []
-              : [
-                  {
-                    label: "Delete branch",
-                    destructive: true,
-                    onSelect: () => setPendingDeleteBranch(b.name),
-                  },
-                ]),
-          ]}
-        />
-      </div>
-    );
-  };
+  const renderLocalBranch = (b: (typeof localBranches)[number]) => (
+    <LocalBranchRow
+      b={b}
+      onReveal={(oid) => void revealCommit(oid)}
+      onCheckout={(name) => void handleCheckoutBranch(name)}
+      onFastForward={(name) => void handleFastForwardToUpstream(name)}
+      onPush={(name) => void handlePushBranch(name)}
+      onCreateTag={(name, oid) => setTagBranch({ name, oid })}
+      onMerge={(name) => void handleMergeBranch(name)}
+      onDelete={(name) => setPendingDeleteBranch(name)}
+      canMerge={operationStatus.kind !== "merge"}
+    />
+  );
 
   const renderRemoteBranch = (b: (typeof remoteBranches)[number]) => (
     <div className="sidebar-row" style={branchRowStyle}>

@@ -17,8 +17,6 @@ export interface BranchInfo {
   isHead: boolean;
   upstream: string | null;
   oid: string;
-  ahead: number | null;
-  behind: number | null;
 }
 
 /** A local branch whose upstream remote-tracking branch is gone — a prune candidate. */

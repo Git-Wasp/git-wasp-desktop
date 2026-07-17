@@ -57,12 +57,14 @@ beforeEach(() => {
   });
 
   useRemoteStore.setState({
-    aheadBehind: [],
+    aheadBehind: new Map(),
+    aheadBehindEpoch: 0,
     isFetching: false,
     isPulling: false,
     isPushing: false,
     lastError: null,
-    loadAheadBehind: vi.fn().mockResolvedValue(undefined),
+    requestAheadBehind: vi.fn(),
+    invalidateAheadBehind: vi.fn(),
     fetch: vi.fn().mockResolvedValue({ updatedRefs: [] }),
     pull: vi.fn().mockResolvedValue({ status: "AlreadyUpToDate" }),
     push: vi.fn().mockResolvedValue(undefined),
@@ -88,8 +90,8 @@ describe("Sidebar", () => {
   it("groups branches into Local and Remote sections with provenance icons", () => {
     useRepoStore.setState({
       branches: [
-        { name: "main", isRemote: false, isHead: true, upstream: null, oid: "a", ahead: null, behind: null },
-        { name: "origin/main", isRemote: true, isHead: false, upstream: null, oid: "b", ahead: null, behind: null },
+        { name: "main", isRemote: false, isHead: true, upstream: null, oid: "a" },
+        { name: "origin/main", isRemote: true, isHead: false, upstream: null, oid: "b" },
       ],
     });
 
@@ -106,9 +108,9 @@ describe("Sidebar", () => {
   it("floats the checked-out branch to the top of the local list", () => {
     useRepoStore.setState({
       branches: [
-        { name: "alpha", isRemote: false, isHead: false, upstream: null, oid: "1", ahead: null, behind: null },
-        { name: "beta", isRemote: false, isHead: false, upstream: null, oid: "2", ahead: null, behind: null },
-        { name: "current", isRemote: false, isHead: true, upstream: null, oid: "3", ahead: null, behind: null },
+        { name: "alpha", isRemote: false, isHead: false, upstream: null, oid: "1" },
+        { name: "beta", isRemote: false, isHead: false, upstream: null, oid: "2" },
+        { name: "current", isRemote: false, isHead: true, upstream: null, oid: "3" },
       ],
     });
 
@@ -140,7 +142,7 @@ describe("Sidebar", () => {
     useRemoteStore.setState({ push });
     useRepoStore.setState({
       branches: [
-        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "a", ahead: null, behind: null },
+        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "a" },
       ],
     });
 
@@ -155,12 +157,10 @@ describe("Sidebar", () => {
     const fastForwardToUpstream = vi.fn().mockResolvedValue(undefined);
     useRemoteStore.setState({
       fastForwardToUpstream,
-      aheadBehind: [{ branch: "feature", ahead: 0, behind: 2, upstream: "origin/feature" }],
+      aheadBehind: new Map([["feature", { ahead: 0, behind: 2 }]]),
     });
     useRepoStore.setState({
-      branches: [
-        { name: "feature", isRemote: false, isHead: false, upstream: "origin/feature", oid: "a", ahead: null, behind: null },
-      ],
+      branches: [{ name: "feature", isRemote: false, isHead: false, upstream: "origin/feature", oid: "a" }],
     });
 
     render(<Sidebar />);
@@ -172,12 +172,10 @@ describe("Sidebar", () => {
 
   it("hides fast-forward-to-upstream when the branch is also ahead (diverged)", () => {
     useRemoteStore.setState({
-      aheadBehind: [{ branch: "feature", ahead: 1, behind: 2, upstream: "origin/feature" }],
+      aheadBehind: new Map([["feature", { ahead: 1, behind: 2 }]]),
     });
     useRepoStore.setState({
-      branches: [
-        { name: "feature", isRemote: false, isHead: false, upstream: "origin/feature", oid: "a", ahead: null, behind: null },
-      ],
+      branches: [{ name: "feature", isRemote: false, isHead: false, upstream: "origin/feature", oid: "a" }],
     });
 
     render(<Sidebar />);
@@ -193,7 +191,7 @@ describe("Sidebar", () => {
     useRepoStore.setState({
       deleteBranch,
       branches: [
-        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "a", ahead: null, behind: null },
+        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "a" },
       ],
     });
 
@@ -217,7 +215,7 @@ describe("Sidebar", () => {
     useRepoStore.setState({
       deleteBranch,
       branches: [
-        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "a", ahead: null, behind: null },
+        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "a" },
       ],
     });
 
@@ -237,7 +235,7 @@ describe("Sidebar", () => {
     useRepoStore.setState({
       checkoutBranch,
       branches: [
-        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "a", ahead: null, behind: null },
+        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "a" },
       ],
     });
 
@@ -257,7 +255,7 @@ describe("Sidebar", () => {
     useRepoStore.setState({
       deleteBranch,
       branches: [
-        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "a", ahead: null, behind: null },
+        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "a" },
       ],
     });
 
@@ -291,7 +289,7 @@ describe("Sidebar", () => {
   it("creates a tag at a branch tip from its row menu", async () => {
     useRepoStore.setState({
       branches: [
-        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "abc123", ahead: null, behind: null },
+        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "abc123" },
       ],
     });
 

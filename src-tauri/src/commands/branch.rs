@@ -1,5 +1,4 @@
 use crate::commands::repo::RepoInfo;
-use crate::remote_ops::AheadBehind;
 use crate::repo_manager::AppState;
 use tauri::State;
 
@@ -11,8 +10,6 @@ pub struct BranchInfo {
     pub is_head: bool,
     pub upstream: Option<String>,
     pub oid: String,
-    pub ahead: Option<usize>,
-    pub behind: Option<usize>,
 }
 
 // Not `async`: every command body below is 100% synchronous git2/fs work with
@@ -153,10 +150,18 @@ pub fn list_fast_forwardable_branches(
         .map_err(|e| e.to_string())
 }
 
+/// Ahead/behind for one branch against its upstream, fetched on demand (e.g.
+/// only for the branch rows currently visible in the sidebar) instead of
+/// eagerly for every local branch on every repo load/focus/push/pull/fetch.
+/// Errors (surfaced to the frontend as a rejected promise) when the branch
+/// has no upstream — callers treat that as "nothing to show" for the row.
 #[tauri::command]
-pub fn get_ahead_behind(state: State<'_, AppState>) -> Result<Vec<AheadBehind>, String> {
+pub fn branch_ahead_behind(
+    name: String,
+    state: State<'_, AppState>,
+) -> Result<(usize, usize), String> {
     state
-        .with_repo(|repo| crate::remote_ops::compute_ahead_behind(repo))
+        .with_repo(|repo| crate::remote_ops::branch_ahead_behind(repo, &name))
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }
