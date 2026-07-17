@@ -2,10 +2,15 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { CommitForm } from "./CommitForm";
 import { useWorkingTreeStore } from "../../stores/workingTreeStore";
 import { useGraphStore } from "../../stores/graphStore";
 import { useRepoStore } from "../../stores/repoStore";
+
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
+
+const mockOpenUrl = vi.mocked(openUrl);
 
 let createCommit: ReturnType<typeof vi.fn<(message: string) => Promise<void>>>;
 let amendCommitMessage: ReturnType<typeof vi.fn<(message: string) => Promise<void>>>;
@@ -76,6 +81,17 @@ describe("CommitForm", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /preview/i }));
     expect(screen.getByText("bold").tagName).toBe("STRONG");
+  });
+
+  it("clicking a link in the markdown preview opens it via the opener plugin instead of navigating the webview", async () => {
+    render(<CommitForm stagedCount={0} />);
+    fireEvent.change(screen.getByPlaceholderText(/description/i), {
+      target: { value: "[link](https://example.com)" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Preview" }));
+    await userEvent.click(screen.getByRole("link", { name: "link" }));
+
+    expect(mockOpenUrl).toHaveBeenCalledWith("https://example.com/");
   });
 
   it("calls onCommitted after a successful commit", async () => {

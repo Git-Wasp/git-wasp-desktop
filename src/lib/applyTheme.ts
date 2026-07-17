@@ -12,6 +12,62 @@ export interface AppliedTheme {
   css?: string;
 }
 
+/**
+ * Strip CSS comments so a comment can't be used to split a dangerous keyword
+ * across tokens (e.g. "@im", a comment, then "port"). Comments carry no visual
+ * meaning, so dropping them entirely is safe — this is not attempting to respect comment
+ * syntax that happens to appear inside a quoted string (a real CSS parser
+ * wouldn't start a comment there either, but our regex can't tell the
+ * difference; accepted as an over-strip risk, not a security gap).
+ */
+function stripCssComments(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+/**
+ * Build a regex fragment matching a single ASCII letter either literally or as
+ * the CSS hex-escape sequence that decodes to it (e.g. `r`, or `\72` / `\072`
+ * with up to a few leading zeros), optionally followed by the single
+ * whitespace character that terminates a short hex escape. Confines
+ * escape-decoding to the specific keywords we scan for (`@import`, `url(`)
+ * rather than decoding the whole stylesheet, so legitimate escaped selectors
+ * elsewhere in the file (e.g. `.hover\:bg-red`) are left untouched.
+ */
+function flexLetter(letter: string): string {
+  const hex = letter.codePointAt(0)!.toString(16);
+  return `(?:${letter}|\\\\0{0,4}${hex}[ \\t\\n\\r\\f]?)`;
+}
+
+function flexKeyword(word: string): string {
+  return word.split("").map(flexLetter).join("");
+}
+
+const IMPORT_RE = new RegExp(`${flexLetter("@")}${flexKeyword("import")}[^;]*;?`, "gi");
+const URL_RE = new RegExp(
+  `${flexKeyword("url")}\\(\\s*['"]?\\s*(?:https?:)?\\/\\/[^'")]*['"]?\\s*\\)`,
+  "gi",
+);
+
+/**
+ * Strip constructs a malicious theme file could use to exfiltrate data or make
+ * arbitrary network requests even under a strict CSP applied to the page itself
+ * (CSS `@import`/`url()` are not gated by the page's `style-src` the same way a
+ * `<script src>` is) — full external URLs in `@import` and `url(...)`. Keeps
+ * `url(data:...)` (inline assets) and same-origin-relative `url()` intact.
+ *
+ * Hardened beyond a literal `@import`/`url(` string match against: case
+ * variation, whitespace/newlines inside `url(...)`, protocol-relative URLs
+ * (`//evil.example`), a CSS comment splitting the keyword mid-token (e.g. "@im",
+ * a comment, then "port"), and CSS unicode-escape obfuscation of the keyword
+ * itself (e.g. `\75rl(`, `\40 \69mport`). A full CSS parser is out of scope;
+ * this is regex hardening against the specific bypass classes above, not a
+ * guarantee against every conceivable obfuscation.
+ */
+export function sanitizeThemeCss(css: string): string {
+  const normalized = stripCssComments(css);
+  return normalized.replace(IMPORT_RE, "").replace(URL_RE, "url()");
+}
+
 function customStyleElement(): HTMLStyleElement {
   let el = document.getElementById(CUSTOM_STYLE_ID) as HTMLStyleElement | null;
   if (!el) {
@@ -38,7 +94,7 @@ export function applyTheme(theme: AppliedTheme): void {
     else root.setAttribute("data-theme", theme.id);
   } else {
     root.removeAttribute("data-theme");
-    customStyleElement().textContent = theme.css ?? "";
+    customStyleElement().textContent = sanitizeThemeCss(theme.css ?? "");
   }
 
   setEditorAppearance(theme.appearance);
