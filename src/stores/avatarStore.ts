@@ -29,6 +29,12 @@ const norm = (email: string) => email.trim().toLowerCase();
 // order = insertion order) — simple and cheap.
 export const AVATAR_CACHE_CAP = 2000;
 
+// Called from both the synchronous "loading" placeholder write (request())
+// and the async resolved-entry write (settle()) — a loading placeholder can
+// in principle be evicted before its settle() call lands if enough newer
+// requests arrive in between; settle() then just re-inserts it as a fresh
+// (newest) entry. Accepted as a benign quirk of plain FIFO with no
+// touch-on-access semantics, not a correctness bug.
 const evictOverflow = (avatars: Map<string, AvatarEntry>): void => {
   if (avatars.size <= AVATAR_CACHE_CAP) return;
   const excess = avatars.size - AVATAR_CACHE_CAP;
