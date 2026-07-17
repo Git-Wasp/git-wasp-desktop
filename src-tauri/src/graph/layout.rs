@@ -1099,6 +1099,54 @@ mod tests {
         );
     }
 
+    /// Task B2 spike gate (docs/superpowers/perf-baseline.md): times the cost
+    /// a single fetch imposes on the *next* viewport request. `cache_key`
+    /// (`refs_fingerprint` + `stash_fingerprint` + HEAD) is recomputed on
+    /// every `compute_layout_cached` call regardless of whether anything
+    /// changed — cheap in isolation, but any actual ref movement (a fetch
+    /// bringing in new/updated remote-tracking branches, exactly what B4's
+    /// watcher would report) invalidates the *whole* cache, forcing a full
+    /// `build_full_layout` rewalk even though the commit DAG itself didn't
+    /// change at all — only refs did. Stands in for "fetch moved many refs"
+    /// by creating 500 new branch refs (cheap, no new commits) after the
+    /// cache is warm. Ignored by default; run with:
+    /// `BENCH_REPO_PATH=/path/to/bench-repo cargo test --release -- --ignored --nocapture bench_`
+    #[test]
+    #[ignore = "perf harness: requires BENCH_REPO_PATH"]
+    fn bench_full_rebuild_after_ref_churn() {
+        let path = std::env::var("BENCH_REPO_PATH").expect("set BENCH_REPO_PATH to the bench repo");
+        let repo = Repository::open(&path).unwrap();
+        let mut cache: Option<GraphCache> = None;
+
+        // Warm the cache once (not timed — this is the "already open" steady state).
+        compute_layout_cached(&repo, &mut cache, 0, 100).unwrap();
+
+        let t_fingerprint = std::time::Instant::now();
+        for _ in 0..100 {
+            std::hint::black_box(cache_key(&repo));
+        }
+        println!(
+            "cache_key (refs_fingerprint + stash_fingerprint + HEAD), 100x: {:?} ({:?}/call)",
+            t_fingerprint.elapsed(),
+            t_fingerprint.elapsed() / 100
+        );
+
+        // Simulate a fetch bringing in many new/updated remote-tracking refs:
+        // 500 new lightweight branches pointing at HEAD, no new commits.
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        for i in 0..500 {
+            repo.branch(&format!("bench/ref-churn-{i}"), &head, false)
+                .unwrap();
+        }
+
+        let t_rebuild = std::time::Instant::now();
+        compute_layout_cached(&repo, &mut cache, 0, 100).unwrap();
+        println!(
+            "graph viewport immediately after 500 new refs (forced full rebuild): {:?}",
+            t_rebuild.elapsed()
+        );
+    }
+
     #[test]
     fn working_tree_summary_is_singular_for_one_change() {
         assert_eq!(working_tree_summary(1), "1 uncommitted change");

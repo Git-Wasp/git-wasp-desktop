@@ -114,3 +114,51 @@ that gets `path`/`name` from the tab's stable `key` (no lock needed) and
 tab's state (e.g. an in-flight fetch), `head_branch` comes back `None`
 instead of blocking, so listing/switching/closing tabs never waits on an
 unrelated tab's slow operation either.
+
+## Task B2 spike gate — per-scroll fingerprint cost vs. full-rebuild-on-fetch cost
+
+Reproduced with two ignored bench tests on the same 10,000-commit / 21-branch
+bench repo used above (`graph::layout::tests::bench_full_rebuild_after_ref_churn`,
+alongside the existing `bench_graph_layout`):
+
+| Scenario | Result |
+|---|---|
+| `cache_key` (`refs_fingerprint` + `stash_fingerprint` + HEAD), isolated, 100x | **108.8µs/call** (21 branches) |
+| Warm-cache viewport re-request, no ref change (from `bench_graph_layout`, for comparison) | 164µs/call |
+| Graph viewport immediately after 500 new branch refs (0 new commits) — forced full rebuild | **83.5ms** |
+
+Two distinct costs, not one:
+
+1. **Per-call fingerprint overhead** — `compute_layout_cached` calls `cache_key`
+   (which calls `refs_fingerprint`, O(refs)) on *every* viewport request, i.e.
+   every scroll tick, even when nothing changed. At 108.8µs/call with 21 refs
+   this is a meaningful fraction of the 164µs/call warm-cache cost above —
+   and it scales with ref count, so a 100+-branch monorepo pays more per tick.
+2. **Full-rebuild cost when refs genuinely change** — any ref movement at all
+   (this test creates 500 new branches pointing at existing commits — no new
+   commits, no DAG change) invalidates the *entire* cached layout, forcing a
+   full `build_full_layout` rewalk: 83.5ms at 10k commits. A fetch typically
+   moves many remote-tracking refs at once, so this is the realistic
+   per-fetch tax, not a rare edge case. `build_full_layout` walks the whole
+   HEAD-reachable history regardless of commit count touched, so this scales
+   with total commit count — extrapolating (roughly linear: revwalk + lane
+   assignment) to the plan's 50k–200k-commit target range suggests **~400ms
+   at 50k, ~1.6s at 200k** for the same "one fetch, zero new commits"
+   scenario. That extrapolation, not the 10k-commit number, is the one that
+   matters for the windowed-layout decision below.
+
+**Decision point** (per the plan): fingerprint caching (stop recomputing
+`cache_key` speculatively on every call; only re-check on an explicit
+invalidation signal — from Task B4's debounced watcher, or directly after a
+fetch/push completes) directly fixes cost #1 and is cheap to implement. It
+does **not** fix cost #2 — a genuine ref change still means a genuine
+rebuild; correctness requires that. Cost #2 only comes down with the more
+invasive fix: bounding the initial walk (lay out only the first N rows,
+extend on demand as the viewport scrolls past the built extent), so a fetch
+that only moves refs doesn't force a full history rewalk when the visible
+window hasn't changed.
+
+**Paused here for review before implementing** — proposed: land fingerprint
+caching first (fixes the always-present per-scroll tax, benefits every repo
+size), re-measure, then decide separately whether the windowed-layout work
+is worth doing now given the 50k–200k extrapolation above, or deferred.
