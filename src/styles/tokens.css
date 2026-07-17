@@ -224,7 +224,11 @@
   /* Interactive surfaces */
   --color-bg-selected: #d6e6fb;
   --color-bg-input:    #ffffff;
-  --color-text-on-warning: #ffffff;
+  /* --color-warning isn't overridden in this block, so it inherits :root's
+     #fd971f — this must match :root's --color-text-on-warning, not use a
+     lighter value, or HeadBadge text loses contrast against the same
+     background colour in the light theme. */
+  --color-text-on-warning: #241a00;
   --color-bg-hover:    #e3e7ec;
   --color-graph-bg: #e7ebf1;
   --color-graph-node-bg: rgba(0, 0, 0, 0.04);
