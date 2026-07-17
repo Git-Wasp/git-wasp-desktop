@@ -236,6 +236,30 @@ mod tests {
         (dir, repo, oid)
     }
 
+    /// Perf harness (Phase 0 of docs/superpowers/perf-baseline.md): times
+    /// `get_commit_detail` on the bench repo's root ("seed") commit, which
+    /// touches every generated file in one commit — the "opening commit
+    /// detail for a large changeset" scenario. Ignored by default; run with:
+    /// `BENCH_REPO_PATH=/path/to/bench-repo cargo test --release -- --ignored --nocapture bench_`
+    #[test]
+    #[ignore = "perf harness: requires BENCH_REPO_PATH"]
+    fn bench_commit_detail_large_changeset() {
+        let path = std::env::var("BENCH_REPO_PATH").expect("set BENCH_REPO_PATH to the bench repo");
+        let repo = Repository::open(&path).unwrap();
+        let mut revwalk = repo.revwalk().unwrap();
+        revwalk.push_head().unwrap();
+        revwalk.set_sorting(git2::Sort::TOPOLOGICAL).unwrap();
+        let root = revwalk.filter_map(|o| o.ok()).last().unwrap();
+
+        let t0 = std::time::Instant::now();
+        let detail = get_commit_detail(&repo, &root.to_string()).unwrap();
+        println!(
+            "get_commit_detail (seed commit, {} files changed): {:?}",
+            detail.changed_files.len(),
+            t0.elapsed()
+        );
+    }
+
     #[test]
     fn get_commit_diff_returns_changed_files() {
         let (_dir, repo, oid) = init_repo_with_file("hello.txt", "hello\n");

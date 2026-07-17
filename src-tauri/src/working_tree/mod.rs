@@ -634,7 +634,10 @@ fn build_hunk_patch(
     kind: DiffKind,
 ) -> anyhow::Result<String> {
     let (hunks, old_side_is_new_file) = match kind {
-        DiffKind::Unstaged => (crate::diff_engine::get_unstaged_diff(repo, path)?.hunks, false),
+        DiffKind::Unstaged => (
+            crate::diff_engine::get_unstaged_diff(repo, path)?.hunks,
+            false,
+        ),
         DiffKind::Staged => {
             let no_head_entry = repo
                 .head()
@@ -1113,6 +1116,50 @@ mod tests {
         let mut index = repo.index().unwrap();
         index.add_path(Path::new(name)).unwrap();
         index.write().unwrap();
+    }
+
+    /// Perf harness (Phase 0 of docs/superpowers/perf-baseline.md): dirties
+    /// every generated file in the bench repo, then times a status scan and
+    /// the current per-file `stage_file` loop (one index write + one full
+    /// status rescan per file) — the "before" number Task A3's batched
+    /// `stage_all` is meant to beat. Ignored by default; run with:
+    /// `BENCH_REPO_PATH=/path/to/bench-repo cargo test --release -- --ignored --nocapture bench_`
+    #[test]
+    #[ignore = "perf harness: requires BENCH_REPO_PATH"]
+    fn bench_stage_all_files() {
+        let path = std::env::var("BENCH_REPO_PATH").expect("set BENCH_REPO_PATH to the bench repo");
+        let repo = Repository::open(&path).unwrap();
+        let workdir = repo.workdir().unwrap().to_path_buf();
+        let src_dir = workdir.join("src");
+        let paths: Vec<String> = fs::read_dir(&src_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| format!("src/{}", e.file_name().to_string_lossy()))
+            .collect();
+        for rel in &paths {
+            let full = workdir.join(rel);
+            let mut content = fs::read_to_string(&full).unwrap();
+            content.push_str("bench touch\n");
+            fs::write(&full, content).unwrap();
+        }
+
+        let t_status = std::time::Instant::now();
+        let status = get_working_tree_status(&repo).unwrap();
+        println!(
+            "get_working_tree_status ({} unstaged): {:?}",
+            status.unstaged.len(),
+            t_status.elapsed()
+        );
+
+        let t_loop = std::time::Instant::now();
+        for rel in &paths {
+            stage_file(&repo, rel).unwrap();
+        }
+        println!(
+            "stage_file loop, {} files, one index-write + one status rescan each: {:?}",
+            paths.len(),
+            t_loop.elapsed()
+        );
     }
 
     #[test]
@@ -2172,4 +2219,3 @@ mod tests {
         );
     }
 }
-

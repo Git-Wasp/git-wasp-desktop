@@ -1061,6 +1061,44 @@ mod tests {
         (dir, repo)
     }
 
+    /// Perf harness (Phase 0 of docs/superpowers/perf-baseline.md): times a
+    /// cold first-paint layout build, a warm viewport fetch after scrolling
+    /// deep into a large history, and a burst of no-op viewport re-requests
+    /// (the per-scroll ref-fingerprint cost `compute_layout_cached` pays on
+    /// every call, ahead of Task B2's caching). Ignored by default; run with:
+    /// `BENCH_REPO_PATH=/path/to/bench-repo cargo test --release -- --ignored --nocapture bench_`
+    #[test]
+    #[ignore = "perf harness: requires BENCH_REPO_PATH"]
+    fn bench_graph_layout() {
+        let path = std::env::var("BENCH_REPO_PATH").expect("set BENCH_REPO_PATH to the bench repo");
+        let repo = Repository::open(&path).unwrap();
+        let mut cache: Option<GraphCache> = None;
+
+        let t0 = std::time::Instant::now();
+        let vp = compute_layout_cached(&repo, &mut cache, 0, 100).unwrap();
+        println!(
+            "graph first paint (cold, rows 0..100 of {}): {:?}",
+            vp.total_count,
+            t0.elapsed()
+        );
+
+        let t1 = std::time::Instant::now();
+        compute_layout_cached(&repo, &mut cache, 5000, 100).unwrap();
+        println!(
+            "graph viewport at row 5000 (warm cache): {:?}",
+            t1.elapsed()
+        );
+
+        let t2 = std::time::Instant::now();
+        for offset in (0..5000).step_by(500) {
+            compute_layout_cached(&repo, &mut cache, offset, 100).unwrap();
+        }
+        println!(
+            "graph 10x viewport re-requests, no ref change (warm cache, scroll simulation): {:?}",
+            t2.elapsed()
+        );
+    }
+
     #[test]
     fn working_tree_summary_is_singular_for_one_change() {
         assert_eq!(working_tree_summary(1), "1 uncommitted change");

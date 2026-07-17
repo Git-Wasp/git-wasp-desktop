@@ -1114,6 +1114,25 @@ mod tests {
         (dir, repo)
     }
 
+    /// Perf harness (Phase 0 of docs/superpowers/perf-baseline.md): opens the
+    /// repo at `BENCH_REPO_PATH` directly (no `RepoManager` needed — the same
+    /// seam a Tauri command uses) and times `list_branches` on it. Ignored by
+    /// default; run with:
+    /// `BENCH_REPO_PATH=/path/to/bench-repo cargo test --release -- --ignored --nocapture bench_`
+    #[test]
+    #[ignore = "perf harness: requires BENCH_REPO_PATH"]
+    fn bench_list_branches() {
+        let path = std::env::var("BENCH_REPO_PATH").expect("set BENCH_REPO_PATH to the bench repo");
+        let repo = Repository::open(&path).unwrap();
+        let start = std::time::Instant::now();
+        let branches = list_branches(&repo).unwrap();
+        println!(
+            "list_branches: {} branches in {:?}",
+            branches.len(),
+            start.elapsed()
+        );
+    }
+
     #[test]
     fn open_valid_repo_succeeds() {
         let (dir, _) = make_git_repo_with_commit();
