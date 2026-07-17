@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import "@testing-library/jest-dom";
@@ -85,6 +86,16 @@ describe("PruneBranchesDialog", () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(mockInvoke).toHaveBeenCalledWith("delete_branch", { name: "bugfix" });
     expect(mockInvoke).not.toHaveBeenCalledWith("delete_branch", { name: "feat/old" });
+  });
+
+  it("Escape closes PruneBranchesDialog without clicking into it first", async () => {
+    routeInvoke([]);
+    const onClose = vi.fn();
+    render(<PruneBranchesDialog onClose={onClose} />);
+    await screen.findByText(/no branches to prune/i);
+
+    await userEvent.keyboard("{Escape}"); // no prior click/focus into the dialog
+    expect(onClose).toHaveBeenCalled();
   });
 
   it("still lists branches when the prune fetch fails (offline)", async () => {

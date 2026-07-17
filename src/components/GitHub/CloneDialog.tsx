@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useGithubStore } from "../../stores/githubStore";
@@ -15,11 +15,16 @@ export function CloneDialog({ host, onClose }: { host: string; onClose: () => vo
   const [destDir, setDestDir] = useState<string | null>(null);
   const [isCloning, setIsCloning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadGithubRepos(host).catch((e) => setError(String(e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host]);
+
+  useEffect(() => {
+    rootRef.current?.focus();
+  }, []);
 
   const filtered = githubRepos.filter((r) =>
     r.fullName.toLowerCase().includes(search.trim().toLowerCase()),
@@ -49,8 +54,16 @@ export function CloneDialog({ host, onClose }: { host: string; onClose: () => vo
 
   return (
     <div
+      ref={rootRef}
       role="dialog"
       aria-label="Clone from GitHub"
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          onClose();
+        }
+      }}
       style={{
         position: "fixed",
         inset: 0,

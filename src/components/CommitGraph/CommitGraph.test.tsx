@@ -249,6 +249,78 @@ describe("CommitGraph columns", () => {
       "hash",
     ]);
   });
+
+  it("cancels a column drag on pointercancel without reordering", () => {
+    const { container } = render(<CommitGraph />);
+    const fireWindow = (type: string, clientX: number, clientY: number) =>
+      act(() => {
+        window.dispatchEvent(new MouseEvent(type, { clientX, clientY, bubbles: true }));
+      });
+
+    void act(() => fireEvent.pointerDown(screen.getByText("Date"), { clientX: 400, clientY: 10 }));
+    fireWindow("pointermove", 440, 10); // past the drag threshold
+    void act(() => fireEvent.pointerEnter(container.querySelector('[data-header="commit"]')!));
+    act(() => {
+      window.dispatchEvent(new Event("pointercancel"));
+    });
+
+    expect(useGraphStore.getState().columnOrder.ledger).toEqual([
+      "commit",
+      "author",
+      "branch",
+      "hash",
+      "date",
+    ]);
+    expect(document.body.classList.contains("dragging-column")).toBe(false);
+  });
+
+  it("cancels a column drag on window blur without reordering", () => {
+    const { container } = render(<CommitGraph />);
+    const fireWindow = (type: string, clientX: number, clientY: number) =>
+      act(() => {
+        window.dispatchEvent(new MouseEvent(type, { clientX, clientY, bubbles: true }));
+      });
+
+    void act(() => fireEvent.pointerDown(screen.getByText("Date"), { clientX: 400, clientY: 10 }));
+    fireWindow("pointermove", 440, 10);
+    void act(() => fireEvent.pointerEnter(container.querySelector('[data-header="commit"]')!));
+    act(() => {
+      window.dispatchEvent(new Event("blur"));
+    });
+
+    expect(useGraphStore.getState().columnOrder.ledger).toEqual([
+      "commit",
+      "author",
+      "branch",
+      "hash",
+      "date",
+    ]);
+    expect(document.body.classList.contains("dragging-column")).toBe(false);
+  });
+
+  it("cancels a column drag on Escape without reordering", () => {
+    const { container } = render(<CommitGraph />);
+    const fireWindow = (type: string, clientX: number, clientY: number) =>
+      act(() => {
+        window.dispatchEvent(new MouseEvent(type, { clientX, clientY, bubbles: true }));
+      });
+
+    void act(() => fireEvent.pointerDown(screen.getByText("Date"), { clientX: 400, clientY: 10 }));
+    fireWindow("pointermove", 440, 10);
+    void act(() => fireEvent.pointerEnter(container.querySelector('[data-header="commit"]')!));
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+
+    expect(useGraphStore.getState().columnOrder.ledger).toEqual([
+      "commit",
+      "author",
+      "branch",
+      "hash",
+      "date",
+    ]);
+    expect(document.body.classList.contains("dragging-column")).toBe(false);
+  });
 });
 
 describe("CommitGraph loading skeleton", () => {

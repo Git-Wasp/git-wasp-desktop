@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Button } from "../ui/Button";
 
 interface MergeConfirmDialogProps {
@@ -40,8 +41,14 @@ export function MergeConfirmDialog({
   onCancel,
   onStartPullRequest,
 }: MergeConfirmDialogProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    rootRef.current?.focus();
+  }, []);
+
   return (
     <div
+      ref={rootRef}
       role="dialog"
       aria-label="Merge branch"
       tabIndex={-1}

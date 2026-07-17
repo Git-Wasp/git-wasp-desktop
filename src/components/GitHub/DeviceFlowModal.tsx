@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useGithubStore } from "../../stores/githubStore";
 import { Button } from "../ui/Button";
@@ -12,6 +12,11 @@ export function DeviceFlowModal({
 }) {
   const { deviceFlowInit, startDeviceFlow, pollDeviceFlow, cancelDeviceFlow } = useGithubStore();
   const [error, setError] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    rootRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     if (!deviceFlowInit) {
@@ -64,8 +69,16 @@ export function DeviceFlowModal({
 
   return (
     <div
+      ref={rootRef}
       role="dialog"
       aria-label="Connect GitHub account"
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          handleCancel();
+        }
+      }}
       style={{
         position: "fixed",
         inset: 0,

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -92,6 +93,14 @@ describe("CloneDialog", () => {
         destPath: "/Users/mike/code/gitclient",
       });
     });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("Escape closes CloneDialog without clicking into it first", async () => {
+    mockInvoke.mockResolvedValueOnce(fakeRepos);
+    const onClose = vi.fn();
+    render(<CloneDialog host="github.com" onClose={onClose} />);
+    await userEvent.keyboard("{Escape}"); // no prior click/focus into the dialog
     expect(onClose).toHaveBeenCalled();
   });
 });

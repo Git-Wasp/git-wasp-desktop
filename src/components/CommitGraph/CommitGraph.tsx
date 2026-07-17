@@ -919,11 +919,29 @@ export function CommitGraph({
       setDragCol(null);
       setDropCol(null);
     };
+    const cancel = () => {
+      dragCandidate.current = null;
+      draggingRef.current = false;
+      dropRef.current = null;
+      document.body.classList.remove("dragging-column");
+      setDragCol(null);
+      setDropCol(null);
+      // no reorder committed — a cancelled drag leaves columnOrder untouched
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && draggingRef.current) cancel();
+    };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("blur", cancel);
+    window.addEventListener("keydown", onKeyDown);
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("blur", cancel);
+      window.removeEventListener("keydown", onKeyDown);
       document.body.classList.remove("dragging-column");
     };
   }, []);
