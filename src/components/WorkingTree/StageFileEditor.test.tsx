@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
-import { StageFileEditor } from "./StageFileEditor";
+import { Decoration } from "@codemirror/view";
+import { ReadOnlyStagePane, StageFileEditor } from "./StageFileEditor";
 import type { StageFileContents } from "../../types/workingTree";
 
 // A pure insertion: the right (working-tree / index) side adds line "b".
@@ -514,6 +515,58 @@ describe("StageFileEditor", () => {
     expect(container.querySelector('[data-testid="head-pane"]')).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Stage whole file" }));
     expect(onStageWholeFile).toHaveBeenCalledWith("bundle.min.js");
+  });
+
+  describe("ReadOnlyStagePane scroll preservation", () => {
+    // A tall doc so the pane can scroll (jsdom doesn't lay out real content
+    // height, but scrollTop is a plain settable property, so this just proves
+    // the rebuild doesn't stomp on it back to 0).
+    const bigContent = (prefix: string) =>
+      Array.from({ length: 400 }, (_, i) => `${prefix}${i}`).join("\n");
+    const lineNumberMapFor = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
+
+    function renderPane(content: string, changedLines: Set<number>) {
+      return render(
+        <ReadOnlyStagePane
+          testId="head-pane"
+          content={content}
+          changedLines={changedLines}
+          stagedLines={new Set()}
+          onToggle={() => {}}
+          decorations={Decoration.none}
+          lineNumberMap={lineNumberMapFor(400)}
+          language={null}
+        />,
+      );
+    }
+
+    it("keeps the scroll position when a line toggle causes new content/decorations to arrive", () => {
+      const { rerender } = renderPane(bigContent("a"), new Set([5]));
+
+      const scroller = screen.getByTestId("head-pane").querySelector(".cm-scroller");
+      expect(scroller).not.toBeNull();
+      scroller!.scrollTop = 4000;
+
+      // A realistic line-toggle: brand-new `content`/`changedLines` (and thus a
+      // brand-new `decorations` set, computed by the parent from fresh rows),
+      // exactly what happens on every stage/unstage click.
+      rerender(
+        <ReadOnlyStagePane
+          testId="head-pane"
+          content={bigContent("b")}
+          changedLines={new Set([6])}
+          stagedLines={new Set()}
+          onToggle={() => {}}
+          decorations={Decoration.none}
+          lineNumberMap={lineNumberMapFor(400)}
+          language={null}
+        />,
+      );
+
+      const newScroller = screen.getByTestId("head-pane").querySelector(".cm-scroller");
+      expect(newScroller).not.toBeNull();
+      expect(newScroller!.scrollTop).toBeGreaterThan(3900); // did not snap back to 0
+    });
   });
 
   describe("discard confirmation", () => {

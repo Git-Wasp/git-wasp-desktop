@@ -267,7 +267,7 @@ function dualNumberGutter(oldMap: (number | null)[], newMap: (number | null)[]):
 }
 
 
-function ReadOnlyStagePane({
+export function ReadOnlyStagePane({
   label,
   content,
   changedLines,
@@ -314,9 +314,20 @@ function ReadOnlyStagePane({
   const wrapCompartment = useRef(new Compartment());
   const wrapRef = useRef(wrap);
   wrapRef.current = wrap;
+  // This effect tears down and rebuilds the whole EditorView on every
+  // dependency change — which includes `content`/`decorations`, freshly
+  // computed on every line toggle — so a fresh view would otherwise reset
+  // scroll to the top on every stage/unstage click. React runs the previous
+  // effect instance's cleanup (which nulls `viewRef.current`) before this
+  // effect's body runs again, so the outgoing scroll position can't be read
+  // from `viewRef` at the top of the new run — it has to be latched by the
+  // cleanup itself, right before `view.destroy()`, into a ref that survives.
+  const lastScrollRef = useRef<{ top: number; left: number } | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
+    const prevScrollTop = lastScrollRef.current?.top ?? 0;
+    const prevScrollLeft = lastScrollRef.current?.left ?? 0;
     const numberGutter = oldLineNumberMap
       ? dualNumberGutter(oldLineNumberMap, lineNumberMap)
       : lineNumbers({
@@ -351,9 +362,12 @@ function ReadOnlyStagePane({
       parent: containerRef.current,
     });
     viewRef.current = view;
+    view.scrollDOM.scrollTop = prevScrollTop;
+    view.scrollDOM.scrollLeft = prevScrollLeft;
     onView?.(view);
     const unregister = registerEditorView(view);
     return () => {
+      lastScrollRef.current = { top: view.scrollDOM.scrollTop, left: view.scrollDOM.scrollLeft };
       unregister();
       view.destroy();
       viewRef.current = null;
