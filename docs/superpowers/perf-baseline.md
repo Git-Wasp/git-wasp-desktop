@@ -260,3 +260,38 @@ one walk per branch a user actually has expanded/visible), not something the
 10k-commit/21-branch bench repo would show meaningfully differently from a
 50k-commit one (this cost scales with *branch* count, which wasn't varied
 across bench runs).
+
+## Task B4 — debounce the file watcher
+
+Also no spike gate (not asked for in the plan). Used `notify-debouncer-full`
+(0.7.0 — the latest *stable* release; a 0.8.0-rc.2 also exists on crates.io
+but is a release candidate, so stuck with 0.7.0 for a production app).
+Resolves against the existing `notify = "8"` with no version conflict.
+
+`file_watcher::start` now goes through `new_debouncer(DEBOUNCE_WINDOW, ...)`
+(`DEBOUNCE_WINDOW` = 250ms, per the plan) instead of a plain
+`recommended_watcher`, so a burst of raw filesystem events — a checkout
+touching thousands of files, a fetch updating many refs — collapses to at
+most one `working-tree-changed` emit per window instead of one per raw
+event. The existing `.gitignore`-based `is_noise` filter is unchanged;
+a new `is_noise_batch` applies the same "suppress only when every event is
+ignored churn" rule across the whole debounced batch rather than one event
+at a time.
+
+The debounce + filtering logic lives in `start_with_notifier`, which takes a
+plain `on_change` closure instead of directly calling `AppHandle::emit` —
+`start` is now a thin wrapper around it. This is what makes the behaviour
+testable without a real Tauri `AppHandle`: two new integration tests build a
+real `Debouncer` against a real temp git repo, perform a burst of real
+filesystem writes, and assert the callback fires exactly once (or zero times,
+for a burst that's pure `.gitignore`-matched churn) after the debounce
+window — alongside four fast, timing-free unit tests for `is_noise_batch`
+itself. Ran the two timing-dependent tests four times back to back with no
+flakes before committing.
+
+This is also what Task B2's `mark_dirty` now effectively hangs off in
+practice: `refresh_working_tree` (called once per `working-tree-changed`
+emit) is the one place that notices *external* changes for the graph cache,
+so coalescing the emit at the source means it's called once per debounce
+window rather than once per raw filesystem event too — a second-order
+benefit of this task on top of B2's own.

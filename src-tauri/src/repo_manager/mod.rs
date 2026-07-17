@@ -680,12 +680,18 @@ impl RepoManager {
     }
 }
 
+/// The debounced file watcher's concrete type (see `file_watcher::start`).
+type FileWatcher = notify_debouncer_full::Debouncer<
+    notify::RecommendedWatcher,
+    notify_debouncer_full::RecommendedCache,
+>;
+
 /// Tauri managed state — wraps RepoManager in Arc so it can be cloned into
 /// the async command handlers without holding a lock across await points.
 /// Also holds the file watcher and credential store for the app's lifetime.
 pub struct AppState {
     pub manager: Arc<RepoManager>,
-    pub watcher: Mutex<Option<notify::RecommendedWatcher>>,
+    pub watcher: Mutex<Option<FileWatcher>>,
     pub credentials: Box<dyn crate::credential_store::CredentialStore>,
 }
 
