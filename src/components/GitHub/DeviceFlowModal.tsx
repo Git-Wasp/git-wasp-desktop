@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useGithubStore } from "../../stores/githubStore";
 import { Button } from "../ui/Button";
+import { isHttpUrl } from "../../lib/safeUrl";
 
 export function DeviceFlowModal({
   host,
@@ -64,7 +65,9 @@ export function DeviceFlowModal({
   };
 
   const handleOpenBrowser = () => {
-    if (deviceFlowInit) openUrl(deviceFlowInit.verificationUri).catch((e: unknown) => setError(String(e)));
+    if (deviceFlowInit && isHttpUrl(deviceFlowInit.verificationUri)) {
+      void openUrl(deviceFlowInit.verificationUri).catch((e: unknown) => setError(String(e)));
+    }
   };
 
   return (

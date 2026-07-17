@@ -1,6 +1,7 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "../ui/Button";
 import { useToastStore } from "../../stores/toastStore";
+import { isHttpUrl } from "../../lib/safeUrl";
 import type { CiStatus, PullRequest } from "../../types/github";
 
 const ciBadge: Record<CiStatus, { label: string; color: string }> = {
@@ -77,11 +78,13 @@ export function PRRow({ pr }: { pr: PullRequest }) {
 
       <Button
         size="sm"
-        onClick={() =>
-          void openUrl(pr.url).catch((e: unknown) =>
-            useToastStore.getState().error(String(e), { title: "Couldn't open pull request" }),
-          )
-        }
+        onClick={() => {
+          if (isHttpUrl(pr.url)) {
+            void openUrl(pr.url).catch((e: unknown) =>
+              useToastStore.getState().error(String(e), { title: "Couldn't open pull request" }),
+            );
+          }
+        }}
         style={{ flexShrink: 0 }}
       >
         Open

@@ -147,4 +147,19 @@ describe("DeviceFlowModal", () => {
     // the modal while polling keeps running in the background.
     expect(useGithubStore.getState().deviceFlowInit).toBeNull();
   });
+
+  it("does not call openUrl for a non-http(s) verificationUri", async () => {
+    const maliciousInit = {
+      ...fakeInit,
+      verificationUri: "file:///etc/passwd",
+    };
+    mockInvoke.mockResolvedValueOnce(maliciousInit);
+
+    render(<DeviceFlowModal host="github.com" onClose={vi.fn()} />);
+
+    const button = await screen.findByRole("button", { name: /open in browser/i });
+    fireEvent.click(button);
+
+    expect(mockOpenUrl).not.toHaveBeenCalled();
+  });
 });
