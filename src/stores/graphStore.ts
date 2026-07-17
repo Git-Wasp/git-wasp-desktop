@@ -234,9 +234,26 @@ const sliceFromCache = (
   return { nodes, totalCount, offset, headRow };
 };
 
-const mergeIntoCache = (cache: Map<number, GraphNode>, viewport: GraphViewport): void => {
+// Cap on the row cache — ~20k rows of cached layout data, generous headroom
+// for the 10k+-commit target, capped so a very long session doesn't grow
+// without bound.
+export const GRAPH_ROW_CACHE_CAP = 20_000;
+
+export const mergeIntoCache = (cache: Map<number, GraphNode>, viewport: GraphViewport): void => {
   for (const node of viewport.nodes) {
     cache.set(node.row, node);
+  }
+  if (cache.size > GRAPH_ROW_CACHE_CAP) {
+    // Evict the oldest-inserted entries first (Map iteration order = insertion
+    // order) — simple and cheap; a scrolling session's most-recently-fetched
+    // rows are the ones worth keeping.
+    const excess = cache.size - GRAPH_ROW_CACHE_CAP;
+    const keys = cache.keys();
+    for (let i = 0; i < excess; i++) {
+      const next = keys.next();
+      if (next.done) break;
+      cache.delete(next.value);
+    }
   }
 };
 

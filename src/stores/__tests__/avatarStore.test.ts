@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { useAvatarStore } from "../avatarStore";
+import { AVATAR_CACHE_CAP, useAvatarStore } from "../avatarStore";
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -71,5 +71,10 @@ describe("avatarStore", () => {
     await flush();
 
     expect(useAvatarStore.getState().avatars.get("x@y.com")?.status).toBe("none");
+  });
+
+  it("caps the avatar map so it doesn't grow unbounded across a long session", () => {
+    for (let i = 0; i < 5000; i++) useAvatarStore.getState().request([`author${i}@example.com`]);
+    expect(useAvatarStore.getState().avatars.size).toBeLessThanOrEqual(AVATAR_CACHE_CAP);
   });
 });

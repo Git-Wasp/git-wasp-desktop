@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { useGraphStore } from "../graphStore";
+import { GRAPH_ROW_CACHE_CAP, mergeIntoCache, useGraphStore } from "../graphStore";
 import { useToastStore } from "../toastStore";
-import type { GraphViewport } from "../../types/graph";
+import type { GraphNode, GraphViewport } from "../../types/graph";
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -318,6 +318,19 @@ describe("graphStore", () => {
     expect(s.scrollToRow).toBeNull();
     expect(s.selection.range.size).toBe(0);
     expect(s.selectedOid).toBeNull();
+  });
+
+  it("caps nodesByRow so it doesn't grow unbounded across a long scrolling session", () => {
+    const cache = new Map<number, GraphNode>();
+    for (let row = 0; row < 50_000; row++) {
+      mergeIntoCache(cache, {
+        nodes: [makeNode(row, `c${row}`)],
+        totalCount: 50_000,
+        offset: row,
+        headRow: null,
+      });
+    }
+    expect(cache.size).toBeLessThanOrEqual(GRAPH_ROW_CACHE_CAP);
   });
 
   it("reset drops a fetch that was already in flight (e.g. the previous repo's)", async () => {
