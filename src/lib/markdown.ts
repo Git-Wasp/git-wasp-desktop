@@ -17,10 +17,12 @@ function escapeHtml(s: string): string {
 }
 
 // Placeholder wrapping links/code while bold/italic run, so their attributes
-// aren't reprocessed. Uses plain text (no control chars) that won't appear in
-// real input.
-const STASH_OPEN = "MD";
-const STASH_CLOSE = "MD";
+// aren't reprocessed. Uses Unicode Private Use Area code points: escapeHtml()
+// can never produce them from real input, and they're vanishingly unlikely to
+// appear in a commit message -- unlike the previous plain-text sentinel, a
+// literal "MD0MD" in the source text can no longer collide with the stash.
+const STASH_OPEN = "\uE000";
+const STASH_CLOSE = "\uE001";
 
 function inline(text: string): string {
   const stashed: string[] = [];
@@ -40,7 +42,9 @@ function inline(text: string): string {
   text = text.replace(/`([^`]+)`/g, (_m, code: string) => stash(`<code>${code}</code>`));
 
   text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  text = text.replace(/_([^_]+)_/g, "<em>$1</em>");
+  // Word-bound so an underscore inside a snake_case identifier (foo_bar_baz)
+  // isn't mistaken for italics.
+  text = text.replace(/(?<![\w_])_([^_\s][^_]*)_(?![\w_])/g, "<em>$1</em>");
   text = text.replace(/\*([^*]+)\*/g, "<em>$1</em>");
 
   return text.replace(

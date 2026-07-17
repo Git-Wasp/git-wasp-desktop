@@ -50,4 +50,15 @@ describe("renderMarkdown", () => {
     expect(renderMarkdown("")).toBe("");
     expect(renderMarkdown("   ")).toBe("");
   });
+
+  it("a literal 'MD0MD' in the source is not corrupted by the stash mechanism", () => {
+    const html = renderMarkdown("see MD0MD in the logs");
+    expect(html).toContain("MD0MD");
+  });
+
+  it("does not italicise an underscore inside a snake_case identifier", () => {
+    const html = renderMarkdown("call foo_bar_baz()");
+    expect(html).toContain("foo_bar_baz");
+    expect(html).not.toContain("<em>");
+  });
 });
