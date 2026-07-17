@@ -232,6 +232,14 @@ describe("sanitizeThemeCss", () => {
     expect(out).toContain("url()");
   });
 
+  it("does not throw when a hex escape spells a codepoint outside the valid Unicode range", () => {
+    expect(() => sanitizeThemeCss("a{background:url(\\FFFFFFhttps://evil.example/x)}")).not.toThrow();
+  });
+
+  it("does not throw when a hex escape spells a surrogate codepoint", () => {
+    expect(() => sanitizeThemeCss("a{background:url(\\D800https://evil.example/x)}")).not.toThrow();
+  });
+
   it("does not exhibit exponential-time behaviour on a long backslash run before an unterminated quote", () => {
     const payload = `a{background:url("${"\\\\".repeat(5000)}`;
     const start = performance.now();

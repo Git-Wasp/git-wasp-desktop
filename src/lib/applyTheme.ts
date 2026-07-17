@@ -54,12 +54,19 @@ const WHITESPACE_RE = /\s/;
  * would resolve it to, before we check it against `DANGEROUS_SCHEME_RE`. A
  * literal-string scheme check alone can't see through this — that's exactly
  * how a bypass was found before this decoding step was added.
+ *
+ * A hex escape can spell a codepoint outside the valid Unicode range (e.g.
+ * `\FFFFFF`) or a surrogate codepoint — `String.fromCodePoint` throws a
+ * `RangeError` for both, which would otherwise crash theme application on a
+ * malformed theme file. Per the CSS spec's own handling of invalid escapes,
+ * substitute U+FFFD (replacement character) instead of throwing.
  */
 function decodeCssEscapes(text: string): string {
   return text.replace(/\\([0-9a-f]{1,6})[ \t\n\r\f]?|\\(.)/gi, (_match, hex: string, literal: string) => {
     if (hex !== undefined) {
       const code = parseInt(hex, 16);
-      return Number.isNaN(code) ? "" : String.fromCodePoint(code);
+      const isValidCodePoint = !Number.isNaN(code) && code <= 0x10ffff && (code < 0xd800 || code > 0xdfff);
+      return isValidCodePoint ? String.fromCodePoint(code) : "�";
     }
     return literal;
   });
