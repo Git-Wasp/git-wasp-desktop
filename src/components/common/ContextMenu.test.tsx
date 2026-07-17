@@ -101,6 +101,30 @@ describe("ContextMenu", () => {
     expect(menu.style.top).toBe("84px");
   });
 
+  it("keys items by position, not label, so items sharing a label don't collide", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    render(
+      <ContextMenu
+        x={0}
+        y={0}
+        items={[
+          { label: "Copy", onSelect: vi.fn() },
+          { label: "Copy", onSelect: vi.fn(), danger: true },
+        ]}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const duplicateKeyWarning = errorSpy.mock.calls.some((args) =>
+      args.some((a) => typeof a === "string" && a.includes("same key")),
+    );
+    expect(duplicateKeyWarning).toBe(false);
+    expect(screen.getAllByText("Copy")).toHaveLength(2);
+
+    errorSpy.mockRestore();
+  });
+
   it("right-aligns its right edge at x when align='right'", () => {
     render(
       <ContextMenu

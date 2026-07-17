@@ -210,6 +210,24 @@ describe("githubStore", () => {
     expect(useGithubStore.getState().connections["github.com"].state).toBe("connected");
   });
 
+  it("pollDeviceFlow clears isAuthenticating when the poll itself fails, not just completes", async () => {
+    useGithubStore.setState({
+      deviceFlowInit: {
+        userCode: "WXYZ-1234",
+        verificationUri: "https://github.com/login/device",
+        deviceCode: "device-abc",
+        expiresIn: 900,
+        interval: 5,
+      },
+      isAuthenticating: true,
+    });
+    mockInvoke.mockRejectedValueOnce(new Error("network"));
+
+    await expect(useGithubStore.getState().pollDeviceFlow("github.com")).rejects.toThrow("network");
+
+    expect(useGithubStore.getState().isAuthenticating).toBe(false);
+  });
+
   it("logout calls github_logout and marks the host disconnected", async () => {
     useGithubStore.setState({ connections: { "github.com": connected } });
     mockInvoke.mockResolvedValueOnce(undefined);

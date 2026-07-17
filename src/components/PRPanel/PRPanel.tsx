@@ -15,6 +15,7 @@ export function PRPanel() {
 
   useEffect(() => {
     if (remoteInfo) {
+      setError(null); // clear a stale error from the previous host/repo before reloading
       loadPullRequests(remoteInfo.host).catch((e) => setError(String(e)));
     }
     // Re-keyed on activeRepoPath too, not just remoteInfo.host — two open

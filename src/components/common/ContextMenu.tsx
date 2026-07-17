@@ -75,7 +75,8 @@ export function ContextMenu({ x, y, items, onClose, align = "left" }: ContextMen
           />
         ) : (
           <div
-            key={item.label}
+            key={`item-${i}`} // was item.label — index is stable per render, unlike a
+            // label two menu items could legitimately share
             role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"}
             aria-checked={item.checked === undefined ? undefined : item.checked}
             onClick={() => {

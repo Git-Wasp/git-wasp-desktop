@@ -85,10 +85,10 @@ export const useThemeStore = create<ThemeStore>((set, get) => ({
   setActiveTheme: async (id: string) => {
     const theme = findTheme(get().themes, id);
     const applied = toApplied(theme);
-    applyTheme(applied);
+    await invoke("set_active_theme", { id: theme.id }); // persist first
+    applyTheme(applied); // only apply once persistence succeeded
     cacheActiveTheme(applied);
     set({ activeThemeId: theme.id });
-    await invoke("set_active_theme", { id: theme.id });
   },
 
   importTheme: async () => {

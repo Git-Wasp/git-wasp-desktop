@@ -102,6 +102,31 @@ describe("PRPanel", () => {
     expect(screen.getByText(/no github remote/i)).toBeTruthy();
   });
 
+  it("clears a previous error banner once a later load succeeds", async () => {
+    useRepoStore.setState({
+      currentRepo: { name: "repoA", path: "/repoA", headBranch: "main" },
+      activeRepoPath: "/repoA",
+      recentRepos: [],
+      branches: [],
+    });
+    mockInvoke.mockRejectedValueOnce(new Error("rate limited"));
+    const { rerender } = render(<PRPanel />);
+    expect(await screen.findByText(/rate limited/i)).toBeInTheDocument();
+
+    // Switch to a different repo on the same host — a fresh load should clear
+    // the stale error banner from the previous repo, even on success.
+    mockInvoke.mockResolvedValueOnce([]);
+    useRepoStore.setState({
+      currentRepo: { name: "repoB", path: "/repoB", headBranch: "main" },
+      activeRepoPath: "/repoB",
+      recentRepos: [],
+      branches: [],
+    });
+    rerender(<PRPanel />);
+
+    await waitFor(() => expect(screen.queryByText(/rate limited/i)).not.toBeInTheDocument());
+  });
+
   it("reloads pull requests when the active repo path changes, even with the same remote host", async () => {
     useRepoStore.setState({
       currentRepo: { name: "repoA", path: "/repoA", headBranch: "main" },
