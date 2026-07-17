@@ -223,4 +223,21 @@ describe("sanitizeThemeCss", () => {
     const css = 'a{background:url("./foo.png")}';
     expect(sanitizeThemeCss(css)).toBe(css);
   });
+
+  it("neutralizes a url() whose unterminated string ends in a backslash-escaped quote", () => {
+    // The trailing \" is an escaped quote, not a real closing quote — the
+    // string (and thus the url() argument) never actually closes.
+    const out = sanitizeThemeCss('a{background:url("https://evil.example/x\\"');
+    expect(out).not.toContain("evil.example");
+    expect(out).toContain("url()");
+  });
+
+  it("does not exhibit exponential-time behaviour on a long backslash run before an unterminated quote", () => {
+    const payload = `a{background:url("${"\\\\".repeat(5000)}`;
+    const start = performance.now();
+    const out = sanitizeThemeCss(payload);
+    const elapsed = performance.now() - start;
+    expect(elapsed).toBeLessThan(200);
+    expect(out).toContain("url()");
+  });
 });

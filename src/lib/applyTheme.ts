@@ -43,20 +43,9 @@ function flexKeyword(word: string): string {
 }
 
 const IMPORT_RE = new RegExp(`${flexLetter("@")}${flexKeyword("import")}[^;]*;?`, "gi");
-// Quoted and unquoted arguments are two distinct alternatives (not one
-// pattern with an optional quote) so a quote character can never be
-// silently reinterpreted as ordinary content when its matching close is
-// missing — see `stripUnterminatedUrlStrings` below for why that distinction
-// matters.
-const URL_ARGS_RE = new RegExp(
-  `${flexKeyword("url")}\\(\\s*(?:(['"])((?:\\\\[\\s\\S]|(?!\\1)[\\s\\S])*?)\\1|([^'"()\\s][^()]*?))\\s*\\)`,
-  "gi",
-);
-const URL_UNTERMINATED_STRING_RE = new RegExp(
-  `${flexKeyword("url")}\\(\\s*(['"])(?:(?!\\1)[\\s\\S])*$`,
-  "gi",
-);
+const URL_OPEN_RE = new RegExp(`${flexKeyword("url")}\\(`, "gi");
 const DANGEROUS_SCHEME_RE = /^(?:https?:)?\/\//i;
+const WHITESPACE_RE = /\s/;
 
 /**
  * Decode CSS escape sequences (hex, e.g. `\0068` → `h`, and identity escapes,
@@ -77,36 +66,75 @@ function decodeCssEscapes(text: string): string {
 }
 
 /**
- * Replace `url(...)` calls whose argument resolves (after decoding any CSS
- * escapes within it) to an external scheme with a neutered `url()`. Decoding
- * is scoped strictly to the captured argument span — never the whole
- * stylesheet — so legitimate escaped selectors elsewhere (e.g.
- * `.hover\:bg-red`) are left untouched. Keeps `url(data:...)` (inline assets)
- * and same-origin-relative `url()` intact.
+ * Scans forward from `start` (the index immediately after "url(") for the
+ * argument's extent, handling both quoted and unquoted forms. Returns the
+ * raw (undecoded) argument text and the index just past the closing ")", or
+ * `null` if the argument runs off the end of the string without a clean
+ * close — an unterminated quoted string (no matching quote before EOF) or
+ * trailing garbage between a closing quote and ")". The caller treats a
+ * `null` result as unsafe and drops the rest of the stylesheet from `start`
+ * onward, rather than guessing at where a malformed construct "really" ends.
+ *
+ * A hand-written linear scan, not a backtracking regex: a backtracking
+ * pattern expressive enough to tell an escaped quote (`\"`, which does NOT
+ * terminate the string) apart from a real closing quote is exactly the
+ * shape that suffers catastrophic backtracking on a long run of backslashes
+ * before an unterminated string — this scanner is O(n) with no ambiguity to
+ * backtrack over.
  */
-function sanitizeUrlFunctions(css: string): string {
-  return css.replace(
-    URL_ARGS_RE,
-    (match: string, _quote: string, quotedArg: string | undefined, unquotedArg: string | undefined) => {
-      const decoded = decodeCssEscapes(quotedArg ?? unquotedArg ?? "").trim();
-      return DANGEROUS_SCHEME_RE.test(decoded) ? "url()" : match;
-    },
-  );
+function scanUrlArgument(css: string, start: number): { arg: string; end: number } | null {
+  let i = start;
+  while (i < css.length && WHITESPACE_RE.test(css[i])) i++;
+  const quote = css[i] === '"' || css[i] === "'" ? css[i] : null;
+  if (quote) {
+    const argStart = i + 1;
+    i = argStart;
+    while (i < css.length && css[i] !== quote) {
+      i += css[i] === "\\" ? 2 : 1;
+    }
+    if (i >= css.length) return null; // no closing quote before EOF
+    const arg = css.slice(argStart, i);
+    i++; // skip the closing quote
+    while (i < css.length && WHITESPACE_RE.test(css[i])) i++;
+    if (css[i] !== ")") return null; // trailing garbage before the close
+    return { arg, end: i + 1 };
+  }
+  const argStart = i;
+  while (i < css.length && css[i] !== ")" && css[i] !== "(") i++;
+  if (css[i] !== ")") return null;
+  return { arg: css.slice(argStart, i).trimEnd(), end: i + 1 };
 }
 
 /**
- * Fail-closed fallback for a `url(` whose quoted argument never finds a
- * matching closing quote anywhere in the rest of the stylesheet (a theme
- * file can simply omit it). `URL_ARGS_RE` requires the quote to close
- * properly — deliberately, so a missing close can't fall back to treating
- * the quote character itself as ordinary unquoted content, which previously
- * let an unterminated `url("https://evil.example/x)` slip through
- * completely unexamined. Rather than assume a browser's own malformed-CSS
- * recovery makes such a construct inert, treat everything from that `url(`
- * onward as unsafe and drop it.
+ * Replace `url(...)` calls whose argument resolves (after decoding any CSS
+ * escapes within it) to an external scheme with a neutered `url()`. Decoding
+ * is scoped strictly to each call's own argument — never the whole
+ * stylesheet — so legitimate escaped selectors elsewhere (e.g.
+ * `.hover\:bg-red`) are left untouched. Keeps `url(data:...)` (inline assets)
+ * and same-origin-relative `url()` intact. A `url(` whose argument can't be
+ * cleanly resolved (an unterminated quoted string, most notably) is treated
+ * as unsafe: everything from that `url(` to the end of the stylesheet is
+ * dropped, rather than assuming a browser's own malformed-CSS recovery makes
+ * it inert.
  */
-function stripUnterminatedUrlStrings(css: string): string {
-  return css.replace(URL_UNTERMINATED_STRING_RE, "url()");
+function sanitizeUrlFunctions(css: string): string {
+  let result = "";
+  let cursor = 0;
+  URL_OPEN_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = URL_OPEN_RE.exec(css))) {
+    const argStart = m.index + m[0].length;
+    const scanned = scanUrlArgument(css, argStart);
+    if (!scanned) {
+      return result + css.slice(cursor, m.index) + "url()";
+    }
+    const decoded = decodeCssEscapes(scanned.arg).trim();
+    const replacement = DANGEROUS_SCHEME_RE.test(decoded) ? "url()" : css.slice(m.index, scanned.end);
+    result += css.slice(cursor, m.index) + replacement;
+    cursor = scanned.end;
+    URL_OPEN_RE.lastIndex = scanned.end;
+  }
+  return result + css.slice(cursor);
 }
 
 /**
@@ -123,13 +151,15 @@ function stripUnterminatedUrlStrings(css: string): string {
  * (e.g. `\75rl(`, `\40 \69mport`), CSS unicode-escape obfuscation of the
  * URL's own scheme/value (e.g. `url(\0068ttps://evil.example)`), and an
  * unterminated quoted argument used to smuggle a scheme past the argument
- * matcher entirely. A full CSS parser is out of scope; this is regex
- * hardening against the specific bypass classes above, not a guarantee
- * against every conceivable obfuscation.
+ * matcher entirely. A full CSS parser is out of scope; this is targeted
+ * hardening (regex for keyword/comment handling, a linear hand-written scan
+ * for `url()` argument extraction — see `scanUrlArgument`) against the
+ * specific bypass classes above, not a guarantee against every conceivable
+ * obfuscation.
  */
 export function sanitizeThemeCss(css: string): string {
   const normalized = stripCssComments(css);
-  return stripUnterminatedUrlStrings(sanitizeUrlFunctions(normalized.replace(IMPORT_RE, "")));
+  return sanitizeUrlFunctions(normalized.replace(IMPORT_RE, ""));
 }
 
 function customStyleElement(): HTMLStyleElement {
