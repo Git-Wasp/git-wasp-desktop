@@ -2,7 +2,8 @@ mod layout;
 
 pub(crate) use layout::diag_log;
 pub use layout::{
-    compute_layout_cached, find_commit_row, search_cache, set_change_count, GraphCache,
+    compute_layout_cached, ensure_full_layout, find_commit_row, mark_dirty, search_cache,
+    set_change_count, GraphCache,
 };
 
 use serde::{Deserialize, Serialize};

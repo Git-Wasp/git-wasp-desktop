@@ -28,10 +28,12 @@ pub(crate) fn diag_log(line: &str) {
 /// working-tree refresh feeds from a status scan it already did.
 pub struct GraphCache {
     key: CacheKey,
-    /// All commits, newest-first; `row` equals the index. No working-tree node.
-    /// Each node's `edges` holds only its *own* topology events (primary
-    /// continuation, merge, branch, stash) — O(1) per node. "Other lane passes
-    /// straight through this row" edges are *not* stored here; see `lane_spans`.
+    /// All laid-out commits so far, newest-first; `row` equals the index. No
+    /// working-tree node. Each node's `edges` holds only its *own* topology
+    /// events (primary continuation, merge, branch, stash) — O(1) per node.
+    /// "Other lane passes straight through this row" edges are *not* stored
+    /// here; see `lane_spans`. May cover only a prefix of the full history —
+    /// see `truncated`.
     nodes: Vec<GraphNode>,
     /// Compact record of every lane's "occupied but not the row's own commit"
     /// runs, replacing what used to be a `GraphEdge::Straight` stored on every
@@ -46,6 +48,28 @@ pub struct GraphCache {
     /// HEAD's dot wherever it sits (other branches may be ahead of HEAD, so HEAD
     /// is often not the topmost row).
     head_row: Option<usize>,
+    /// Whether `key` needs re-verifying against the repo's current HEAD/refs
+    /// before this cache can be trusted. `compute_layout_cached` no longer
+    /// checks on every call (that cost — `refs_fingerprint`'s O(refs) scan —
+    /// was paid on every scroll tick even when nothing had changed); instead
+    /// this is set by [`mark_dirty`], called from the repo-mutation choke
+    /// points in `repo_manager` and from the working-tree-changed refresh
+    /// path, so a genuine change is never missed while ordinary scrolling
+    /// (the overwhelming majority of calls) skips the check entirely.
+    needs_recheck: bool,
+    /// Whether `nodes` covers only a prefix of the full HEAD-reachable
+    /// history (capped by `INITIAL_WALK_CAP` or a prior extension) rather
+    /// than all of it. When true, a viewport request reaching past `nodes`
+    /// triggers `compute_layout_cached` to extend the walk further.
+    truncated: bool,
+    /// The true total commit count (including history beyond `nodes` when
+    /// `truncated`), so `GraphViewport.total_count` — and the frontend's
+    /// virtualised scroll height derived from it — stays correct even before
+    /// the whole history has been laid out. Cheap to obtain (see
+    /// `count_reachable_commits`) relative to laying commits out, so it's
+    /// computed once per genuine rebuild and carried across extends rather
+    /// than recomputed on every one.
+    total_commits: usize,
 }
 
 /// A lane's contiguous "occupied by a commit that isn't this row's own" run —
@@ -65,7 +89,7 @@ struct LaneSpan {
     end_row: usize,
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 struct CacheKey {
     head: Option<Oid>,
     refs_fingerprint: u64,
@@ -120,17 +144,31 @@ fn refs_fingerprint(repo: &Repository) -> u64 {
     acc
 }
 
-/// Lay out the entire HEAD-reachable history. Expensive (one full revwalk + lane
-/// assignment); only called on a cache miss. Returns the laid-out nodes (with
-/// pass-through edges already compacted out — see [`compact_pass_through_edges`])
-/// plus the `LaneSpan`s that replace them.
-fn build_full_layout(repo: &Repository) -> anyhow::Result<(Vec<GraphNode>, Vec<LaneSpan>)> {
+/// Lay out up to `limit` commits of the HEAD-reachable history (topological +
+/// time order, newest first). Expensive (a revwalk + lane assignment over
+/// however many commits `limit` allows); only called on a cache miss or an
+/// extend. Returns the laid-out nodes (with pass-through edges already
+/// compacted out — see [`compact_pass_through_edges`]), the `LaneSpan`s that
+/// replace them, and whether the walk was cut off by `limit` (i.e. there may
+/// be more history beyond what's returned) rather than reaching the true end.
+///
+/// Truncating to a prefix doesn't change lane assignment for the rows that
+/// are included: `assign_lanes` (like `head_reachable_set`) is a single
+/// forward pass whose decision at each row depends only on state accumulated
+/// from *earlier* rows, never on rows further down — so laying out the first
+/// N commits here produces exactly the same nodes for those N rows as laying
+/// out the whole history and slicing to the same range would.
+fn build_full_layout(
+    repo: &Repository,
+    limit: usize,
+) -> anyhow::Result<(Vec<GraphNode>, Vec<LaneSpan>, bool)> {
     let started = Instant::now();
     let head_id = repo.head().ok().and_then(|h| h.target());
     let label_map = build_label_map(repo);
 
     let walk_started = Instant::now();
-    let commits = walk_commits(repo, usize::MAX)?;
+    let commits = walk_commits(repo, limit)?;
+    let truncated = commits.len() == limit;
     let walk_ms = walk_started.elapsed().as_millis();
 
     let reachable = head_reachable_set(&commits, head_id);
@@ -147,10 +185,11 @@ fn build_full_layout(repo: &Repository) -> anyhow::Result<(Vec<GraphNode>, Vec<L
         repo,
         &commits,
         &nodes,
+        truncated,
         walk_ms,
         started.elapsed().as_millis(),
     );
-    Ok((nodes, lane_spans))
+    Ok((nodes, lane_spans, truncated))
 }
 
 /// Strips "another lane passes straight through this row" edges out of
@@ -237,6 +276,7 @@ fn log_full_build(
     repo: &Repository,
     commits: &[CommitRaw],
     nodes: &[GraphNode],
+    capped: bool,
     walk_ms: u128,
     total_ms: u128,
 ) {
@@ -257,7 +297,7 @@ fn log_full_build(
         .unwrap_or_else(|| "none".into());
 
     diag_log(&format!(
-        "FULL BUILD commits={} roots={roots} max_lane={max_lane} shallow={is_shallow} \
+        "FULL BUILD commits={} roots={roots} max_lane={max_lane} capped={capped} shallow={is_shallow} \
          grafts={has_grafts} replace_refs={replace_refs} head={head} walk_ms={walk_ms} total_ms={total_ms}",
         commits.len(),
     ));
@@ -276,6 +316,7 @@ fn log_full_build(
 fn slice_viewport(
     full: &[GraphNode],
     lane_spans: &[LaneSpan],
+    total_commits: usize,
     change_count: u32,
     head_pos: Option<usize>,
     offset: usize,
@@ -287,7 +328,11 @@ fn slice_viewport(
     // anchor to, hence the non-empty check.
     let change_count = if full.is_empty() { 0 } else { change_count };
     let wip_offset = if change_count > 0 { 1 } else { 0 };
-    let total_count = full.len() + wip_offset;
+    // `total_commits` (not `full.len()`): `full` may only cover a laid-out
+    // prefix of the whole history when the layout is still truncated (see
+    // `GraphCache::truncated`) — the frontend's scroll height must reflect
+    // the true total either way.
+    let total_count = total_commits + wip_offset;
     // HEAD's absolute graph row, shifted down by the working-tree node when present.
     let head_row = head_pos.map(|p| p + wip_offset);
 
@@ -345,12 +390,14 @@ pub fn compute_layout(
     offset: usize,
     limit: usize,
 ) -> anyhow::Result<GraphViewport> {
-    let (full, lane_spans) = build_full_layout(repo)?;
+    let (full, lane_spans, _truncated) = build_full_layout(repo, usize::MAX)?;
     let change_count = changed_file_count(repo);
     let head_pos = full.iter().position(|n| n.is_head);
+    let total_commits = full.len();
     Ok(slice_viewport(
         &full,
         &lane_spans,
+        total_commits,
         change_count,
         head_pos,
         offset,
@@ -358,9 +405,73 @@ pub fn compute_layout(
     ))
 }
 
-/// Layout that reuses a cached full-history layout while HEAD and refs are
-/// unchanged, rebuilding only when they move. This is the path the viewport
-/// command uses, so repeated scroll fetches are cheap.
+/// Cap on the initial (and each subsequent) layout walk: large enough that
+/// ordinary browsing never notices it, small enough that opening a 50k–200k
+/// commit monorepo doesn't pay for laying out history nobody's scrolled to
+/// yet. Threaded through as an explicit parameter (see
+/// `compute_layout_cached_with_cap`) rather than baked into the walk logic,
+/// so tests can exercise the extend-on-scroll path with a small cap and a
+/// small fixture repo instead of needing thousands of commits.
+const INITIAL_WALK_CAP: usize = 5000;
+
+/// Cheap count of the total commits reachable from any branch/tag tip or HEAD
+/// (the same seed set [`walk_commits`] uses) — no per-commit metadata
+/// fetched, no lanes assigned, just a revwalk over OIDs. Lets
+/// `GraphViewport.total_count` (and the frontend's virtualised scroll height
+/// derived from it) stay accurate even while the layout itself is still
+/// [`GraphCache::truncated`] and hasn't laid out that many rows yet.
+fn count_reachable_commits(repo: &Repository) -> usize {
+    let Ok(mut walk) = repo.revwalk() else {
+        return 0;
+    };
+    if !seed_revwalk(repo, &mut walk) {
+        return 0;
+    }
+    walk.count()
+}
+
+/// Build (or extend) the cache at `limit`, preserving `change_count` (and,
+/// while still truncated, `total_commits`) across an extend rather than
+/// paying for a fresh working-tree scan or a fresh full-history count when
+/// nothing that would change either has happened — only the walk got deeper.
+/// `preserved_change_count` / `preserved_total_commits` should be `None` for
+/// a genuine rebuild (cache-key mismatch or cold start), `Some` for a
+/// same-key extend.
+fn rebuild_layout(
+    repo: &Repository,
+    key: CacheKey,
+    limit: usize,
+    preserved_change_count: Option<u32>,
+    preserved_total_commits: Option<usize>,
+) -> anyhow::Result<GraphCache> {
+    let (nodes, lane_spans, truncated) = build_full_layout(repo, limit)?;
+    let total_commits = if truncated {
+        preserved_total_commits.unwrap_or_else(|| count_reachable_commits(repo))
+    } else {
+        nodes.len()
+    };
+    let change_count = preserved_change_count.unwrap_or_else(|| changed_file_count(repo));
+    let head_row = nodes.iter().position(|n| n.is_head);
+    Ok(GraphCache {
+        key,
+        nodes,
+        lane_spans,
+        change_count,
+        head_row,
+        needs_recheck: false,
+        truncated,
+        total_commits,
+    })
+}
+
+/// Layout that reuses a cached (possibly partial) history layout, rebuilding
+/// only when [`mark_dirty`] flagged the cache for re-verification and HEAD or
+/// refs actually moved, and extending the walk only when a viewport request
+/// reaches past what's been laid out so far. This is the path the viewport
+/// command uses, so repeated scroll fetches are cheap — cheaper still than
+/// before: a plain scroll (no intervening mutation, no intervening
+/// working-tree-changed refresh) skips the `cache_key` check entirely rather
+/// than recomputing it on every call.
 ///
 /// The working-tree dirty-file count is cached alongside the layout rather
 /// than rescanned here — see [`set_change_count`].
@@ -370,30 +481,104 @@ pub fn compute_layout_cached(
     offset: usize,
     limit: usize,
 ) -> anyhow::Result<GraphViewport> {
-    let key = cache_key(repo);
-    let stale = cache.as_ref().map(|c| c.key != key).unwrap_or(true);
-    if stale {
-        let (nodes, lane_spans) = build_full_layout(repo)?;
-        let change_count = changed_file_count(repo);
-        let head_row = nodes.iter().position(|n| n.is_head);
-        *cache = Some(GraphCache {
-            key,
-            nodes,
-            lane_spans,
-            change_count,
-            head_row,
-        });
+    compute_layout_cached_with_cap(repo, cache, offset, limit, INITIAL_WALK_CAP)
+}
+
+/// [`compute_layout_cached`] with the initial-walk cap as an explicit
+/// parameter instead of the `INITIAL_WALK_CAP` constant — lets tests exercise
+/// the extend-on-scroll path with a tiny cap and a small fixture repo instead
+/// of needing thousands of real commits.
+fn compute_layout_cached_with_cap(
+    repo: &Repository,
+    cache: &mut Option<GraphCache>,
+    offset: usize,
+    limit: usize,
+    cap: usize,
+) -> anyhow::Result<GraphViewport> {
+    let needs_recheck = cache.as_ref().map(|c| c.needs_recheck).unwrap_or(true);
+    if needs_recheck {
+        let key = cache_key(repo);
+        let stale = cache.as_ref().map(|c| c.key != key).unwrap_or(true);
+        if stale {
+            let walk_limit = cap.max(offset.saturating_add(limit));
+            *cache = Some(rebuild_layout(repo, key, walk_limit, None, None)?);
+        } else if let Some(c) = cache.as_mut() {
+            c.needs_recheck = false;
+        }
     }
-    // `stale` guarantees the cache is populated here.
+
+    // The cache may still only cover a prefix of the full history — extend
+    // the walk (same cache key: nothing about *what* to build changed, only
+    // how much of it) when the requested viewport reaches past it.
+    if let Some(c) = cache.as_ref() {
+        if c.truncated && offset.saturating_add(limit) > c.nodes.len() {
+            let new_limit = offset
+                .saturating_add(limit)
+                .max(c.nodes.len().saturating_mul(2))
+                .max(cap);
+            let key = c.key.clone();
+            let preserved_change_count = Some(c.change_count);
+            let preserved_total_commits = Some(c.total_commits);
+            *cache = Some(rebuild_layout(
+                repo,
+                key,
+                new_limit,
+                preserved_change_count,
+                preserved_total_commits,
+            )?);
+        }
+    }
+
     let cached = cache.as_ref().expect("cache populated above");
     Ok(slice_viewport(
         &cached.nodes,
         &cached.lane_spans,
+        cached.total_commits,
         cached.change_count,
         cached.head_row,
         offset,
         limit,
     ))
+}
+
+/// Ensure the cache covers the *entire* history (not just a prefix), for the
+/// deliberate, infrequent commands that need to find a specific commit
+/// regardless of where it sits — [`find_commit_row`]/[`search_cache`] — as
+/// opposed to [`compute_layout_cached`]'s ordinary scroll-driven viewport
+/// fetches, which only ever need enough of the layout to cover what's
+/// on-screen. Paying a full walk for these two commands matches their
+/// pre-windowing behaviour exactly (they already always searched the whole
+/// history); only scrolling gets the windowing optimisation.
+pub fn ensure_full_layout(repo: &Repository, cache: &mut Option<GraphCache>) -> anyhow::Result<()> {
+    compute_layout_cached(repo, cache, 0, 1)?;
+    if let Some(c) = cache {
+        if c.truncated {
+            let key = c.key.clone();
+            let preserved_change_count = Some(c.change_count);
+            *cache = Some(rebuild_layout(
+                repo,
+                key,
+                usize::MAX,
+                preserved_change_count,
+                None,
+            )?);
+        }
+    }
+    Ok(())
+}
+
+/// Flag the cache for re-verification against the repo's current HEAD/refs on
+/// the next [`compute_layout_cached`] call, instead of every call paying for
+/// that check. Called from `repo_manager`'s repo-mutation choke points
+/// (`with_repo_mut`/`with_repo_and_operation_mut` — any operation that could
+/// have moved HEAD or a ref) and from the working-tree-changed refresh path
+/// (which can also reflect an *external* change, e.g. a `git` command run
+/// outside the app). A no-op without a cache yet — the next
+/// `compute_layout_cached` call builds one fresh regardless.
+pub fn mark_dirty(cache: &mut Option<GraphCache>) {
+    if let Some(c) = cache {
+        c.needs_recheck = true;
+    }
 }
 
 /// Update the cached dirty-file count from an *already-computed* count, without
@@ -1099,17 +1284,19 @@ mod tests {
         );
     }
 
-    /// Task B2 spike gate (docs/superpowers/perf-baseline.md): times the cost
-    /// a single fetch imposes on the *next* viewport request. `cache_key`
-    /// (`refs_fingerprint` + `stash_fingerprint` + HEAD) is recomputed on
-    /// every `compute_layout_cached` call regardless of whether anything
-    /// changed — cheap in isolation, but any actual ref movement (a fetch
-    /// bringing in new/updated remote-tracking branches, exactly what B4's
-    /// watcher would report) invalidates the *whole* cache, forcing a full
-    /// `build_full_layout` rewalk even though the commit DAG itself didn't
-    /// change at all — only refs did. Stands in for "fetch moved many refs"
-    /// by creating 500 new branch refs (cheap, no new commits) after the
-    /// cache is warm. Ignored by default; run with:
+    /// Task B2 spike gate + after-numbers (docs/superpowers/perf-baseline.md):
+    /// times (a) the raw `cache_key` cost in isolation, (b) repeated
+    /// `compute_layout_cached` calls with no intervening `mark_dirty` — the
+    /// now-skipped-entirely case, i.e. ordinary scrolling — and (c) the cost
+    /// a fetch-like ref churn imposes on the *next* viewport request once
+    /// something (in production, `with_repo_mut`/`refresh_working_tree`)
+    /// actually calls `mark_dirty`. (b) is the fix for the always-present
+    /// per-scroll tax; (c) is the genuine-change cost that fingerprint
+    /// caching deliberately does *not* remove (correctness requires a real
+    /// rebuild) — that's what the windowed initial walk targets instead.
+    /// Stands in for "fetch moved many refs" by creating 500 new branch refs
+    /// (cheap, no new commits) after the cache is warm. Ignored by default;
+    /// run with:
     /// `BENCH_REPO_PATH=/path/to/bench-repo cargo test --release -- --ignored --nocapture bench_`
     #[test]
     #[ignore = "perf harness: requires BENCH_REPO_PATH"]
@@ -1131,20 +1318,52 @@ mod tests {
             t_fingerprint.elapsed() / 100
         );
 
-        // Simulate a fetch bringing in many new/updated remote-tracking refs:
-        // 500 new lightweight branches pointing at HEAD, no new commits.
-        let head = repo.head().unwrap().peel_to_commit().unwrap();
-        for i in 0..500 {
-            repo.branch(&format!("bench/ref-churn-{i}"), &head, false)
-                .unwrap();
+        // After B2: repeated viewport re-requests with nothing marking the
+        // cache dirty in between (ordinary scrolling) skip the cache_key
+        // check entirely.
+        let t_scroll = std::time::Instant::now();
+        for offset in (0..5000).step_by(500) {
+            compute_layout_cached(&repo, &mut cache, offset, 100).unwrap();
         }
+        println!(
+            "graph 10x viewport re-requests, no mark_dirty (post-B2 scroll simulation): {:?} ({:?}/call)",
+            t_scroll.elapsed(),
+            t_scroll.elapsed() / 10
+        );
+
+        // Simulate a fetch bringing in many new/updated remote-tracking refs:
+        // 500 new lightweight branches pointing at HEAD, no new commits. In
+        // production `with_repo_mut`/`refresh_working_tree` would call
+        // `mark_dirty` right after this; here it's explicit.
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        // Unique per run (nanos suffix) so re-running this bench against the
+        // same on-disk repo doesn't collide with a previous run's branches.
+        let run_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let branch_names: Vec<String> = (0..500)
+            .map(|i| format!("bench/ref-churn-{run_id}-{i}"))
+            .collect();
+        for name in &branch_names {
+            repo.branch(name, &head, false).unwrap();
+        }
+        mark_dirty(&mut cache);
 
         let t_rebuild = std::time::Instant::now();
         compute_layout_cached(&repo, &mut cache, 0, 100).unwrap();
         println!(
-            "graph viewport immediately after 500 new refs (forced full rebuild): {:?}",
+            "graph viewport immediately after 500 new refs + mark_dirty (forced full rebuild): {:?}",
             t_rebuild.elapsed()
         );
+
+        // Clean up so re-running this bench doesn't leave the bench repo's
+        // branch count creeping upward run after run.
+        for name in &branch_names {
+            if let Ok(mut b) = repo.find_branch(name, git2::BranchType::Local) {
+                let _ = b.delete();
+            }
+        }
     }
 
     #[test]
@@ -1278,7 +1497,7 @@ mod tests {
             .find_commit(make_commit(&repo, "match one", &[]))
             .unwrap();
         make_commit(&repo, "match two", &[&c1]);
-        let (nodes, _lane_spans) = build_full_layout(&repo).unwrap();
+        let (nodes, _lane_spans, _truncated) = build_full_layout(&repo, usize::MAX).unwrap();
 
         // Clean tree: newest-first, so "match two" (row 0) precedes "match one".
         let clean = search_nodes(&nodes, 0, "match");
@@ -1294,7 +1513,7 @@ mod tests {
         let (dir, mut repo, _head) = repo_with_two_commits();
         // Check out the root commit so the stash's base ("first") has a newer
         // commit ("second") sitting above it — this exercises the pass-through.
-        let first = build_full_layout(&repo)
+        let first = build_full_layout(&repo, usize::MAX)
             .unwrap()
             .0
             .into_iter()
@@ -1347,7 +1566,7 @@ mod tests {
     fn find_commit_row_accounts_for_an_injected_stash() {
         let (dir, mut repo, _head) = repo_with_two_commits();
         // Row of the root commit before stashing.
-        let root = build_full_layout(&repo)
+        let root = build_full_layout(&repo, usize::MAX)
             .unwrap()
             .0
             .iter()
@@ -1361,7 +1580,12 @@ mod tests {
         std::fs::write(dir.path().join("f.txt"), "dirty\n").unwrap();
         crate::stash::stash_save(&mut repo, Some("WIP")).unwrap();
         // The stash sits above its base (HEAD), which is above the root, so the
-        // root shifts down by one. Refresh the cache (stash fingerprint changed).
+        // root shifts down by one. In production this mutation would have gone
+        // through `with_repo_mut`, which calls `mark_dirty` automatically —
+        // here (a bare git2 mutation with no RepoManager involved) the test
+        // does it explicitly, so the next call re-verifies the (now-changed)
+        // stash fingerprint instead of trusting the stale cache.
+        mark_dirty(&mut cache);
         compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
         let after = find_commit_row(&cache, &root);
         assert_eq!(after, before.map(|r| r + 1));
@@ -1790,7 +2014,10 @@ mod tests {
         );
 
         let mut cache = None;
-        compute_layout_cached(&repo, &mut cache, 0, 1).unwrap();
+        // Request enough rows that this scenario (lane-span compaction across
+        // the whole history) isn't cut short by the windowed initial walk —
+        // that's a separate concern from what this test is pinning.
+        compute_layout_cached(&repo, &mut cache, 0, ROWS + 3).unwrap();
         let cache = cache.unwrap();
 
         // Sanity: the layout really does span all these rows (root + side +
@@ -1974,11 +2201,41 @@ mod tests {
         let again = compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
         assert_eq!(again.nodes[0].oid, cached.nodes[0].oid);
 
-        // A new commit moves HEAD → the cache key changes → rebuild.
+        // A new commit moves HEAD → the cache key changes → rebuild, once
+        // told to re-verify. In production this would happen through
+        // `with_repo_mut`, which calls `mark_dirty` after any mutation; here
+        // (no RepoManager) the test does it explicitly.
         let head = repo.head().unwrap().peel_to_commit().unwrap();
         make_commit(&repo, "c3", &[&head]);
+        mark_dirty(&mut cache);
         let after = compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
         assert_eq!(after.total_count, 3);
+        assert_eq!(after.nodes[0].summary, "c3");
+    }
+
+    #[test]
+    fn cached_layout_ignores_a_ref_change_until_marked_dirty() {
+        let (_dir, repo) = init_repo();
+        make_commit(&repo, "c1", &[]);
+
+        let mut cache = None;
+        compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+
+        // A new commit moves HEAD, but nothing told the cache to re-check —
+        // this is the whole point of the fingerprint-caching optimisation:
+        // `compute_layout_cached` trusts the cache instead of recomputing
+        // `cache_key` (an O(refs) scan) on every call, including ones where
+        // nothing changed (the overwhelming majority — plain scrolling).
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        make_commit(&repo, "c3", &[&head]);
+        let still_stale = compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+        assert_eq!(still_stale.total_count, 1);
+
+        // Marking dirty (what `with_repo_mut` does automatically in
+        // production after any mutation) makes the next call pick it up.
+        mark_dirty(&mut cache);
+        let after = compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
+        assert_eq!(after.total_count, 2);
         assert_eq!(after.nodes[0].summary, "c3");
     }
 
@@ -1997,12 +2254,125 @@ mod tests {
         // Create a branch at HEAD without moving HEAD — only refs change.
         let head = repo.head().unwrap().peel_to_commit().unwrap();
         repo.branch("feature", &head, false).unwrap();
+        mark_dirty(&mut cache);
 
         let after = compute_layout_cached(&repo, &mut cache, 0, 10).unwrap();
         assert!(after.nodes[0]
             .branch_labels
             .iter()
             .any(|l| l.name == "feature"));
+    }
+
+    /// Build `count` commits (newest last, i.e. `c0` is the root) and return
+    /// them all — a linear history long enough to exercise a small test-only
+    /// cap (see `TEST_CAP`) without needing thousands of real commits.
+    fn make_linear_history(repo: &Repository, count: usize) -> Vec<git2::Oid> {
+        let mut oids = Vec::with_capacity(count);
+        let mut parent_oid = make_commit(repo, "c0", &[]);
+        oids.push(parent_oid);
+        for i in 1..count {
+            let parent = repo.find_commit(parent_oid).unwrap();
+            parent_oid = make_commit(repo, &format!("c{i}"), &[&parent]);
+            oids.push(parent_oid);
+        }
+        oids
+    }
+
+    /// Small stand-in for `INITIAL_WALK_CAP` (5000 in production) so these
+    /// tests can exercise the extend-on-scroll path with a handful of commits.
+    const TEST_CAP: usize = 5;
+
+    #[test]
+    fn initial_layout_is_capped_and_reports_the_true_total_count() {
+        let (_dir, repo) = init_repo();
+        make_linear_history(&repo, 10);
+
+        let mut cache = None;
+        let viewport = compute_layout_cached_with_cap(&repo, &mut cache, 0, 1, TEST_CAP).unwrap();
+
+        let c = cache.as_ref().unwrap();
+        assert!(c.truncated, "expected the initial walk to be capped");
+        assert_eq!(c.nodes.len(), TEST_CAP);
+        // The scroll height must reflect the *true* history size even though
+        // only a prefix has been laid out.
+        assert_eq!(viewport.total_count, 10);
+    }
+
+    #[test]
+    fn a_viewport_past_the_cap_extends_the_walk_and_returns_correct_rows() {
+        let (_dir, repo) = init_repo();
+        make_linear_history(&repo, 30);
+
+        let mut cache = None;
+        compute_layout_cached_with_cap(&repo, &mut cache, 0, 1, TEST_CAP).unwrap();
+        assert!(cache.as_ref().unwrap().truncated);
+
+        // A request reaching past the capped prefix (but still well short of
+        // the true 30-commit end) must extend and return the same rows the
+        // uncached (full-history) reference would, and remains truncated —
+        // there's genuinely more history below.
+        let viewport = compute_layout_cached_with_cap(&repo, &mut cache, 7, 2, TEST_CAP).unwrap();
+        let reference = compute_layout(&repo, 7, 2).unwrap();
+        assert_eq!(
+            viewport
+                .nodes
+                .iter()
+                .map(|n| n.oid.clone())
+                .collect::<Vec<_>>(),
+            reference
+                .nodes
+                .iter()
+                .map(|n| n.oid.clone())
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(viewport.total_count, reference.total_count);
+        assert!(cache.as_ref().unwrap().truncated);
+
+        // Reaching all the way to (and past) the true end flips `truncated`
+        // to false. The request must ask for more than actually exist so the
+        // walk comes back short of `limit` — that's the unambiguous "nothing
+        // left" signal; asking for exactly the true count is indistinguishable
+        // from "capped at exactly that size" and is conservatively left
+        // truncated (self-corrects on the next, larger request).
+        compute_layout_cached_with_cap(&repo, &mut cache, 29, 5, TEST_CAP).unwrap();
+        assert!(!cache.as_ref().unwrap().truncated);
+    }
+
+    #[test]
+    fn extending_preserves_the_cached_change_count_without_rescanning() {
+        let (dir, repo) = init_repo();
+        make_linear_history(&repo, 10);
+
+        let mut cache = None;
+        compute_layout_cached_with_cap(&repo, &mut cache, 0, 1, TEST_CAP).unwrap();
+        std::fs::write(dir.path().join("new.txt"), "hi").unwrap();
+        set_change_count(&mut cache, 1);
+        assert_eq!(cache.as_ref().unwrap().change_count, 1);
+
+        // Extending past the cap must not clobber the explicitly-set count
+        // with a fresh (and here, stale-relative-to-disk) rescan.
+        compute_layout_cached_with_cap(&repo, &mut cache, 7, 2, TEST_CAP).unwrap();
+        assert_eq!(cache.as_ref().unwrap().change_count, 1);
+    }
+
+    #[test]
+    fn extending_preserves_total_count_without_rewalking_for_it() {
+        let (_dir, repo) = init_repo();
+        make_linear_history(&repo, 20);
+
+        let mut cache = None;
+        let first = compute_layout_cached_with_cap(&repo, &mut cache, 0, 1, TEST_CAP).unwrap();
+        assert_eq!(first.total_count, 20);
+        assert_eq!(cache.as_ref().unwrap().nodes.len(), TEST_CAP);
+
+        // Reaching past the cap (5) but well short of the true end (20)
+        // triggers an extend that's itself still truncated — total_count
+        // must stay the true 20, not the (smaller) count now laid out.
+        let partial = compute_layout_cached_with_cap(&repo, &mut cache, 6, 1, TEST_CAP).unwrap();
+        assert_eq!(partial.total_count, 20);
+        let c = cache.as_ref().unwrap();
+        assert!(c.truncated);
+        assert!(c.nodes.len() > TEST_CAP && c.nodes.len() < 20);
     }
 
     #[test]

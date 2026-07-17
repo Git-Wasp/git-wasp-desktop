@@ -41,7 +41,10 @@ pub fn get_graph_viewport(
 pub fn find_commit_row(oid: String, state: State<'_, AppState>) -> Result<Option<usize>, String> {
     state
         .with_repo_graph_cache(|repo, cache| -> anyhow::Result<Option<usize>> {
-            crate::graph::compute_layout_cached(repo, cache, 0, 1)?;
+            // Unlike get_graph_viewport's scroll-driven fetches, this needs the
+            // *whole* history laid out — the target commit could be anywhere —
+            // so it ensures a full (not windowed) layout before searching.
+            crate::graph::ensure_full_layout(repo, cache)?;
             Ok(crate::graph::find_commit_row(cache, &oid))
         })
         .map_err(|e| e.to_string())?
@@ -59,8 +62,9 @@ pub fn search_graph(query: String, state: State<'_, AppState>) -> Result<Vec<Sea
     }
     state
         .with_repo_graph_cache(|repo, cache| -> anyhow::Result<Vec<SearchHit>> {
-            // Ensure the layout cache is current (cheap when unchanged), then search it.
-            crate::graph::compute_layout_cached(repo, cache, 0, 1)?;
+            // Search covers the whole history, not just what's been scrolled
+            // to, so ensure a full (not windowed) layout first.
+            crate::graph::ensure_full_layout(repo, cache)?;
             Ok(crate::graph::search_cache(cache, &query))
         })
         .map_err(|e| e.to_string())?

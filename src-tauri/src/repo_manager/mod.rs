@@ -212,9 +212,18 @@ impl RepoManager {
             .lock()
             .map_err(|_| anyhow::anyhow!("repo state lock poisoned"))?;
         let RepoState {
-            repo, operation, ..
+            repo,
+            operation,
+            graph_cache,
+            ..
         } = &mut *guard;
-        f(repo, operation)
+        let result = f(repo, operation);
+        // Conservative: any `&mut Repository` access here could have moved
+        // HEAD or a ref (multi-step merge/rebase steps route through this),
+        // so flag the graph cache for re-verification regardless of whether
+        // `f` reports success — see `crate::graph::mark_dirty`.
+        crate::graph::mark_dirty(graph_cache);
+        result
     }
 
     /// Snapshot the open tabs (in order) + active into config and persist, so
@@ -346,7 +355,11 @@ impl RepoManager {
         let mut guard = state
             .lock()
             .map_err(|_| anyhow::anyhow!("repo state lock poisoned"))?;
-        Ok(f(&mut guard.repo))
+        let result = f(&mut guard.repo);
+        // Conservative: any `&mut Repository` access could have moved HEAD or
+        // a ref — see `crate::graph::mark_dirty`.
+        crate::graph::mark_dirty(&mut guard.graph_cache);
+        Ok(result)
     }
 
     /// Run `f` against the active repo and its (mutable) graph-layout cache. The
@@ -374,10 +387,17 @@ impl RepoManager {
     /// pair of calls (`get_working_tree_status` + a separate count scan), halving
     /// the `repo.statuses()` work the poll/watcher/focus refresh does — the hot
     /// path on a large monorepo where `git status` dominates.
+    ///
+    /// Also flags the graph cache for re-verification (`mark_dirty`): this is
+    /// the path the file watcher's "something changed" event drives, so it's
+    /// the one place that needs to notice a change made *outside* the app
+    /// (e.g. a `git` command run in a terminal) — `with_repo_mut` only covers
+    /// changes made through this app's own commands.
     pub fn refresh_working_tree(&self) -> anyhow::Result<crate::working_tree::WorkingTreeStatus> {
         self.with_repo_graph_cache(|repo, cache| {
             let status = crate::working_tree::get_working_tree_status(repo)?;
             crate::graph::set_change_count(cache, status.distinct_change_count());
+            crate::graph::mark_dirty(cache);
             Ok(status)
         })?
     }
@@ -1145,6 +1165,45 @@ mod tests {
             drop(tree);
         }
         (dir, repo)
+    }
+
+    /// Task B2: `with_repo_mut` must flag the graph cache dirty after any
+    /// mutation, so a checkout/commit/merge made through this app's own
+    /// commands is never missed by `compute_layout_cached`'s "only re-verify
+    /// when told to" optimisation (see `crate::graph::mark_dirty`) — this is
+    /// the integration point layout.rs's own cache-behaviour tests can't
+    /// cover, since they don't go through `RepoManager` at all.
+    #[test]
+    fn with_repo_mut_marks_the_graph_cache_dirty_so_a_commit_is_noticed() {
+        let (dir, _) = make_git_repo_with_commit();
+        let manager = RepoManager::new();
+        manager.open(dir.path().to_str().unwrap()).unwrap();
+
+        let before = manager
+            .with_repo_graph_cache(|repo, cache| {
+                crate::graph::compute_layout_cached(repo, cache, 0, 10)
+            })
+            .unwrap()
+            .unwrap();
+        assert_eq!(before.total_count, 1);
+
+        manager
+            .with_repo_mut(|repo| {
+                let sig = Signature::now("Test", "test@test.com").unwrap();
+                let head = repo.head().unwrap().peel_to_commit().unwrap();
+                let tree = head.tree().unwrap();
+                repo.commit(Some("HEAD"), &sig, &sig, "second", &tree, &[&head])
+                    .unwrap();
+            })
+            .unwrap();
+
+        let after = manager
+            .with_repo_graph_cache(|repo, cache| {
+                crate::graph::compute_layout_cached(repo, cache, 0, 10)
+            })
+            .unwrap()
+            .unwrap();
+        assert_eq!(after.total_count, 2);
     }
 
     /// Task B1 spike gate (docs/superpowers/perf-baseline.md): reproduces the

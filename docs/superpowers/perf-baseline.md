@@ -158,7 +158,60 @@ extend on demand as the viewport scrolls past the built extent), so a fetch
 that only moves refs doesn't force a full history rewalk when the visible
 window hasn't changed.
 
-**Paused here for review before implementing** — proposed: land fingerprint
-caching first (fixes the always-present per-scroll tax, benefits every repo
-size), re-measure, then decide separately whether the windowed-layout work
-is worth doing now given the 50k–200k extrapolation above, or deferred.
+**Decision:** user chose to implement both fingerprint caching and windowed
+layout together rather than deferring the latter.
+
+**Implemented:**
+
+- *Fingerprint caching.* `GraphCache` gained `needs_recheck: bool`.
+  `compute_layout_cached` only calls `cache_key` when `needs_recheck` is set —
+  set by a new `mark_dirty()`, called from `with_repo_mut` and
+  `with_repo_and_operation_mut` (every mutating repo operation in the app
+  routes through one of these two, so this is a conservative, can't-miss-it
+  hook: any `&mut Repository` access flags the cache regardless of whether it
+  actually moved a ref) and from `refresh_working_tree` (the file-watcher-
+  driven refresh path — the one place that also needs to notice a change made
+  *outside* the app, e.g. a `git` command in a terminal). Ordinary scrolling —
+  the overwhelming majority of calls — now skips the `cache_key` check
+  entirely instead of recomputing it every time.
+- *Windowed layout.* `build_full_layout` takes an explicit `limit` and reports
+  whether the walk was cut off (`truncated`). `compute_layout_cached` builds
+  at most `INITIAL_WALK_CAP` (5000) rows initially, and extends (re-walks at a
+  larger limit — doubling, or as far as the request needs, whichever is
+  larger) only when a viewport request reaches past what's been laid out.
+  `GraphViewport.total_count` stays accurate regardless, via a cheap
+  count-only revwalk (`count_reachable_commits`) computed once per genuine
+  rebuild and carried across extends. `find_commit_row`/`search_graph` (which
+  need to find a commit *anywhere*, not just on-screen) call a new
+  `ensure_full_layout` that forces a full walk first, so their behaviour is
+  byte-for-byte unchanged — only `get_graph_viewport`'s scroll-driven fetches
+  get windowed.
+
+**After, measured on the same 10,000-commit / 21-branch bench repo:**
+
+| Scenario | Before | After |
+|---|---|---|
+| Warm-cache viewport re-request, no intervening `mark_dirty` (ordinary scrolling) | 164µs/call | **~19µs/call** (~8-9x) |
+| First graph paint (cold, rows 0-100 of 10,002) | 183.1ms | **160.1ms** (~13%) |
+| Graph viewport immediately after 500 new branch refs + `mark_dirty` (forced rebuild) | 83.5ms | **~115-121ms** (see caveat below) |
+
+**Important caveat — the rebuild-after-fetch number got slightly *worse*, not
+better, at this bench repo's size, and it's worth understanding why rather
+than glossing over it.** The windowed *build* itself is bounded (good — it
+stops scaling with total repo size past the cap), but reporting an accurate
+`total_count` isn't optional (the frontend's virtualised scroll height
+depends on it, and changing that contract risks the canvas
+renderer/virtualisation CLAUDE.md says not to touch) — so every genuine
+rebuild still pays for a full history walk, just a cheaper count-only one
+instead of the expensive full-layout one. At 10,000 commits with a 5,000-row
+cap (the cap is *half* the repo), that count-only walk (measured in isolation
+across several cap sizes: 40-75ms, dominating the total regardless of cap)
+isn't yet small relative to the old full-layout cost it replaced, so the
+total comes out slightly higher than before. The structural win — build cost
+bounded at `INITIAL_WALK_CAP` regardless of repo size — should still pay off
+at the plan's actual 50k–200k-commit target, where the cap is a much smaller
+fraction of the total and a count-only walk is consistently cheaper than a
+full lane-assignment walk over the same commits; a real bench repo at that
+scale (not generated here — see "Bench repo" above on why) would be needed to
+confirm the crossover point rather than extrapolate it. Worth flagging to the
+user as a follow-up rather than claiming a clean win on this specific number.
