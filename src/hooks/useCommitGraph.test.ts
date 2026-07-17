@@ -45,7 +45,8 @@ describe("useCommitGraph", () => {
     // GRAPH_PAD_LEFT + lane 0 * laneWidth + laneWidth / 2 — with a 24px
     // fallback this is 22; with the old 20px fallback it would be 20.
     const expectedX = GRAPH_PAD_LEFT + 0 * 24 + 24 / 2;
-    expect(arc.mock.calls[0][0]).toBeCloseTo(expectedX);
+    expect(arc).toHaveBeenCalled();
+    expect(arc.mock.calls[0]![0]).toBeCloseTo(expectedX);
   });
 
   it("resolves CSS custom properties once per theme/density change, not once per draw", () => {
@@ -124,12 +125,13 @@ describe("useCommitGraph", () => {
     renderHook(() => useCommitGraph(canvasRef, viewport, selection, 200, null, false, 34, 5));
 
     const changeRegistrations = () => mql.addEventListener.mock.calls.filter(([type]) => type === "change");
-    const [, firstHandler] = changeRegistrations()[0];
+    expect(changeRegistrations().length).toBeGreaterThan(0);
+    const [, firstHandler] = changeRegistrations()[0]!;
     firstHandler(); // first DPR change, e.g. 1x -> 2x
 
     // A fresh "change" listener must have been registered for the next transition.
     expect(changeRegistrations().length).toBeGreaterThan(1);
-    const [, secondHandler] = changeRegistrations()[changeRegistrations().length - 1];
+    const [, secondHandler] = changeRegistrations()[changeRegistrations().length - 1]!;
 
     const getContextSpy = vi.spyOn(canvasRef.current, "getContext");
     secondHandler(); // second DPR change, e.g. 2x -> 3x — must still redraw

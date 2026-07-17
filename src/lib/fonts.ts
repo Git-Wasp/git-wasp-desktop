@@ -50,8 +50,9 @@ export interface FontPrefs {
 }
 
 export const DEFAULT_FONT_PREFS: FontPrefs = {
-  uiFontId: UI_FONTS[0].id,
-  monoFontId: MONO_FONTS[0].id,
+  // Non-empty literal arrays declared above — index 0 always exists.
+  uiFontId: UI_FONTS[0]!.id,
+  monoFontId: MONO_FONTS[0]!.id,
   sizeId: "default",
 };
 
@@ -61,13 +62,13 @@ const byId = <T extends { id: string }>(list: T[], id: string, fallback: T): T =
   list.find((o) => o.id === id) ?? fallback;
 
 export function uiFont(prefs: FontPrefs): FontOption {
-  return byId(UI_FONTS, prefs.uiFontId, UI_FONTS[0]);
+  return byId(UI_FONTS, prefs.uiFontId, UI_FONTS[0]!);
 }
 export function monoFont(prefs: FontPrefs): FontOption {
-  return byId(MONO_FONTS, prefs.monoFontId, MONO_FONTS[0]);
+  return byId(MONO_FONTS, prefs.monoFontId, MONO_FONTS[0]!);
 }
 export function uiSize(prefs: FontPrefs): SizeOption {
-  return byId(UI_SIZES, prefs.sizeId, UI_SIZES[1]);
+  return byId(UI_SIZES, prefs.sizeId, UI_SIZES[1]!);
 }
 
 export function loadFontPrefs(): FontPrefs {

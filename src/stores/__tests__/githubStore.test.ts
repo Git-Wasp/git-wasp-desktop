@@ -27,7 +27,8 @@ describe("githubStore", () => {
     await useGithubStore.getState().init();
 
     expect(mockInvoke).toHaveBeenCalledWith("github_connection_status", { host: "github.com" });
-    expect(useGithubStore.getState().connections["github.com"].state).toBe("connected");
+    // init() awaited above always populates this key.
+    expect(useGithubStore.getState().connections["github.com"]!.state).toBe("connected");
     expect(useGithubStore.getState().remoteInfo).toBeNull();
   });
 
@@ -47,11 +48,12 @@ describe("githubStore", () => {
   it("checkConnection stores the validated status, and reports a failure as 'error'", async () => {
     mockInvoke.mockResolvedValueOnce({ state: "expired", login: null, message: null });
     await useGithubStore.getState().checkConnection("github.com");
-    expect(useGithubStore.getState().connections["github.com"].state).toBe("expired");
+    // checkConnection() awaited above always populates this key.
+    expect(useGithubStore.getState().connections["github.com"]!.state).toBe("expired");
 
     mockInvoke.mockRejectedValueOnce(new Error("network down"));
     await useGithubStore.getState().checkConnection("github.com");
-    const conn = useGithubStore.getState().connections["github.com"];
+    const conn = useGithubStore.getState().connections["github.com"]!;
     expect(conn.state).toBe("error");
     expect(conn.message).toContain("network down");
   });
@@ -207,7 +209,8 @@ describe("githubStore", () => {
     expect(result.done).toBe(true);
     expect(useGithubStore.getState().deviceFlowInit).toBeNull();
     expect(useGithubStore.getState().isAuthenticating).toBe(false);
-    expect(useGithubStore.getState().connections["github.com"].state).toBe("connected");
+    // pollDeviceFlow() awaited above always populates this key on success.
+    expect(useGithubStore.getState().connections["github.com"]!.state).toBe("connected");
   });
 
   it("pollDeviceFlow clears isAuthenticating when the poll itself fails, not just completes", async () => {
@@ -235,7 +238,8 @@ describe("githubStore", () => {
     await useGithubStore.getState().logout("github.com");
 
     expect(mockInvoke).toHaveBeenCalledWith("github_logout", { host: "github.com" });
-    expect(useGithubStore.getState().connections["github.com"].state).toBe("disconnected");
+    // setState above seeded this key, and logout() only updates it in place.
+    expect(useGithubStore.getState().connections["github.com"]!.state).toBe("disconnected");
   });
 
   it("loadPullRequests populates pullRequests", async () => {

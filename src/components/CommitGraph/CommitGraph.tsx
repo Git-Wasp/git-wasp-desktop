@@ -866,7 +866,8 @@ export function CommitGraph({
     const laneWidth =
       parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--graph-lane-width")) ||
       24;
-    const x = GRAPH_PAD_LEFT + nodes[idx].lane * laneWidth + laneWidth / 2;
+    // idx >= 0 here (the < 0 case returned above), so this index is in range.
+    const x = GRAPH_PAD_LEFT + nodes[idx]!.lane * laneWidth + laneWidth / 2;
     const y = (offset + idx) * rowHeight + rowHeight / 2;
     return { x, y };
     // graphThemeTick isn't read in the body above — it's a pure recompute

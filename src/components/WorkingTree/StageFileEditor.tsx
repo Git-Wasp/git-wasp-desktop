@@ -222,9 +222,12 @@ interface LineDecoration {
 function buildLineDecorations(content: string, entries: LineDecoration[]): DecorationSet {
   if (entries.length === 0) return Decoration.none;
   const starts = lineStartOffsets(content);
+  // Every caller derives `entries` and `content` from the same `rows`/
+  // `hunkModel` array with lineNo = (that array's index) + 1, so lineNo is
+  // always within [1, starts.length].
   const ranges = [...entries]
     .sort((a, b) => a.lineNo - b.lineNo)
-    .map((e) => Decoration.line({ class: e.className }).range(starts[e.lineNo - 1]));
+    .map((e) => Decoration.line({ class: e.className }).range(starts[e.lineNo - 1]!));
   return Decoration.set(ranges);
 }
 
@@ -261,7 +264,9 @@ function dualNumberGutter(oldMap: (number | null)[], newMap: (number | null)[]):
     class: "cm-dual-gutter",
     lineMarker(view, line) {
       const n = view.state.doc.lineAt(line.from).number;
-      return new DualLineNumberMarker(label(oldMap[n - 1]), label(newMap[n - 1]));
+      // n is a 1-based CodeMirror line number for a doc built from the same
+      // hunkModel that produced oldMap/newMap, so n - 1 is always in range.
+      return new DualLineNumberMarker(label(oldMap[n - 1]!), label(newMap[n - 1]!));
     },
   });
 }

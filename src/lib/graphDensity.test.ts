@@ -16,7 +16,8 @@ describe("graphDensity", () => {
   it("orders presets from tallest to shortest row", () => {
     const heights = DENSITY_ORDER.map((d) => GRAPH_DENSITY[d].rowHeight);
     expect(heights).toEqual([...heights].sort((a, b) => b - a));
-    expect(heights[0]).toBeGreaterThan(heights[heights.length - 1]);
+    // heights.length === DENSITY_ORDER.length, a non-empty literal array.
+    expect(heights[0]).toBeGreaterThan(heights[heights.length - 1]!);
   });
 
   it("scales the dot radius down with the row height", () => {

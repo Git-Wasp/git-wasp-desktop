@@ -47,7 +47,7 @@ describe("toastStore", () => {
     useToastStore.getState().error("boom");
     vi.advanceTimersByTime(60_000);
     expect(useToastStore.getState().toasts).toHaveLength(1);
-    expect(useToastStore.getState().toasts[0].duration).toBeNull();
+    expect(useToastStore.getState().toasts[0]!.duration).toBeNull();
   });
 
   it("setPlacement updates state and persists to localStorage", () => {

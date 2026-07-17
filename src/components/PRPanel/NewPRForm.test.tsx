@@ -236,7 +236,8 @@ describe("NewPRForm", () => {
     fireEvent.click(screen.getByRole("button", { name: /continue on github/i }));
 
     expect(mockOpenUrl).toHaveBeenCalledTimes(1);
-    const url = mockOpenUrl.mock.calls[0][0] as string;
+    // toHaveBeenCalledTimes(1) above guarantees calls[0] exists.
+    const url = mockOpenUrl.mock.calls[0]![0] as string;
     expect(url).toContain("https://github.com/mike/gitclient/compare/main...feat%2Fx");
     expect(url).toContain("title=My+PR");
   });

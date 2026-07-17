@@ -19,7 +19,7 @@ A personal Git desktop client built with Tauri v2, functionally comparable to Gi
 
 | Concern                  | Choice                                                     |
 |--------------------------|------------------------------------------------------------|
-| Framework                | React 18 + TypeScript                                      |
+| Framework                | React 19 + TypeScript                                      |
 | Build tooling            | Vite (Tauri v2 default)                                    |
 | State management         | Zustand                                                    |
 | Styling                  | Tailwind CSS, built on a CSS custom properties token layer |

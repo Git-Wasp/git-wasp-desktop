@@ -96,7 +96,7 @@ describe("StageFileEditor", () => {
     await waitFor(() => {
       const buttons = container.querySelectorAll<HTMLButtonElement>(".cm-stage-toggle");
       expect(buttons.length).toBe(1);
-      expect(buttons[0].textContent).toBe("+");
+      expect(buttons[0]!.textContent).toBe("+");
     });
   });
 
@@ -106,7 +106,7 @@ describe("StageFileEditor", () => {
     await waitFor(() => {
       const buttons = container.querySelectorAll<HTMLButtonElement>(".cm-stage-toggle");
       expect(buttons.length).toBe(1);
-      expect(buttons[0].textContent).toBe("−");
+      expect(buttons[0]!.textContent).toBe("−");
     });
   });
 
@@ -203,15 +203,16 @@ describe("StageFileEditor", () => {
       return buttons;
     });
 
-    fireEvent.click(toggles[0]);
-    fireEvent.click(toggles[1]); // fired before the first resolves
+    // toggles.length >= 2, asserted in the waitFor above.
+    fireEvent.click(toggles[0]!);
+    fireEvent.click(toggles[1]!); // fired before the first resolves
 
     expect(onApplyIndex).toHaveBeenCalledTimes(1); // second click ignored, not composed from stale rows
 
     resolveFirst!();
     // Once the first apply resolves, a subsequent toggle is honoured again.
     await new Promise((r) => setTimeout(r, 0)); // let the in-flight promise's `.finally` settle
-    fireEvent.click(toggles[1]);
+    fireEvent.click(toggles[1]!);
     expect(onApplyIndex).toHaveBeenCalledTimes(2);
   });
 
@@ -317,7 +318,7 @@ describe("StageFileEditor", () => {
     expect(overview).not.toBeNull();
     const marks = overview!.querySelectorAll("[data-overview-mark]");
     expect(marks.length).toBe(1);
-    expect(marks[0].getAttribute("data-color")).toBe("add");
+    expect(marks[0]!.getAttribute("data-color")).toBe("add");
   });
 
   describe("diff-view options", () => {

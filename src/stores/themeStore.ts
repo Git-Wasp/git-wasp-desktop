@@ -61,7 +61,8 @@ interface ThemeStore {
 }
 
 const findTheme = (themes: ThemeInfo[], id: string): ThemeInfo =>
-  themes.find((t) => t.id === id) ?? BUILT_IN_THEMES[0];
+  // BUILT_IN_THEMES is a non-empty literal array declared above.
+  themes.find((t) => t.id === id) ?? BUILT_IN_THEMES[0]!;
 
 export const useThemeStore = create<ThemeStore>((set, get) => ({
   themes: BUILT_IN_THEMES,

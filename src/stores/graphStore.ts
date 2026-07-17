@@ -395,7 +395,9 @@ export const useGraphStore = create<GraphStore>((set, get) => {
         }
         // Removing the anchor/primary hands those roles to a surviving member so
         // a following shift-click still has an anchor to extend from.
-        const last = [...range][range.size - 1];
+        // range.size > 0 here (the ===0 case returned above), so this index
+        // is always in range.
+        const last = [...range][range.size - 1]!;
         const anchor = selection.anchor && range.has(selection.anchor) ? selection.anchor : last;
         set({
           selection: { anchor, focus: anchor, range },
@@ -543,21 +545,23 @@ export const useGraphStore = create<GraphStore>((set, get) => {
       return;
     }
     // Jump to the first match (top-most) and highlight the whole set.
-    revealHit(hits[0], { searchHits: hits, searchMatchOids: oids, searchIndex: 0 });
+    // hits.length !== 0 here (the ===0 case returned above).
+    revealHit(hits[0]!, { searchHits: hits, searchMatchOids: oids, searchIndex: 0 });
   },
 
   nextMatch: () => {
     const { searchHits, searchIndex } = get();
     if (searchHits.length === 0) return;
     const idx = (searchIndex + 1) % searchHits.length;
-    revealHit(searchHits[idx], { searchIndex: idx });
+    // searchHits.length > 0 here, so the wrapped index is always in range.
+    revealHit(searchHits[idx]!, { searchIndex: idx });
   },
 
   prevMatch: () => {
     const { searchHits, searchIndex } = get();
     if (searchHits.length === 0) return;
     const idx = (searchIndex - 1 + searchHits.length) % searchHits.length;
-    revealHit(searchHits[idx], { searchIndex: idx });
+    revealHit(searchHits[idx]!, { searchIndex: idx });
   },
 
   reset: () => {

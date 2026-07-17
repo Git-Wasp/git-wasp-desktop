@@ -43,5 +43,7 @@ export function isGraphDensity(value: unknown): value is GraphDensity {
 /** The next density in the cycle, wrapping back to Comfortable after Compact. */
 export function nextDensity(current: GraphDensity): GraphDensity {
   const i = DENSITY_ORDER.indexOf(current);
-  return DENSITY_ORDER[(i + 1) % DENSITY_ORDER.length];
+  // current is a GraphDensity, and DENSITY_ORDER lists all of them, so i is
+  // always a valid index and the wrapped index is always in range.
+  return DENSITY_ORDER[(i + 1) % DENSITY_ORDER.length]!;
 }

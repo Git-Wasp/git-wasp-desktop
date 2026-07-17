@@ -90,10 +90,33 @@ describe("CloneDialog", () => {
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("clone_repo", {
         url: "https://github.com/mike/gitclient.git",
-        destPath: "/Users/mike/code/gitclient",
+        destDir: "/Users/mike/code",
+        repoName: "gitclient",
       });
     });
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("passes the destination directory and repo name separately, not a pre-joined path", async () => {
+    mockInvoke.mockResolvedValueOnce(fakeRepos); // list_github_repos
+    mockOpen.mockResolvedValueOnce("/chosen/folder");
+    mockInvoke.mockResolvedValueOnce({ name: "gitclient", path: "/chosen/folder/gitclient", headBranch: "main" }); // clone_repo
+
+    render(<CloneDialog host="github.com" onClose={vi.fn()} />);
+
+    fireEvent.click(await screen.findByText("mike/gitclient"));
+    fireEvent.click(screen.getByRole("button", { name: /choose folder/i }));
+    await screen.findByText("/chosen/folder/gitclient");
+
+    await userEvent.click(screen.getByRole("button", { name: "Clone" }));
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("clone_repo", {
+        url: "https://github.com/mike/gitclient.git",
+        destDir: "/chosen/folder",
+        repoName: "gitclient",
+      });
+    });
   });
 
   it("Escape closes CloneDialog without clicking into it first", async () => {

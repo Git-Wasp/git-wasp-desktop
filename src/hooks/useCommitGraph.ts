@@ -357,7 +357,9 @@ export function useCommitGraph(
     // HEAD's absolute row (clamped to the loaded slice) when HEAD isn't in view.
     const wtIdx = viewport.nodes.findIndex((n) => n.isWorkingTree);
     if (wtIdx >= 0) {
-      const wt = viewport.nodes[wtIdx];
+      // wtIdx >= 0 here (the findIndex "not found" case is excluded), so this
+      // index is always in range.
+      const wt = viewport.nodes[wtIdx]!;
       const headIdx = viewport.nodes.findIndex((n) => n.isHead && !n.isWorkingTree);
       const localHeadRow =
         headIdx >= 0

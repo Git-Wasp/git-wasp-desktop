@@ -255,21 +255,74 @@ pub fn push_branch(
         .map_err(|e| e.to_string())
 }
 
+// Joins `dest_dir`/`repo_name` into the clone destination, rejecting a
+// `repo_name` that looks like path traversal or an embedded path separator.
+// `repo_name` is GHE/GitHub-API-supplied (untrusted) input, even though it's
+// expected to be a bare repo name in practice. Split out from `clone_repo` so
+// the validation can be unit-tested without a `State<'_, AppState>` (which
+// needs a running Tauri app to construct).
+fn resolve_clone_dest(dest_dir: &str, repo_name: &str) -> Result<std::path::PathBuf, String> {
+    if repo_name.is_empty()
+        || repo_name.contains('/')
+        || repo_name.contains('\\')
+        || repo_name.contains("..")
+    {
+        return Err(format!("invalid repository name: {repo_name}"));
+    }
+    Ok(std::path::PathBuf::from(dest_dir).join(repo_name))
+}
+
 #[tauri::command]
 pub fn clone_repo(
     url: String,
-    dest_path: String,
+    dest_dir: String,
+    repo_name: String,
     state: State<'_, AppState>,
 ) -> Result<crate::commands::repo::RepoInfo, String> {
+    let dest = resolve_clone_dest(&dest_dir, &repo_name)?;
+
     // Load token for the host in the URL if we can determine it
     let known = state.known_github_hosts().unwrap_or_default();
     let token = remote_ops::parse_remote_url(&url, &known)
         .ok()
         .and_then(|info| state.credentials.load(&info.host).ok().flatten());
 
-    let dest = std::path::PathBuf::from(&dest_path);
     remote_ops::clone_repo(&url, &dest, token.as_deref()).map_err(|e| e.to_string())?;
 
     // Open the cloned repo
-    state.open_repo(&dest_path, None).map_err(|e| e.to_string())
+    state
+        .open_repo(dest.to_string_lossy().as_ref(), None)
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_clone_dest_joins_dir_and_name() {
+        let dest = resolve_clone_dest("/Users/mike/code", "gitclient").unwrap();
+        assert_eq!(dest, std::path::PathBuf::from("/Users/mike/code/gitclient"));
+    }
+
+    #[test]
+    fn resolve_clone_dest_rejects_empty_repo_name() {
+        assert!(resolve_clone_dest("/Users/mike/code", "").is_err());
+    }
+
+    #[test]
+    fn resolve_clone_dest_rejects_forward_slash_in_repo_name() {
+        assert!(resolve_clone_dest("/Users/mike/code", "sub/dir").is_err());
+    }
+
+    #[test]
+    fn resolve_clone_dest_rejects_backslash_in_repo_name() {
+        assert!(resolve_clone_dest("/Users/mike/code", "sub\\dir").is_err());
+    }
+
+    #[test]
+    fn resolve_clone_dest_rejects_dot_dot_traversal() {
+        assert!(resolve_clone_dest("/Users/mike/code", "../../etc").is_err());
+        assert!(resolve_clone_dest("/Users/mike/code", "..").is_err());
+    }
 }

@@ -187,11 +187,13 @@ describe("CommitForm", () => {
       expect(createBranch).toHaveBeenCalledWith("fix/bug");
       expect(checkoutBranch).toHaveBeenCalledWith("fix/bug");
       // Branch must exist and be current before the commit lands on it.
-      expect(createBranch.mock.invocationCallOrder[0]).toBeLessThan(
-        checkoutBranch.mock.invocationCallOrder[0],
+      // Each mock's toHaveBeenCalledWith assertion above guarantees at least
+      // one invocation, so invocationCallOrder[0] always exists.
+      expect(createBranch.mock.invocationCallOrder[0]!).toBeLessThan(
+        checkoutBranch.mock.invocationCallOrder[0]!,
       );
-      expect(checkoutBranch.mock.invocationCallOrder[0]).toBeLessThan(
-        createCommit.mock.invocationCallOrder[0],
+      expect(checkoutBranch.mock.invocationCallOrder[0]!).toBeLessThan(
+        createCommit.mock.invocationCallOrder[0]!,
       );
     });
 

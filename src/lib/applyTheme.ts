@@ -91,7 +91,8 @@ function decodeCssEscapes(text: string): string {
  */
 function scanUrlArgument(css: string, start: number): { arg: string; end: number } | null {
   let i = start;
-  while (i < css.length && WHITESPACE_RE.test(css[i])) i++;
+  // Guarded by `i < css.length` in the same condition, so css[i] is defined.
+  while (i < css.length && WHITESPACE_RE.test(css[i]!)) i++;
   const quote = css[i] === '"' || css[i] === "'" ? css[i] : null;
   if (quote) {
     const argStart = i + 1;
@@ -102,7 +103,7 @@ function scanUrlArgument(css: string, start: number): { arg: string; end: number
     if (i >= css.length) return null; // no closing quote before EOF
     const arg = css.slice(argStart, i);
     i++; // skip the closing quote
-    while (i < css.length && WHITESPACE_RE.test(css[i])) i++;
+    while (i < css.length && WHITESPACE_RE.test(css[i]!)) i++;
     if (css[i] !== ")") return null; // trailing garbage before the close
     return { arg, end: i + 1 };
   }

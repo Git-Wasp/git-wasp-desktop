@@ -58,7 +58,8 @@ export const DEFAULT_PALETTE_ID = "theme";
 const STORAGE_KEY = "graphPalette";
 
 export function getPalette(id: string): GraphPalette {
-  return GRAPH_PALETTES.find((p) => p.id === id) ?? GRAPH_PALETTES[0];
+  // GRAPH_PALETTES is a non-empty literal array declared above.
+  return GRAPH_PALETTES.find((p) => p.id === id) ?? GRAPH_PALETTES[0]!;
 }
 
 export function loadGraphPaletteId(): string {
@@ -84,7 +85,10 @@ export function applyGraphPalette(id: string): void {
   const root = document.documentElement.style;
   for (let i = 0; i < LANE_COUNT; i++) {
     const name = `--color-lane-${i}`;
-    if (palette.colors) root.setProperty(name, palette.colors[i]);
+    // Every non-"theme" palette is expected to define exactly LANE_COUNT
+    // colours (enforced by a test), but index defensively rather than assert.
+    const color = palette.colors?.[i];
+    if (color) root.setProperty(name, color);
     else root.removeProperty(name);
   }
   window.dispatchEvent(new Event(THEME_CHANGE_EVENT));

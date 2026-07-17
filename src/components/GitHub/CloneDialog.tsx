@@ -30,19 +30,17 @@ export function CloneDialog({ host, onClose }: { host: string; onClose: () => vo
     r.fullName.toLowerCase().includes(search.trim().toLowerCase()),
   );
 
-  const destPath = selected && destDir ? `${destDir}/${selected.name}` : null;
-
   const handleChooseFolder = async () => {
     const dir = await open({ directory: true, multiple: false });
     if (typeof dir === "string") setDestDir(dir);
   };
 
   const handleClone = async () => {
-    if (!selected || !destPath) return;
+    if (!selected || !destDir) return;
     setIsCloning(true);
     setError(null);
     try {
-      const repo = await invoke<RepoInfo>("clone_repo", { url: selected.cloneUrl, destPath });
+      const repo = await invoke<RepoInfo>("clone_repo", { url: selected.cloneUrl, destDir, repoName: selected.name });
       useRepoStore.setState({ currentRepo: repo });
       onClose();
     } catch (e) {
@@ -148,7 +146,7 @@ export function CloneDialog({ host, onClose }: { host: string; onClose: () => vo
                 whiteSpace: "nowrap",
               }}
             >
-              {destPath ?? "No destination chosen"}
+              {destDir ? `${destDir}/${selected.name}` : "No destination chosen"}
             </span>
           </div>
         )}
@@ -163,7 +161,7 @@ export function CloneDialog({ host, onClose }: { host: string; onClose: () => vo
           <Button variant="secondary" fullWidth onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" fullWidth disabled={!destPath || isCloning} onClick={() => void handleClone()}>
+          <Button variant="primary" fullWidth disabled={!destDir || isCloning} onClick={() => void handleClone()}>
             {isCloning ? "Cloning…" : "Clone"}
           </Button>
         </div>

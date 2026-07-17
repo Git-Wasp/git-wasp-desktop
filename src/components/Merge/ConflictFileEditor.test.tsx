@@ -109,7 +109,7 @@ describe("ConflictFileEditor", () => {
     const sourceBox = await waitFor(() => {
       const boxes = container.querySelectorAll<HTMLInputElement>(".cm-select-checkbox");
       expect(boxes.length).toBe(2);
-      return boxes[0]; // Source pane renders first
+      return boxes[0]!; // Source pane renders first, and boxes.length === 2 above
     });
 
     fireEvent.click(sourceBox);
@@ -132,7 +132,8 @@ describe("ConflictFileEditor", () => {
 
     await waitFor(() => {
       expect(onMarkResolved).toHaveBeenCalledTimes(1);
-      const [path, content] = onMarkResolved.mock.calls[0];
+      // toHaveBeenCalledTimes(1) above guarantees calls[0] exists.
+      const [path, content] = onMarkResolved.mock.calls[0]!;
       expect(path).toBe("src/lib.rs");
       expect(content).toBe(["shared line", "current text", "trailing line"].join("\n"));
     });

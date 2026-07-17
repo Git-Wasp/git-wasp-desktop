@@ -49,7 +49,9 @@ function inline(text: string): string {
 
   return text.replace(
     new RegExp(`${STASH_OPEN}(\\d+)${STASH_CLOSE}`, "g"),
-    (_m, i: string) => stashed[Number(i)],
+    // Every placeholder was created by `stash()` just above, so the index is
+    // always populated; fall back to the raw match if that's ever not true.
+    (_m: string, i: string) => stashed[Number(i)] ?? _m,
   );
 }
 
@@ -76,7 +78,8 @@ export function renderMarkdown(src: string): string {
   let i = 0;
 
   while (i < lines.length) {
-    const line = lines[i];
+    // Guarded by the loop condition above, so always in range.
+    const line = lines[i]!;
 
     if (line.trim() === "") {
       i++;
@@ -86,8 +89,8 @@ export function renderMarkdown(src: string): string {
     if (line.trim().startsWith("```")) {
       const body: string[] = [];
       i++;
-      while (i < lines.length && !lines[i].trim().startsWith("```")) {
-        body.push(lines[i]);
+      while (i < lines.length && !lines[i]!.trim().startsWith("```")) {
+        body.push(lines[i]!);
         i++;
       }
       i++; // skip closing fence
@@ -97,16 +100,18 @@ export function renderMarkdown(src: string): string {
 
     const heading = line.match(HEADING);
     if (heading) {
-      const level = heading[1].length;
-      blocks.push(`<h${level}>${inline(heading[2].trim())}</h${level}>`);
+      // HEADING has two capturing groups, both mandatory in the pattern, so
+      // a match always populates heading[1] and heading[2].
+      const level = heading[1]!.length;
+      blocks.push(`<h${level}>${inline(heading[2]!.trim())}</h${level}>`);
       i++;
       continue;
     }
 
     if (UL_ITEM.test(line)) {
       const items: string[] = [];
-      while (i < lines.length && UL_ITEM.test(lines[i])) {
-        items.push(`<li>${inline(lines[i].replace(UL_ITEM, ""))}</li>`);
+      while (i < lines.length && UL_ITEM.test(lines[i]!)) {
+        items.push(`<li>${inline(lines[i]!.replace(UL_ITEM, ""))}</li>`);
         i++;
       }
       blocks.push(`<ul>${items.join("")}</ul>`);
@@ -115,8 +120,8 @@ export function renderMarkdown(src: string): string {
 
     if (OL_ITEM.test(line)) {
       const items: string[] = [];
-      while (i < lines.length && OL_ITEM.test(lines[i])) {
-        items.push(`<li>${inline(lines[i].replace(OL_ITEM, ""))}</li>`);
+      while (i < lines.length && OL_ITEM.test(lines[i]!)) {
+        items.push(`<li>${inline(lines[i]!.replace(OL_ITEM, ""))}</li>`);
         i++;
       }
       blocks.push(`<ol>${items.join("")}</ol>`);
@@ -126,13 +131,13 @@ export function renderMarkdown(src: string): string {
     const para: string[] = [];
     while (
       i < lines.length &&
-      lines[i].trim() !== "" &&
-      !HEADING.test(lines[i]) &&
-      !UL_ITEM.test(lines[i]) &&
-      !OL_ITEM.test(lines[i]) &&
-      !lines[i].trim().startsWith("```")
+      lines[i]!.trim() !== "" &&
+      !HEADING.test(lines[i]!) &&
+      !UL_ITEM.test(lines[i]!) &&
+      !OL_ITEM.test(lines[i]!) &&
+      !lines[i]!.trim().startsWith("```")
     ) {
-      para.push(lines[i]);
+      para.push(lines[i]!);
       i++;
     }
     blocks.push(`<p>${inline(para.join("<br>"))}</p>`);
