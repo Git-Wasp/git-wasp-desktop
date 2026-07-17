@@ -441,6 +441,37 @@ export function CommitGraph({
     };
   }, []);
 
+  // The container growing (e.g. maximizing the window) can reveal unloaded rows
+  // below the fold without firing a scroll event at all — a ResizeObserver
+  // catches that case. Reuses the scroll handler's scrollRaf throttle, so a
+  // resize storm still fetches at most once per frame.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const recomputeCoverage = () => {
+      const limit = Math.ceil(container.clientHeight / rowHeight) + BUFFER_ROWS * 2;
+      const offset = Math.max(0, Math.floor(container.scrollTop / rowHeight) - BUFFER_ROWS);
+      const vp = useGraphStore.getState().viewport;
+      if (vp) {
+        const loadedEnd = vp.offset + vp.nodes.length;
+        const covered = offset >= vp.offset && (offset + limit <= loadedEnd || loadedEnd >= vp.totalCount);
+        if (covered) return;
+      }
+      fetchViewport(offset, limit).catch((e: unknown) =>
+        toastError(String(e), { title: "Couldn't load history" }),
+      );
+    };
+    const observer = new ResizeObserver(() => {
+      if (scrollRaf.current !== null) return;
+      scrollRaf.current = requestAnimationFrame(() => {
+        scrollRaf.current = null;
+        recomputeCoverage();
+      });
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [fetchViewport, rowHeight, toastError]);
+
   // Keep the header's data scroll aligned with the body after any layout change
   // (variant, widths, visibility, a new slice) — the graph itself is CSS-sticky.
   useLayoutEffect(() => {

@@ -138,6 +138,17 @@ export function useCommitGraph(
     return () => window.removeEventListener(THEME_CHANGE_EVENT, onThemeChange);
   }, [rowHeight, dotRadius]);
 
+  // Redraw when the window moves to a display with a different device pixel
+  // ratio (e.g. Retina → 1x) — there's no scroll/theme event for that, so
+  // without this the canvas stays at the old DPR until some unrelated redraw
+  // happens to fire.
+  useEffect(() => {
+    const mql = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    const onChange = () => setThemeTick((t) => t + 1); // dpr changed → re-run the draw effect
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !viewport || !configRef.current || !colorsRef.current) return;

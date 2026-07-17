@@ -11,6 +11,7 @@ import { useRemoteStore } from "../../stores/remoteStore";
 import { useStashStore } from "../../stores/stashStore";
 import { useTagStore } from "../../stores/tagStore";
 import type { GraphNode, GraphViewport } from "../../types/graph";
+import { triggerResizeObserver } from "../../test/setup";
 
 const node = (over: Partial<GraphNode>): GraphNode => ({
   oid: "a".repeat(40),
@@ -264,6 +265,49 @@ describe("CommitGraph loading skeleton", () => {
     render(<CommitGraph />);
     expect(screen.queryByTestId("graph-skeleton")).not.toBeInTheDocument();
     expect(screen.getByText("first commit")).toBeInTheDocument();
+  });
+});
+
+describe("CommitGraph resize", () => {
+  it("fetches more rows when the container grows beyond the current buffer", async () => {
+    const fetchViewportSpy = vi.fn().mockResolvedValue(undefined);
+    useGraphStore.setState({
+      fetchViewport: fetchViewportSpy,
+      // A small loaded slice (2 of 500 rows) — well short of covering a container
+      // that grows to 2000px tall.
+      viewport: { totalCount: 500, offset: 0, nodes: makeViewport().nodes },
+    });
+    const { container } = render(<CommitGraph />);
+    // Drop the mount-time initial-load call so the assertion below can only be
+    // satisfied by the ResizeObserver path.
+    fetchViewportSpy.mockClear();
+
+    const scrollEl = container.querySelector('[style*="overflow: auto"]') as HTMLElement;
+    Object.defineProperty(scrollEl, "clientHeight", { value: 2000, configurable: true }); // simulate a big resize
+
+    triggerResizeObserver(scrollEl);
+
+    await waitFor(() => expect(fetchViewportSpy).toHaveBeenCalled());
+  });
+
+  it("does not refetch on resize when the loaded slice already covers the container", async () => {
+    const fetchViewportSpy = vi.fn().mockResolvedValue(undefined);
+    useGraphStore.setState({
+      fetchViewport: fetchViewportSpy,
+      viewport: makeViewport(), // totalCount 2, nodes.length 2 — fully loaded
+    });
+    const { container } = render(<CommitGraph />);
+    fetchViewportSpy.mockClear();
+
+    const scrollEl = container.querySelector('[style*="overflow: auto"]') as HTMLElement;
+    Object.defineProperty(scrollEl, "clientHeight", { value: 2000, configurable: true });
+
+    triggerResizeObserver(scrollEl);
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(r));
+    });
+
+    expect(fetchViewportSpy).not.toHaveBeenCalled();
   });
 });
 
