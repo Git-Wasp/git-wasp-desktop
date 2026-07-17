@@ -1,8 +1,11 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { useRepoStore } from "../../stores/repoStore";
+import { useStashStore } from "../../stores/stashStore";
+import { useGraphStore } from "../../stores/graphStore";
 import { useToastStore } from "../../stores/toastStore";
 import { StashPanel } from "./StashPanel";
 import type { StashEntry } from "../../types/workingTree";
@@ -15,6 +18,7 @@ const stashes: StashEntry[] = [{ index: 0, message: "WIP on main: experiment", o
 beforeEach(() => {
   vi.clearAllMocks();
   useRepoStore.setState({ activeRepoPath: "/repo-a" });
+  useStashStore.setState({ entries: [] });
   mockInvoke.mockImplementation((cmd: string) => {
     if (cmd === "stash_list_cmd") return Promise.resolve(stashes);
     if (cmd === "stash_apply_cmd" || cmd === "stash_pop_cmd") {
@@ -52,6 +56,16 @@ describe("StashPanel", () => {
 
     await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("stash_pop_cmd", { index: 0 }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("popping a stash from the panel refreshes the graph, not just the panel's own list", async () => {
+    const graphRefreshSpy = vi.spyOn(useGraphStore.getState(), "refresh").mockResolvedValue();
+    render(<StashPanel />);
+    await screen.findByText("WIP on main: experiment");
+
+    await userEvent.click(screen.getByRole("button", { name: "Pop" }));
+
+    await waitFor(() => expect(graphRefreshSpy).toHaveBeenCalled());
   });
 
   it("requires confirmation before dropping a stash", async () => {

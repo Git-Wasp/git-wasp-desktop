@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import type { StashEntry, WorkingTreeStatus } from "../../types/workingTree";
+import type { StashEntry } from "../../types/workingTree";
 import { useRepoStore } from "../../stores/repoStore";
-import { useWorkingTreeStore } from "../../stores/workingTreeStore";
+import { useStashStore } from "../../stores/stashStore";
 import { useToastStore } from "../../stores/toastStore";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { Button } from "../ui/Button";
@@ -10,69 +9,40 @@ import { ConfirmDialog } from "../common/ConfirmDialog";
 
 export function StashPanel() {
   const activeRepoPath = useRepoStore((s) => s.activeRepoPath);
-  const [stashes, setStashes] = useState<StashEntry[]>([]);
+  const entries = useStashStore((s) => s.entries);
+  const list = useStashStore((s) => s.list);
+  const reset = useStashStore((s) => s.reset);
+  const apply = useStashStore((s) => s.apply);
+  const pop = useStashStore((s) => s.pop);
+  const drop = useStashStore((s) => s.drop);
   const [loading, setLoading] = useState(false);
   const [pendingDrop, setPendingDrop] = useState<StashEntry | null>(null);
 
-  // Catches internally (rather than at each call site) since it's called both
-  // from the mount/repo-switch effect below (nothing else to catch it there)
-  // and from handleApply/handlePop's own try/catch — a reload failure after a
-  // successful apply/pop is a distinct, worth-surfacing problem in its own
-  // right, not the same failure as the apply/pop itself.
-  const reload = async () => {
-    try {
-      const entries = await invoke<StashEntry[]>("stash_list_cmd");
-      setStashes(entries);
-    } catch (e) {
-      useToastStore.getState().error(String(e), { title: "Couldn't load stashes" });
-    }
-  };
-
   useEffect(() => {
-    setStashes([]);
+    // Clear immediately so the previous repo's stashes don't linger while the
+    // fresh list loads, and drop any pending drop-confirmation for the repo
+    // we're leaving.
+    reset();
     setPendingDrop(null);
-    void reload();
-  }, [activeRepoPath]);
+    list().catch((e: unknown) =>
+      useToastStore.getState().error(String(e), { title: "Couldn't load stashes" }),
+    );
+  }, [activeRepoPath, list, reset]);
 
-  const handleApply = async (index: number) => {
+  // Catches internally (rather than at each call site) since apply/pop/drop
+  // each need the same loading + error-toast wrapping around their store call.
+  const run = async (action: () => Promise<void>, failTitle: string) => {
     setLoading(true);
     try {
-      const status = await invoke<WorkingTreeStatus>("stash_apply_cmd", { index });
-      useWorkingTreeStore.setState({ status });
-      await reload();
+      await action();
     } catch (e) {
-      useToastStore.getState().error(String(e), { title: "Stash apply failed" });
+      useToastStore.getState().error(String(e), { title: failTitle });
     } finally {
       setLoading(false);
     }
   };
 
-  const handlePop = async (index: number) => {
-    setLoading(true);
-    try {
-      const status = await invoke<WorkingTreeStatus>("stash_pop_cmd", { index });
-      useWorkingTreeStore.setState({ status });
-      await reload();
-    } catch (e) {
-      useToastStore.getState().error(String(e), { title: "Stash pop failed" });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDrop = async (index: number) => {
-    setLoading(true);
-    try {
-      const entries = await invoke<StashEntry[]>("stash_drop_cmd", { index });
-      setStashes(entries);
-    } catch (e) {
-      useToastStore.getState().error(String(e), { title: "Stash drop failed" });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (stashes.length === 0) return null;
+  if (entries.length === 0) return null;
 
   return (
     <CollapsibleSection
@@ -81,7 +51,7 @@ export function StashPanel() {
       resizable
       defaultHeight={140}
     >
-      {stashes.map((s) => (
+      {entries.map((s) => (
         <div
           key={s.index}
           style={{
@@ -109,8 +79,8 @@ export function StashPanel() {
                 variant={action === "Drop" ? "danger" : "secondary"}
                 disabled={loading}
                 onClick={() => {
-                  if (action === "Apply") void handleApply(s.index);
-                  else if (action === "Pop") void handlePop(s.index);
+                  if (action === "Apply") void run(() => apply(s.index), "Stash apply failed");
+                  else if (action === "Pop") void run(() => pop(s.index), "Stash pop failed");
                   else setPendingDrop(s);
                 }}
               >
@@ -127,8 +97,9 @@ export function StashPanel() {
           message={`Drop "${pendingDrop.message}"? This permanently deletes the stashed changes and cannot be undone.`}
           confirmLabel="Drop"
           onConfirm={() => {
-            void handleDrop(pendingDrop.index);
+            const s = pendingDrop;
             setPendingDrop(null);
+            void run(() => drop(s.index), "Stash drop failed");
           }}
           onCancel={() => setPendingDrop(null)}
         />
