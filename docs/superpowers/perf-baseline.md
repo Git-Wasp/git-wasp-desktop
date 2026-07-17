@@ -82,16 +82,16 @@ command is re-run.)*
 ## Task B1 spike gate — shared `repos` lock blocking unrelated tabs
 
 Reproduced with a deterministic test (`repo_manager::tests::
-tab_a_slow_op_blocks_tab_b_on_todays_shared_repos_lock`, part of the normal
-suite — no bench repo needed, since the bug is about lock scope, not repo
-size). Two repos are opened as separate tabs; tab A runs a simulated slow
-operation (a 150ms `sleep` inside `with_repo_mut`'s closure, standing in for
-a real network op like fetch) while tab B — a completely unrelated repo —
-tries to run `get_working_tree_status`.
+tab_a_slow_op_does_not_block_tab_b`, part of the normal suite — no bench repo
+needed, since the bug is about lock scope, not repo size). Two repos are
+opened as separate tabs; tab A runs a simulated slow operation (a 150ms
+`sleep` inside `with_repo_mut`'s closure, standing in for a real network op
+like fetch) while tab B — a completely unrelated repo — tries to run
+`get_working_tree_status`.
 
-| Scenario | Result |
-|---|---|
-| Tab B's `get_working_tree_status`, while tab A holds a 150ms slow op | **blocked ~135.5ms** (of the 150ms) |
+| Scenario | Before | After |
+|---|---|---|
+| Tab B's `get_working_tree_status`, while tab A holds a 150ms slow op | **blocked ~135.5ms** (of the 150ms) | **651.9µs** (~200x — effectively unblocked) |
 
 Confirms the diagnosis: `RepoManager.repos: Mutex<Vec<OpenRepo>>` is one lock
 shared by every open tab, so a slow op on any one tab (fetch, push, a large
@@ -100,15 +100,17 @@ viewport, branch list) for its full duration — this only gets worse as fetch
 sizes and repo counts grow with the monorepo/multi-tab use case this plan
 targets.
 
-**Locking approach on the table** (per the plan): switch `OpenRepo`/the
-`repos` field so each entry's `Repository` sits behind its own
-`Arc<Mutex<Repository>>` (or each whole `OpenRepo` behind `Arc<Mutex<_>>`).
-`with_repo`/`with_repo_mut`/etc. would lock the outer `repos` Vec only long
-enough to find the active entry and clone its inner `Arc`, then release the
-outer lock before locking the inner one for the actual operation — so two
-tabs (or a slow op on one tab + a read on another) stop serialising on the
-same mutex. `Repository` is `Send` but not `Sync`, so an `Arc<Mutex<
-Repository>>` per repo is sound; no lock would be held across an `.await`
-since git2 calls stay synchronous.
-
-**Paused here for review of that locking approach before implementing.**
+**Implemented:** `OpenRepo` now holds `state: Arc<Mutex<RepoState>>` (a new
+struct bundling `repo`/`operation`/`graph_cache` — the same trio that used to
+share the outer lock, kept together since some operations need two of them
+at once). `with_repo`/`with_repo_mut`/`with_repo_graph_cache`/
+`with_repo_and_operation_mut` all route through a new `active_state()` helper
+that locks the outer `repos` Vec only long enough to find the active entry
+and `Arc::clone` its state handle, then release the outer lock before locking
+the inner one for the actual git2 work. `open()`/`activate()`/`close()`/
+`list_open()`/`get_current()` build `RepoInfo` via a new `open_repo_info()`
+that gets `path`/`name` from the tab's stable `key` (no lock needed) and
+`head_branch` via `try_lock` — if another operation currently holds that
+tab's state (e.g. an in-flight fetch), `head_branch` comes back `None`
+instead of blocking, so listing/switching/closing tabs never waits on an
+unrelated tab's slow operation either.
