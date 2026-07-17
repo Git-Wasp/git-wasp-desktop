@@ -161,7 +161,12 @@ export function CloneDialog({ host, onClose }: { host: string; onClose: () => vo
           <Button variant="secondary" fullWidth onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" fullWidth disabled={!destDir || isCloning} onClick={() => void handleClone()}>
+          <Button
+            variant="primary"
+            fullWidth
+            disabled={!selected || !destDir || isCloning}
+            onClick={() => void handleClone()}
+          >
             {isCloning ? "Cloning…" : "Clone"}
           </Button>
         </div>

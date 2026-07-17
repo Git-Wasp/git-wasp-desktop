@@ -263,6 +263,7 @@ pub fn push_branch(
 // needs a running Tauri app to construct).
 fn resolve_clone_dest(dest_dir: &str, repo_name: &str) -> Result<std::path::PathBuf, String> {
     if repo_name.is_empty()
+        || repo_name == "."
         || repo_name.contains('/')
         || repo_name.contains('\\')
         || repo_name.contains("..")
@@ -324,5 +325,13 @@ mod tests {
     fn resolve_clone_dest_rejects_dot_dot_traversal() {
         assert!(resolve_clone_dest("/Users/mike/code", "../../etc").is_err());
         assert!(resolve_clone_dest("/Users/mike/code", "..").is_err());
+    }
+
+    #[test]
+    fn resolve_clone_dest_rejects_bare_dot() {
+        // Not a traversal outside dest_dir, but a "." repo name resolves to
+        // dest_dir itself rather than a real subdirectory — reject it rather
+        // than silently clone into (and later open) the parent folder.
+        assert!(resolve_clone_dest("/Users/mike/code", ".").is_err());
     }
 }
