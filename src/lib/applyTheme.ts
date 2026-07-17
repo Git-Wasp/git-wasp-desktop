@@ -43,10 +43,41 @@ function flexKeyword(word: string): string {
 }
 
 const IMPORT_RE = new RegExp(`${flexLetter("@")}${flexKeyword("import")}[^;]*;?`, "gi");
-const URL_RE = new RegExp(
-  `${flexKeyword("url")}\\(\\s*['"]?\\s*(?:https?:)?\\/\\/[^'")]*['"]?\\s*\\)`,
-  "gi",
-);
+const URL_ARGS_RE = new RegExp(`${flexKeyword("url")}\\(\\s*(['"]?)([\\s\\S]*?)\\1\\s*\\)`, "gi");
+const DANGEROUS_SCHEME_RE = /^(?:https?:)?\/\//i;
+
+/**
+ * Decode CSS escape sequences (hex, e.g. `\0068` → `h`, and identity escapes,
+ * e.g. `\/` → `/`) so a scheme name hidden behind escapes (e.g.
+ * `\0068ttps://evil.example`) resolves to the same string a real CSS parser
+ * would resolve it to, before we check it against `DANGEROUS_SCHEME_RE`. A
+ * literal-string scheme check alone can't see through this — that's exactly
+ * how a bypass was found before this decoding step was added.
+ */
+function decodeCssEscapes(text: string): string {
+  return text.replace(/\\([0-9a-f]{1,6})[ \t\n\r\f]?|\\(.)/gi, (_match, hex: string, literal: string) => {
+    if (hex !== undefined) {
+      const code = parseInt(hex, 16);
+      return Number.isNaN(code) ? "" : String.fromCodePoint(code);
+    }
+    return literal;
+  });
+}
+
+/**
+ * Replace `url(...)` calls whose argument resolves (after decoding any CSS
+ * escapes within it) to an external scheme with a neutered `url()`. Decoding
+ * is scoped strictly to the captured argument span — never the whole
+ * stylesheet — so legitimate escaped selectors elsewhere (e.g.
+ * `.hover\:bg-red`) are left untouched. Keeps `url(data:...)` (inline assets)
+ * and same-origin-relative `url()` intact.
+ */
+function sanitizeUrlFunctions(css: string): string {
+  return css.replace(URL_ARGS_RE, (match: string, _quote: string, rawArg: string) => {
+    const decoded = decodeCssEscapes(rawArg).trim();
+    return DANGEROUS_SCHEME_RE.test(decoded) ? "url()" : match;
+  });
+}
 
 /**
  * Strip constructs a malicious theme file could use to exfiltrate data or make
@@ -58,14 +89,15 @@ const URL_RE = new RegExp(
  * Hardened beyond a literal `@import`/`url(` string match against: case
  * variation, whitespace/newlines inside `url(...)`, protocol-relative URLs
  * (`//evil.example`), a CSS comment splitting the keyword mid-token (e.g. "@im",
- * a comment, then "port"), and CSS unicode-escape obfuscation of the keyword
- * itself (e.g. `\75rl(`, `\40 \69mport`). A full CSS parser is out of scope;
- * this is regex hardening against the specific bypass classes above, not a
- * guarantee against every conceivable obfuscation.
+ * a comment, then "port"), CSS unicode-escape obfuscation of the keyword itself
+ * (e.g. `\75rl(`, `\40 \69mport`), and CSS unicode-escape obfuscation of the
+ * URL's own scheme/value (e.g. `url(\0068ttps://evil.example)`). A full CSS
+ * parser is out of scope; this is regex hardening against the specific bypass
+ * classes above, not a guarantee against every conceivable obfuscation.
  */
 export function sanitizeThemeCss(css: string): string {
   const normalized = stripCssComments(css);
-  return normalized.replace(IMPORT_RE, "").replace(URL_RE, "url()");
+  return sanitizeUrlFunctions(normalized.replace(IMPORT_RE, ""));
 }
 
 function customStyleElement(): HTMLStyleElement {

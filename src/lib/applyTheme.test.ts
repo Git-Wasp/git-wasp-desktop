@@ -183,4 +183,23 @@ describe("sanitizeThemeCss", () => {
     const css = `:root { --color-bg-app: #112233; --color-text-primary: #eee; }\n.foo\\:bar { color: red; }`;
     expect(sanitizeThemeCss(css)).toBe(css);
   });
+
+  it("neutralizes a url() scheme hidden behind a CSS hex escape", () => {
+    // \0068 is the CSS hex escape for the letter "h" — decodes to "https://...".
+    const out = sanitizeThemeCss("a{background:url(\\0068ttps://evil.example/x)}");
+    expect(out).not.toContain("evil.example");
+    expect(out).toContain("url()");
+  });
+
+  it("neutralizes a url() scheme hidden behind a CSS identity escape", () => {
+    // \h is a CSS identity escape (h is not a hex digit) — decodes to the literal "h".
+    const out = sanitizeThemeCss("a{background:url(\\https://evil.example/x)}");
+    expect(out).not.toContain("evil.example");
+    expect(out).toContain("url()");
+  });
+
+  it("leaves an escaped selector outside any url()/@import span untouched", () => {
+    const css = ".hover\\:bg-red { background: red; }";
+    expect(sanitizeThemeCss(css)).toBe(css);
+  });
 });
