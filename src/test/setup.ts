@@ -5,6 +5,15 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
+// Safe default for every test file that doesn't mock `listen`/`emit` itself —
+// a file-level `vi.mock("@tauri-apps/api/event", ...)` (several already do)
+// takes precedence over this one, so this only protects the *other* files
+// that would otherwise hit the real, unmocked module.
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn().mockResolvedValue(vi.fn()),
+  emit: vi.fn(),
+}));
+
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(),
 }));

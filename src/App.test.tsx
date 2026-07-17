@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { listen } from "@tauri-apps/api/event";
@@ -14,6 +14,7 @@ import { useWorkingTreeStore } from "./stores/workingTreeStore";
 import { useToastStore } from "./stores/toastStore";
 import type { GraphNode } from "./types/graph";
 import type { StageFileContents } from "./types/workingTree";
+import type { ConflictedFile } from "./types/merge";
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(),
@@ -226,5 +227,130 @@ describe("App per-line staging guard", () => {
     // The guard re-arms once the first apply resolves.
     fireEvent.click(toggles[1]!);
     expect(applyIndexContent).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("App boot sequence", () => {
+  it("reveals the app even when restoring session state fails", async () => {
+    useRepoStore.setState({
+      currentRepo: null,
+      openRepos: [],
+      loadCurrentRepo: vi.fn().mockRejectedValue(new Error("disk error")),
+      loadOpenRepos: vi.fn().mockRejectedValue(new Error("disk error")),
+    });
+
+    render(<App />);
+
+    // Boot is best-effort: a rejected restore step must not leave the user
+    // stuck behind the splash screen.
+    await waitFor(() => expect(screen.queryByText(/starting/i)).not.toBeInTheDocument());
+  });
+});
+
+// A minimal non-text conflict (kind "binaryOrUnmergeable") so the merge editor
+// mounts NonTextConflictPicker rather than ConflictFileEditor/CodeMirror —
+// irrelevant to these tests, which only care whether the full-screen editor
+// or the floating commit dialog is showing.
+const oneConflict: ConflictedFile = {
+  path: "f.txt",
+  kind: "binaryOrUnmergeable",
+  oursContent: null,
+  theirsContent: null,
+  baseContent: null,
+  seededResult: null,
+  conflictBlocks: [],
+};
+
+describe("App merge-editor latch", () => {
+  it("keeps the full-screen merge editor visible after the last conflict resolves mid-merge", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.queryByText(/starting/i)).not.toBeInTheDocument());
+    expect(screen.getByRole("tablist", { name: "Views" })).toBeInTheDocument();
+
+    // Merge starts with a conflict — the full-screen editor takes over (NavBar
+    // and the rest of the app tree are not rendered alongside it).
+    useMergeStore.setState({ status: { kind: "merge", sourceBranch: "feature", conflicts: [oneConflict] } });
+    await waitFor(() => expect(screen.queryByRole("tablist", { name: "Views" })).not.toBeInTheDocument());
+
+    // The last conflict resolves, but the merge is still in progress — the
+    // surface must not flip to the floating commit dialog mid-resolution.
+    useMergeStore.setState({ status: { kind: "merge", sourceBranch: "feature", conflicts: [] } });
+    await waitFor(() => expect(screen.queryByRole("tablist", { name: "Views" })).not.toBeInTheDocument());
+  });
+
+  it("shows the floating commit dialog, not the full-screen editor, for a merge that starts clean", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.queryByText(/starting/i)).not.toBeInTheDocument());
+
+    useMergeStore.setState({ status: { kind: "merge", sourceBranch: "feature", conflicts: [] } });
+
+    await waitFor(() => expect(screen.getByRole("tablist", { name: "Views" })).toBeInTheDocument());
+  });
+});
+
+describe("App background poll", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("always re-syncs HEAD each tick but skips the git-status scan once the working tree is clean", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const refreshAll = vi.fn().mockResolvedValue(undefined);
+    const syncHead = vi.fn().mockResolvedValue(undefined);
+    useWorkingTreeStore.setState({ refreshAll });
+    useRepoStore.setState({ syncHead });
+
+    render(<App />);
+    await waitFor(() => expect(screen.queryByText(/starting/i)).not.toBeInTheDocument());
+
+    // Tick 0 (t=8s) always scans: a freshly-opened repo starts flagged dirty
+    // regardless of any watcher event (see App.tsx's wtDirtyRef comment).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8000);
+    });
+    expect(refreshAll).toHaveBeenCalledTimes(1);
+    expect(syncHead).toHaveBeenCalledTimes(1);
+
+    // Tick 1 (t=16s): nothing flagged the tree dirty since tick 0 — the scan
+    // is skipped, but HEAD is cheap enough to re-check every tick regardless.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8000);
+    });
+    expect(refreshAll).toHaveBeenCalledTimes(1);
+    expect(syncHead).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not start a new poll tick while the previous tick's refresh is still in flight", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let resolveRefresh!: () => void;
+    const refreshAll = vi.fn(
+      () =>
+        new Promise<void>((r) => {
+          resolveRefresh = r;
+        }),
+    );
+    const syncHead = vi.fn().mockResolvedValue(undefined);
+    useWorkingTreeStore.setState({ refreshAll });
+    useRepoStore.setState({ syncHead });
+
+    render(<App />);
+    await waitFor(() => expect(screen.queryByText(/starting/i)).not.toBeInTheDocument());
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8000); // tick 0 starts; refreshAll never resolves
+    });
+    expect(refreshAll).toHaveBeenCalledTimes(1);
+    expect(syncHead).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8000); // tick 1 fires while tick 0 is still in flight
+    });
+    expect(refreshAll).toHaveBeenCalledTimes(1); // not re-entered
+    expect(syncHead).toHaveBeenCalledTimes(1);
+
+    resolveRefresh();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
   });
 });
