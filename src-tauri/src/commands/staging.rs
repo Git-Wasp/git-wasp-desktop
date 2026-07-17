@@ -1,9 +1,9 @@
 use crate::repo_manager::AppState;
 use crate::working_tree::{
-    get_stage_file_contents as wt_get_stage_file_contents, stage_file as wt_stage_file,
-    stage_file_content as wt_stage_file_content, stage_hunk as wt_stage_hunk,
-    unstage_file as wt_unstage_file, unstage_hunk as wt_unstage_hunk, StageFileContents,
-    WorkingTreeStatus,
+    get_stage_file_contents as wt_get_stage_file_contents, stage_all as wt_stage_all,
+    stage_file as wt_stage_file, stage_file_content as wt_stage_file_content,
+    stage_hunk as wt_stage_hunk, unstage_all as wt_unstage_all, unstage_file as wt_unstage_file,
+    unstage_hunk as wt_unstage_hunk, StageFileContents, WorkingTreeStatus,
 };
 use tauri::State;
 
@@ -27,6 +27,28 @@ pub fn unstage_file(
 ) -> Result<WorkingTreeStatus, String> {
     state
         .with_repo(|repo| wt_unstage_file(repo, &path))
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn stage_all(
+    paths: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<WorkingTreeStatus, String> {
+    state
+        .with_repo(|repo| wt_stage_all(repo, &paths))
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn unstage_all(
+    paths: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<WorkingTreeStatus, String> {
+    state
+        .with_repo(|repo| wt_unstage_all(repo, &paths))
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }

@@ -48,13 +48,6 @@ export type PullResult =
   | { status: "conflicts" }
   | { status: "stashReapplyConflict" };
 
-export interface AheadBehind {
-  branch: string;
-  upstream: string;
-  ahead: number;
-  behind: number;
-}
-
 export interface GithubRepo {
   id: number;
   name: string;

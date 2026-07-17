@@ -13,15 +13,6 @@ pub struct RemoteInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AheadBehind {
-    pub branch: String,
-    pub upstream: String,
-    pub ahead: usize,
-    pub behind: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct FetchResult {
     pub updated_refs: Vec<String>,
 }
@@ -121,46 +112,30 @@ pub fn parse_remote_url(url: &str, known_hosts: &[String]) -> anyhow::Result<Rem
     })
 }
 
-pub fn compute_ahead_behind(repo: &Repository) -> anyhow::Result<Vec<AheadBehind>> {
-    let mut results = Vec::new();
-    let branches = repo
-        .branches(Some(git2::BranchType::Local))
-        .context("failed to list branches")?;
-    for item in branches {
-        let (branch, _) = item.context("invalid branch")?;
-        let name = match branch.name()? {
-            Some(n) => n.to_string(),
-            None => continue,
-        };
-        let upstream = match branch.upstream() {
-            Ok(u) => u,
-            Err(_) => continue, // no upstream configured
-        };
-        let upstream_name = match upstream.name()? {
-            Some(n) => n.to_string(),
-            None => continue,
-        };
-        let local_oid = branch
-            .get()
-            .peel(git2::ObjectType::Commit)
-            .map(|o| o.id())
-            .context("cannot resolve local branch to commit")?;
-        let upstream_oid = upstream
-            .get()
-            .peel(git2::ObjectType::Commit)
-            .map(|o| o.id())
-            .context("cannot resolve upstream to commit")?;
-        let (ahead, behind) = repo
-            .graph_ahead_behind(local_oid, upstream_oid)
-            .context("failed to compute ahead/behind")?;
-        results.push(AheadBehind {
-            branch: name,
-            upstream: upstream_name,
-            ahead,
-            behind,
-        });
-    }
-    Ok(results)
+/// Ahead/behind counts for one local branch against its configured upstream.
+/// Errors when the branch doesn't exist or has no upstream configured —
+/// callers (the `branch_ahead_behind` command) treat that as "nothing to
+/// show" for this branch, same as the old bulk computation silently skipped
+/// upstream-less branches.
+pub fn branch_ahead_behind(repo: &Repository, branch_name: &str) -> anyhow::Result<(usize, usize)> {
+    let branch = repo
+        .find_branch(branch_name, git2::BranchType::Local)
+        .with_context(|| format!("branch not found: {branch_name}"))?;
+    let upstream = branch
+        .upstream()
+        .with_context(|| format!("branch '{branch_name}' has no upstream"))?;
+    let local_oid = branch
+        .get()
+        .peel(git2::ObjectType::Commit)
+        .map(|o| o.id())
+        .context("cannot resolve local branch to commit")?;
+    let upstream_oid = upstream
+        .get()
+        .peel(git2::ObjectType::Commit)
+        .map(|o| o.id())
+        .context("cannot resolve upstream to commit")?;
+    repo.graph_ahead_behind(local_oid, upstream_oid)
+        .context("failed to compute ahead/behind")
 }
 
 pub fn fetch(
@@ -611,6 +586,96 @@ def456\trefs/tags/v1.0^{}\n\
     fn unknown_host_returns_error() {
         let result = parse_remote_url("https://gitlab.com/owner/repo.git", &known());
         assert!(result.is_err());
+    }
+
+    // ----- branch_ahead_behind -----
+
+    #[test]
+    fn branch_ahead_behind_counts_local_and_upstream_commits() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        let sig = git2::Signature::now("Test", "test@test.com").unwrap();
+
+        let base_tree_id = {
+            let mut index = repo.index().unwrap();
+            index.write_tree().unwrap()
+        };
+        let base_tree = repo.find_tree(base_tree_id).unwrap();
+        let base_oid = repo
+            .commit(Some("HEAD"), &sig, &sig, "base", &base_tree, &[])
+            .unwrap();
+        let base_commit = repo.find_commit(base_oid).unwrap();
+        let head_branch_name = repo.head().unwrap().shorthand().unwrap().to_string();
+
+        // Remote-tracking ref, configured as the local branch's upstream.
+        // `set_upstream` needs a matching remote to resolve "origin/main"
+        // against, hence the (unfetchable, never contacted) remote below.
+        repo.remote("origin", "https://example.invalid/repo.git")
+            .unwrap();
+        repo.reference("refs/remotes/origin/main", base_oid, true, "set up")
+            .unwrap();
+        repo.find_branch(&head_branch_name, git2::BranchType::Local)
+            .unwrap()
+            .set_upstream(Some("origin/main"))
+            .unwrap();
+
+        // Local gets 1 commit ahead.
+        let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+        let local_tree = repo.find_tree(head_commit.tree_id()).unwrap();
+        repo.commit(
+            Some("HEAD"),
+            &sig,
+            &sig,
+            "local work",
+            &local_tree,
+            &[&head_commit],
+        )
+        .unwrap();
+
+        // Upstream diverges with 2 commits of its own.
+        let mut upstream_tip = base_commit;
+        for i in 0..2 {
+            let t = repo.find_tree(upstream_tip.tree_id()).unwrap();
+            let oid = repo
+                .commit(
+                    None,
+                    &sig,
+                    &sig,
+                    &format!("upstream {i}"),
+                    &t,
+                    &[&upstream_tip],
+                )
+                .unwrap();
+            upstream_tip = repo.find_commit(oid).unwrap();
+        }
+        repo.reference(
+            "refs/remotes/origin/main",
+            upstream_tip.id(),
+            true,
+            "advance",
+        )
+        .unwrap();
+
+        let (ahead, behind) = branch_ahead_behind(&repo, &head_branch_name).unwrap();
+        assert_eq!(ahead, 1);
+        assert_eq!(behind, 2);
+    }
+
+    #[test]
+    fn branch_ahead_behind_errors_when_branch_has_no_upstream() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        let sig = git2::Signature::now("Test", "test@test.com").unwrap();
+        let tree_id = {
+            let mut index = repo.index().unwrap();
+            index.write_tree().unwrap()
+        };
+        let tree = repo.find_tree(tree_id).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "base", &tree, &[])
+            .unwrap();
+        let head_branch_name = repo.head().unwrap().shorthand().unwrap().to_string();
+
+        assert!(branch_ahead_behind(&repo, &head_branch_name).is_err());
     }
 
     // ----- is_ssh_remote -----

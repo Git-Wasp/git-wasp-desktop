@@ -66,17 +66,27 @@ fn stash_working_changes(repo: &mut Repository, label: &str) -> anyhow::Result<b
     }
 }
 
+/// The mutable, per-tab state that an operation on one repo needs together —
+/// the repo handle, its in-progress operation, and its graph cache — held
+/// behind its own lock. `with_repo`/`with_repo_mut`/etc. clone the `Arc`
+/// pointing at this out of `RepoManager.repos` and release that outer lock
+/// before locking here, so a slow op on one tab (a fetch, a large checkout)
+/// never blocks another tab's otherwise-cheap operations.
+struct RepoState {
+    repo: Repository,
+    operation: Option<OperationState>,
+    /// Cached commit-graph layout, reused across scroll fetches and rebuilt only
+    /// when HEAD or refs move. `None` until the graph is first requested.
+    graph_cache: Option<crate::graph::GraphCache>,
+}
+
 /// A single open repository tab, carrying its own in-progress operation so a
 /// merge (or future rebase) in one tab can't leak into another.
 struct OpenRepo {
     /// Stable identity = the git2-normalised workdir path. Also the value the
     /// frontend passes back to `activate`/`close` (it's `RepoInfo.path`).
     key: String,
-    repo: Repository,
-    operation: Option<OperationState>,
-    /// Cached commit-graph layout, reused across scroll fetches and rebuilt only
-    /// when HEAD or refs move. `None` until the graph is first requested.
-    graph_cache: Option<crate::graph::GraphCache>,
+    state: Arc<Mutex<RepoState>>,
 }
 
 pub struct RepoManager {
@@ -117,6 +127,34 @@ fn repo_info(repo: &Repository) -> RepoInfo {
     }
 }
 
+/// Best-effort `RepoInfo` for an already-open tab. `path`/`name` are always
+/// exact — derived from `key`, the same value `repo_info` would compute for
+/// `path`, captured once at `open()` time and never changing, so no lock is
+/// needed for them. `head_branch` is filled in opportunistically via
+/// `try_lock`: if the tab's state is currently held by another operation
+/// (e.g. an in-flight fetch), this returns `None` for it rather than
+/// blocking — so listing/activating/closing tabs never waits on an unrelated
+/// tab's slow operation.
+fn open_repo_info(entry: &OpenRepo) -> RepoInfo {
+    let name = Path::new(&entry.key)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&entry.key)
+        .to_string();
+    let head_branch = entry.state.try_lock().ok().and_then(|guard| {
+        guard
+            .repo
+            .head()
+            .ok()
+            .and_then(|h| h.shorthand().map(|s| s.to_string()))
+    });
+    RepoInfo {
+        name,
+        path: entry.key.clone(),
+        head_branch,
+    }
+}
+
 impl RepoManager {
     fn new() -> Self {
         Self {
@@ -145,6 +183,23 @@ impl RepoManager {
             .map_err(|_| anyhow::anyhow!("config lock poisoned"))
     }
 
+    /// Clone the active tab's per-repo state handle. Only the outer `repos`
+    /// Vec is locked here, and only long enough to find the entry and clone
+    /// its `Arc` — the actual git2 work happens afterwards against just that
+    /// clone, so it can never block a lookup/mutation on a different tab.
+    fn active_state(&self) -> anyhow::Result<Arc<Mutex<RepoState>>> {
+        let key = self
+            .active_lock()?
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("no repository open"))?;
+        let repos = self.repos_lock()?;
+        repos
+            .iter()
+            .find(|r| r.key == key)
+            .map(|r| Arc::clone(&r.state))
+            .ok_or_else(|| anyhow::anyhow!("no repository open"))
+    }
+
     /// Run `f` against the active repo and its operation state under one lock —
     /// the only sanctioned way to touch both, mirroring how multi-step git ops
     /// route through a single critical section.
@@ -152,16 +207,23 @@ impl RepoManager {
     where
         F: FnOnce(&mut Repository, &mut Option<OperationState>) -> anyhow::Result<T>,
     {
-        let key = self
-            .active_lock()?
-            .clone()
-            .ok_or_else(|| anyhow::anyhow!("no repository open"))?;
-        let mut repos = self.repos_lock()?;
-        let entry = repos
-            .iter_mut()
-            .find(|r| r.key == key)
-            .ok_or_else(|| anyhow::anyhow!("no repository open"))?;
-        f(&mut entry.repo, &mut entry.operation)
+        let state = self.active_state()?;
+        let mut guard = state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("repo state lock poisoned"))?;
+        let RepoState {
+            repo,
+            operation,
+            graph_cache,
+            ..
+        } = &mut *guard;
+        let result = f(repo, operation);
+        // Conservative: any `&mut Repository` access here could have moved
+        // HEAD or a ref (multi-step merge/rebase steps route through this),
+        // so flag the graph cache for re-verification regardless of whether
+        // `f` reports success — see `crate::graph::mark_dirty`.
+        crate::graph::mark_dirty(graph_cache);
+        result
     }
 
     /// Snapshot the open tabs (in order) + active into config and persist, so
@@ -190,9 +252,11 @@ impl RepoManager {
             if !repos.iter().any(|r| r.key == info.path) {
                 repos.push(OpenRepo {
                     key: info.path.clone(),
-                    repo,
-                    operation: None,
-                    graph_cache: None,
+                    state: Arc::new(Mutex::new(RepoState {
+                        repo,
+                        operation: None,
+                        graph_cache: None,
+                    })),
                 });
             }
             info
@@ -219,7 +283,7 @@ impl RepoManager {
                 .iter()
                 .find(|r| r.key == path)
                 .ok_or_else(|| anyhow::anyhow!("repository not open: {path}"))?;
-            repo_info(&entry.repo)
+            open_repo_info(entry)
         };
         *self.active_lock()? = Some(info.path.clone());
         self.persist_session()?;
@@ -237,10 +301,7 @@ impl RepoManager {
                 *active = repos.first().map(|r| r.key.clone());
             }
             match active.clone() {
-                Some(ak) => repos
-                    .iter()
-                    .find(|r| r.key == ak)
-                    .map(|r| repo_info(&r.repo)),
+                Some(ak) => repos.iter().find(|r| r.key == ak).map(open_repo_info),
                 None => None,
             }
         };
@@ -249,11 +310,7 @@ impl RepoManager {
     }
 
     pub fn list_open(&self) -> anyhow::Result<Vec<RepoInfo>> {
-        Ok(self
-            .repos_lock()?
-            .iter()
-            .map(|r| repo_info(&r.repo))
-            .collect())
+        Ok(self.repos_lock()?.iter().map(open_repo_info).collect())
     }
 
     pub fn get_current(&self) -> anyhow::Result<Option<RepoInfo>> {
@@ -261,10 +318,7 @@ impl RepoManager {
             return Ok(None);
         };
         let repos = self.repos_lock()?;
-        Ok(repos
-            .iter()
-            .find(|r| r.key == key)
-            .map(|r| repo_info(&r.repo)))
+        Ok(repos.iter().find(|r| r.key == key).map(open_repo_info))
     }
 
     pub fn get_recent(&self) -> anyhow::Result<Vec<RepoEntry>> {
@@ -286,32 +340,26 @@ impl RepoManager {
     where
         F: FnOnce(&Repository) -> T,
     {
-        let key = self
-            .active_lock()?
-            .clone()
-            .ok_or_else(|| anyhow::anyhow!("no repository open"))?;
-        let repos = self.repos_lock()?;
-        let entry = repos
-            .iter()
-            .find(|r| r.key == key)
-            .ok_or_else(|| anyhow::anyhow!("no repository open"))?;
-        Ok(f(&entry.repo))
+        let state = self.active_state()?;
+        let guard = state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("repo state lock poisoned"))?;
+        Ok(f(&guard.repo))
     }
 
     pub fn with_repo_mut<F, T>(&self, f: F) -> anyhow::Result<T>
     where
         F: FnOnce(&mut Repository) -> T,
     {
-        let key = self
-            .active_lock()?
-            .clone()
-            .ok_or_else(|| anyhow::anyhow!("no repository open"))?;
-        let mut repos = self.repos_lock()?;
-        let entry = repos
-            .iter_mut()
-            .find(|r| r.key == key)
-            .ok_or_else(|| anyhow::anyhow!("no repository open"))?;
-        Ok(f(&mut entry.repo))
+        let state = self.active_state()?;
+        let mut guard = state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("repo state lock poisoned"))?;
+        let result = f(&mut guard.repo);
+        // Conservative: any `&mut Repository` access could have moved HEAD or
+        // a ref — see `crate::graph::mark_dirty`.
+        crate::graph::mark_dirty(&mut guard.graph_cache);
+        Ok(result)
     }
 
     /// Run `f` against the active repo and its (mutable) graph-layout cache. The
@@ -320,16 +368,14 @@ impl RepoManager {
     where
         F: FnOnce(&Repository, &mut Option<crate::graph::GraphCache>) -> T,
     {
-        let key = self
-            .active_lock()?
-            .clone()
-            .ok_or_else(|| anyhow::anyhow!("no repository open"))?;
-        let mut repos = self.repos_lock()?;
-        let entry = repos
-            .iter_mut()
-            .find(|r| r.key == key)
-            .ok_or_else(|| anyhow::anyhow!("no repository open"))?;
-        Ok(f(&entry.repo, &mut entry.graph_cache))
+        let state = self.active_state()?;
+        let mut guard = state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("repo state lock poisoned"))?;
+        let RepoState {
+            repo, graph_cache, ..
+        } = &mut *guard;
+        Ok(f(repo, graph_cache))
     }
 
     /// Re-scans the working tree and updates the graph cache's dirty-file
@@ -341,10 +387,17 @@ impl RepoManager {
     /// pair of calls (`get_working_tree_status` + a separate count scan), halving
     /// the `repo.statuses()` work the poll/watcher/focus refresh does — the hot
     /// path on a large monorepo where `git status` dominates.
+    ///
+    /// Also flags the graph cache for re-verification (`mark_dirty`): this is
+    /// the path the file watcher's "something changed" event drives, so it's
+    /// the one place that needs to notice a change made *outside* the app
+    /// (e.g. a `git` command run in a terminal) — `with_repo_mut` only covers
+    /// changes made through this app's own commands.
     pub fn refresh_working_tree(&self) -> anyhow::Result<crate::working_tree::WorkingTreeStatus> {
         self.with_repo_graph_cache(|repo, cache| {
             let status = crate::working_tree::get_working_tree_status(repo)?;
             crate::graph::set_change_count(cache, status.distinct_change_count());
+            crate::graph::mark_dirty(cache);
             Ok(status)
         })?
     }
@@ -509,8 +562,6 @@ impl RepoManager {
                 is_head: false,
                 upstream: None,
                 oid,
-                ahead: None,
-                behind: None,
             })
         })?
     }
@@ -629,12 +680,18 @@ impl RepoManager {
     }
 }
 
+/// The debounced file watcher's concrete type (see `file_watcher::start`).
+type FileWatcher = notify_debouncer_full::Debouncer<
+    notify::RecommendedWatcher,
+    notify_debouncer_full::RecommendedCache,
+>;
+
 /// Tauri managed state — wraps RepoManager in Arc so it can be cloned into
 /// the async command handlers without holding a lock across await points.
 /// Also holds the file watcher and credential store for the app's lifetime.
 pub struct AppState {
     pub manager: Arc<RepoManager>,
-    pub watcher: Mutex<Option<notify::RecommendedWatcher>>,
+    pub watcher: Mutex<Option<FileWatcher>>,
     pub credentials: Box<dyn crate::credential_store::CredentialStore>,
 }
 
@@ -883,14 +940,14 @@ pub fn restore_session(app: &tauri::App) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Lists every branch (local and remote-tracking) with cheap-to-derive
+/// metadata only. Ahead/behind counts used to be computed here for every
+/// local branch eagerly (one `graph_ahead_behind` walk per branch); that's
+/// dead weight the frontend never read from this list — it's fetched
+/// per-branch, on demand, via the `branch_ahead_behind` command instead (see
+/// `remote_ops::branch_ahead_behind`), so this stays cheap regardless of how
+/// many branches a monorepo has.
 pub fn list_branches(repo: &Repository) -> anyhow::Result<Vec<BranchInfo>> {
-    let ahead_behind_map: std::collections::HashMap<String, (usize, usize)> =
-        crate::remote_ops::compute_ahead_behind(repo)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|ab| (ab.branch, (ab.ahead, ab.behind)))
-            .collect();
-
     let mut branches = Vec::new();
     for branch in repo.branches(None).context("failed to list branches")? {
         let (branch, branch_type) = branch.context("invalid branch reference")?;
@@ -906,18 +963,12 @@ pub fn list_branches(repo: &Repository) -> anyhow::Result<Vec<BranchInfo>> {
             .upstream()
             .ok()
             .and_then(|u| u.name().ok().flatten().map(|s| s.to_string()));
-        let (ahead, behind) = ahead_behind_map
-            .get(&name)
-            .map(|&(a, b)| (Some(a), Some(b)))
-            .unwrap_or((None, None));
         branches.push(BranchInfo {
             name,
             is_remote,
             is_head,
             upstream,
             oid,
-            ahead,
-            behind,
         });
     }
     Ok(branches)
@@ -1112,6 +1163,122 @@ mod tests {
             drop(tree);
         }
         (dir, repo)
+    }
+
+    /// Task B2: `with_repo_mut` must flag the graph cache dirty after any
+    /// mutation, so a checkout/commit/merge made through this app's own
+    /// commands is never missed by `compute_layout_cached`'s "only re-verify
+    /// when told to" optimisation (see `crate::graph::mark_dirty`) — this is
+    /// the integration point layout.rs's own cache-behaviour tests can't
+    /// cover, since they don't go through `RepoManager` at all.
+    #[test]
+    fn with_repo_mut_marks_the_graph_cache_dirty_so_a_commit_is_noticed() {
+        let (dir, _) = make_git_repo_with_commit();
+        let manager = RepoManager::new();
+        manager.open(dir.path().to_str().unwrap()).unwrap();
+
+        let before = manager
+            .with_repo_graph_cache(|repo, cache| {
+                crate::graph::compute_layout_cached(repo, cache, 0, 10)
+            })
+            .unwrap()
+            .unwrap();
+        assert_eq!(before.total_count, 1);
+
+        manager
+            .with_repo_mut(|repo| {
+                let sig = Signature::now("Test", "test@test.com").unwrap();
+                let head = repo.head().unwrap().peel_to_commit().unwrap();
+                let tree = head.tree().unwrap();
+                repo.commit(Some("HEAD"), &sig, &sig, "second", &tree, &[&head])
+                    .unwrap();
+            })
+            .unwrap();
+
+        let after = manager
+            .with_repo_graph_cache(|repo, cache| {
+                crate::graph::compute_layout_cached(repo, cache, 0, 10)
+            })
+            .unwrap()
+            .unwrap();
+        assert_eq!(after.total_count, 2);
+    }
+
+    /// Task B1 spike gate (docs/superpowers/perf-baseline.md): reproduces the
+    /// problem the per-repo-locking task exists to fix, with a real number —
+    /// not simulated by `BENCH_REPO_PATH`, since the point isn't repo size,
+    /// it's that `repos: Mutex<Vec<OpenRepo>>` is one lock shared by every
+    /// open tab. A slow operation on tab A (stood in for by a `sleep` inside
+    /// the `with_repo_mut` closure, in place of a real network fetch) must
+    /// not hold up a totally unrelated, otherwise-cheap operation on tab B
+    /// (`get_working_tree_status`) — each tab's repo state lives behind its
+    /// own lock (see `RepoState`), so tab B only ever waits on the brief
+    /// outer-Vec lookup, never on tab A's slow closure. This is the fixed
+    /// counterpart of the Task B1 spike gate (see perf-baseline.md), which
+    /// measured tab B blocked ~135ms of A's 150ms op under the old single
+    /// shared `Mutex<Vec<OpenRepo>>`. Deterministic (fixed sleep, no bench
+    /// repo needed), so it runs as part of the normal suite.
+    #[test]
+    fn tab_a_slow_op_does_not_block_tab_b() {
+        let (dir_a, _) = make_git_repo_with_commit();
+        let (dir_b, _) = make_git_repo_with_commit();
+        let manager = std::sync::Arc::new(RepoManager::new());
+        // `open`'s returned `RepoInfo.path` is git2's canonicalised workdir
+        // path, which can differ from the raw tempdir string (e.g. macOS
+        // resolves `/var/...` to `/private/var/...`) — `activate` matches on
+        // that canonical form, so tests must use it too (see
+        // `activate_switches_the_active_tab` for the same pattern).
+        let info_a = manager.open(dir_a.path().to_str().unwrap()).unwrap();
+        let info_b = manager.open(dir_b.path().to_str().unwrap()).unwrap();
+        manager.activate(&info_a.path).unwrap();
+
+        const SLOW_OP_MS: u64 = 150;
+        let m2 = std::sync::Arc::clone(&manager);
+        let handle = std::thread::spawn(move || {
+            // Stands in for a real long/network op (e.g. fetch) on tab A.
+            m2.with_repo_mut(|_repo| {
+                std::thread::sleep(std::time::Duration::from_millis(SLOW_OP_MS));
+            })
+            .unwrap();
+        });
+        // Give the spawned thread a head start so it acquires the lock first.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+
+        let t0 = std::time::Instant::now();
+        manager.activate(&info_b.path).unwrap();
+        manager
+            .with_repo(|repo| crate::working_tree::get_working_tree_status(repo))
+            .unwrap()
+            .unwrap();
+        let blocked = t0.elapsed();
+
+        handle.join().unwrap();
+        println!(
+            "tab B (get_working_tree_status) took {blocked:?} while tab A ran a {SLOW_OP_MS}ms op"
+        );
+        assert!(
+            blocked < std::time::Duration::from_millis(100),
+            "expected tab B to run without waiting on tab A's slow op, but it took {blocked:?}"
+        );
+    }
+
+    /// Perf harness (Phase 0 of docs/superpowers/perf-baseline.md): opens the
+    /// repo at `BENCH_REPO_PATH` directly (no `RepoManager` needed — the same
+    /// seam a Tauri command uses) and times `list_branches` on it. Ignored by
+    /// default; run with:
+    /// `BENCH_REPO_PATH=/path/to/bench-repo cargo test --release -- --ignored --nocapture bench_`
+    #[test]
+    #[ignore = "perf harness: requires BENCH_REPO_PATH"]
+    fn bench_list_branches() {
+        let path = std::env::var("BENCH_REPO_PATH").expect("set BENCH_REPO_PATH to the bench repo");
+        let repo = Repository::open(&path).unwrap();
+        let start = std::time::Instant::now();
+        let branches = list_branches(&repo).unwrap();
+        println!(
+            "list_branches: {} branches in {:?}",
+            branches.len(),
+            start.elapsed()
+        );
     }
 
     #[test]

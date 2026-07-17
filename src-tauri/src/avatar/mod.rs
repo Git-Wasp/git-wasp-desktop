@@ -126,6 +126,44 @@ pub async fn resolve_avatar(
     }
 }
 
+/// Cap on concurrent Gravatar network fetches when resolving a batch — most
+/// emails in a batch are already disk-cached (near-instant), but a burst of
+/// genuinely new authors shouldn't open one socket per email at once.
+const MAX_CONCURRENT_FETCHES: usize = 8;
+
+/// Resolve a batch of emails concurrently, returning one result per input
+/// email in the same order (`out[i]` answers `emails[i]`) — the single
+/// round trip `get_avatars` uses instead of one `get_avatar` call per email.
+pub async fn resolve_avatars(
+    dir: &Path,
+    base_url: &str,
+    emails: &[String],
+    size: u32,
+) -> anyhow::Result<Vec<Option<String>>> {
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_FETCHES));
+    let mut join_set = tokio::task::JoinSet::new();
+    for (index, email) in emails.iter().enumerate() {
+        let dir = dir.to_path_buf();
+        let base_url = base_url.to_string();
+        let email = email.clone();
+        let semaphore = semaphore.clone();
+        join_set.spawn(async move {
+            let _permit = semaphore.acquire_owned().await.expect("semaphore closed");
+            (index, resolve_avatar(&dir, &base_url, &email, size).await)
+        });
+    }
+
+    // A single email's resolution failing (e.g. a transient network error)
+    // shouldn't blank out every other avatar in the batch — treat it the same
+    // as "no avatar", matching what the per-email command's caller already did.
+    let mut out = vec![None; emails.len()];
+    while let Some(joined) = join_set.join_next().await {
+        let (index, result) = joined.expect("avatar resolution task panicked");
+        out[index] = result.unwrap_or(None);
+    }
+    Ok(out)
+}
+
 fn cache_dir() -> anyhow::Result<PathBuf> {
     Ok(dirs::cache_dir()
         .context("no OS cache directory")?
@@ -138,6 +176,16 @@ fn cache_dir() -> anyhow::Result<PathBuf> {
 pub async fn get_avatar(email: String) -> Result<Option<String>, String> {
     let dir = cache_dir().map_err(|e| e.to_string())?;
     resolve_avatar(&dir, GRAVATAR_BASE, &email, AVATAR_SIZE)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Tauri command: batched form of [`get_avatar`] — one round trip resolves
+/// every email in `emails`, `out[i]` answering `emails[i]`.
+#[tauri::command]
+pub async fn get_avatars(emails: Vec<String>) -> Result<Vec<Option<String>>, String> {
+    let dir = cache_dir().map_err(|e| e.to_string())?;
+    resolve_avatars(&dir, GRAVATAR_BASE, &emails, AVATAR_SIZE)
         .await
         .map_err(|e| e.to_string())
 }
@@ -218,6 +266,88 @@ mod tests {
         assert!(second.is_none());
         mock.assert_hits(1);
         assert!(dir.path().join(format!("{hash}.none")).exists());
+    }
+
+    #[tokio::test]
+    async fn resolve_avatars_preserves_order_and_resolves_each() {
+        let dir = TempDir::new().unwrap();
+        let server = MockServer::start();
+        let hash_a = gravatar_hash("a@x.com");
+        let hash_b = gravatar_hash("b@x.com");
+        let mock_a = server.mock(|when, then| {
+            when.path(format!("/{hash_a}"));
+            then.status(200).body([0x89, 0x50, 0x4E, 0x47, 1, 2, 3]);
+        });
+        let mock_b = server.mock(|when, then| {
+            when.path(format!("/{hash_b}"));
+            then.status(404);
+        });
+
+        let out = resolve_avatars(
+            dir.path(),
+            &server.base_url(),
+            &["a@x.com".into(), "b@x.com".into()],
+            72,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(out.len(), 2);
+        assert!(out[0]
+            .as_ref()
+            .unwrap()
+            .starts_with("data:image/png;base64,"));
+        assert!(out[1].is_none());
+        mock_a.assert_hits(1);
+        mock_b.assert_hits(1);
+    }
+
+    #[tokio::test]
+    async fn resolve_avatars_serves_cached_hits_without_refetching() {
+        let dir = TempDir::new().unwrap();
+        let server = MockServer::start();
+        let hash = gravatar_hash("a@x.com");
+        let mock = server.mock(|when, then| {
+            when.path(format!("/{hash}"));
+            then.status(200).body([0x89, 0x50, 0x4E, 0x47, 1, 2, 3]);
+        });
+
+        resolve_avatars(dir.path(), &server.base_url(), &["a@x.com".into()], 72)
+            .await
+            .unwrap();
+        resolve_avatars(dir.path(), &server.base_url(), &["a@x.com".into()], 72)
+            .await
+            .unwrap();
+
+        mock.assert_hits(1);
+    }
+
+    #[tokio::test]
+    async fn resolve_avatars_treats_one_failure_as_no_avatar_without_failing_the_batch() {
+        let dir = TempDir::new().unwrap();
+        let server = MockServer::start();
+        let hash_a = gravatar_hash("a@x.com");
+        let hash_b = gravatar_hash("b@x.com");
+        server.mock(|when, then| {
+            when.path(format!("/{hash_a}"));
+            then.status(500);
+        });
+        server.mock(|when, then| {
+            when.path(format!("/{hash_b}"));
+            then.status(200).body([0x89, 0x50, 0x4E, 0x47]);
+        });
+
+        let out = resolve_avatars(
+            dir.path(),
+            &server.base_url(),
+            &["a@x.com".into(), "b@x.com".into()],
+            72,
+        )
+        .await
+        .unwrap();
+
+        assert!(out[0].is_none());
+        assert!(out[1].is_some());
     }
 
     #[test]

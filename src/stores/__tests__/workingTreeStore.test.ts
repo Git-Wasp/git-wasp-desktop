@@ -138,6 +138,26 @@ describe("workingTreeStore", () => {
     expect(useWorkingTreeStore.getState().selectedPath).toBe("b.txt");
   });
 
+  it("stageAll stages every path in a single invoke", async () => {
+    mockInvoke.mockResolvedValueOnce(emptyStatus);
+
+    await useWorkingTreeStore.getState().stageAll(["a.txt", "b.txt", "c.txt"]);
+
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
+    expect(mockInvoke).toHaveBeenCalledWith("stage_all", { paths: ["a.txt", "b.txt", "c.txt"] });
+    expect(useWorkingTreeStore.getState().status).toEqual(emptyStatus);
+  });
+
+  it("unstageAll unstages every path in a single invoke", async () => {
+    mockInvoke.mockResolvedValueOnce(emptyStatus);
+
+    await useWorkingTreeStore.getState().unstageAll(["a.txt", "b.txt"]);
+
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
+    expect(mockInvoke).toHaveBeenCalledWith("unstage_all", { paths: ["a.txt", "b.txt"] });
+    expect(useWorkingTreeStore.getState().status).toEqual(emptyStatus);
+  });
+
   it("selectFile drops a stale response when the selection moved on before it resolved", async () => {
     let resolveA: (v: StageFileContents) => void;
     const pendingA = new Promise<StageFileContents>((r) => { resolveA = r; });

@@ -74,7 +74,7 @@ pub fn run() {
             commands::branch::create_branch,
             commands::branch::rename_branch,
             commands::branch::delete_branch,
-            commands::branch::get_ahead_behind,
+            commands::branch::branch_ahead_behind,
             commands::branch::fast_forward_branch,
             commands::branch::fast_forward_to_upstream,
             commands::branch::list_fast_forwardable_branches,
@@ -83,6 +83,8 @@ pub fn run() {
             // Staging
             commands::staging::stage_file,
             commands::staging::unstage_file,
+            commands::staging::stage_all,
+            commands::staging::unstage_all,
             commands::staging::stage_hunk,
             commands::staging::unstage_hunk,
             commands::staging::get_stage_file_contents,
@@ -102,6 +104,7 @@ pub fn run() {
             commands::commit::get_identity_config,
             commands::commit::set_identity,
             avatar::get_avatar,
+            avatar::get_avatars,
             // Stash
             commands::stash::stash_save_cmd,
             commands::stash::stash_list_cmd,

@@ -8,7 +8,10 @@ import { EmptyState } from "../ui/EmptyState";
 import { FileStatusIcon } from "../ui/FileStatusIcon";
 import { ContextMenu, type MenuItem } from "../common/ContextMenu";
 import { ConfirmDialog } from "../common/ConfirmDialog";
+import { VirtualList } from "../ui/VirtualList";
 import type { StatusEntry } from "../../types/workingTree";
+
+const FILE_ROW_HEIGHT = 30;
 
 /** An open right-click menu on a file row: its position, the file, and which
  *  panel it came from (the staged panel offers "Unstage" instead of "Stage"). */
@@ -37,6 +40,7 @@ function FileRow({
   return (
     <div
       data-file-row
+      data-testid="file-row"
       onClick={onSelect}
       onContextMenu={onContextMenu}
       onMouseEnter={(e) => {
@@ -50,7 +54,8 @@ function FileRow({
         display: "flex",
         alignItems: "center",
         gap: "var(--space-2)",
-        padding: "var(--space-1) var(--space-3)",
+        height: FILE_ROW_HEIGHT,
+        padding: "0 var(--space-3)",
         cursor: "pointer",
         background: isSelected ? "var(--color-bg-selected)" : "transparent",
         borderRadius: "var(--radius-sm)",
@@ -135,6 +140,8 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
     selectFile,
     stageFile,
     unstageFile,
+    stageAll: stageAllPaths,
+    unstageAll: unstageAllPaths,
     discardFile,
     deleteFile,
   } = useWorkingTreeStore();
@@ -213,21 +220,14 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
   const staged = status?.staged ?? [];
   const stagedCount = staged.length;
 
-  // Sequential, not `Array.forEach` firing every invoke concurrently: git's
-  // index is a single file, so N concurrent `stage_file`/`unstage_file` calls
-  // race each other. `stageOne`/`unstageOne` already toast per-file failures,
-  // so a rejection here just moves on to the next file rather than aborting
-  // the rest of the batch.
-  const stageAll = async () => {
-    for (const e of changes) {
-      await stageOne(e.path);
-    }
-  };
-  const unstageAll = async () => {
-    for (const e of staged) {
-      await unstageOne(e.path);
-    }
-  };
+  const stageAll = () =>
+    stageAllPaths(changes.map((e) => e.path)).catch((e: unknown) =>
+      useToastStore.getState().error(String(e), { title: "Stage failed" }),
+    );
+  const unstageAll = () =>
+    unstageAllPaths(staged.map((e) => e.path)).catch((e: unknown) =>
+      useToastStore.getState().error(String(e), { title: "Unstage failed" }),
+    );
 
   // Stash all tracked changes (staged + unstaged). Untracked files aren't
   // stashed, so the button is offered only when there's something git will
@@ -286,17 +286,22 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
           {changes.length === 0 ? (
             <EmptyState message="No changes" />
           ) : (
-            changes.map((entry) => (
-              <FileRow
-                key={`change-${entry.path}`}
-                entry={entry}
-                actionLabel="Stage"
-                action={() => void stageOne(entry.path)}
-                onSelect={() => void selectOne(entry.path, "unstaged")}
-                onContextMenu={(e) => openMenu(e, entry, false)}
-                isSelected={selectedPath === entry.path && stageMode === "unstaged"}
-              />
-            ))
+            <VirtualList
+              items={changes}
+              rowHeight={FILE_ROW_HEIGHT}
+              maxHeight={2000}
+              ariaLabel="Changed files"
+              render={(entry) => (
+                <FileRow
+                  entry={entry}
+                  actionLabel="Stage"
+                  action={() => void stageOne(entry.path)}
+                  onSelect={() => void selectOne(entry.path, "unstaged")}
+                  onContextMenu={(e) => openMenu(e, entry, false)}
+                  isSelected={selectedPath === entry.path && stageMode === "unstaged"}
+                />
+              )}
+            />
           )}
         </div>
       </div>
@@ -327,17 +332,22 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
           {stagedCount === 0 ? (
             <EmptyState message="Stage files to commit them" />
           ) : (
-            staged.map((entry) => (
-              <FileRow
-                key={`staged-${entry.path}`}
-                entry={entry}
-                actionLabel="Unstage"
-                action={() => void unstageOne(entry.path)}
-                onSelect={() => void selectOne(entry.path, "staged")}
-                onContextMenu={(e) => openMenu(e, entry, true)}
-                isSelected={selectedPath === entry.path && stageMode === "staged"}
-              />
-            ))
+            <VirtualList
+              items={staged}
+              rowHeight={FILE_ROW_HEIGHT}
+              maxHeight={2000}
+              ariaLabel="Staged files"
+              render={(entry) => (
+                <FileRow
+                  entry={entry}
+                  actionLabel="Unstage"
+                  action={() => void unstageOne(entry.path)}
+                  onSelect={() => void selectOne(entry.path, "staged")}
+                  onContextMenu={(e) => openMenu(e, entry, true)}
+                  isSelected={selectedPath === entry.path && stageMode === "staged"}
+                />
+              )}
+            />
           )}
         </div>
       </div>
