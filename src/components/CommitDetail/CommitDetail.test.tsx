@@ -127,4 +127,20 @@ describe("CommitDetail", () => {
       expect(error).toHaveBeenCalledWith("Error: no such file", { title: "Couldn't load diff" }),
     );
   });
+
+  it("drops a stale diff response when the selected commit changed before it resolved", async () => {
+    let resolveA: (v: CommitDetailData) => void;
+    const pendingA = new Promise<CommitDetailData>((r) => { resolveA = r; });
+    mockInvoke.mockImplementationOnce(() => pendingA);
+    const { rerender } = render(<CommitDetail oid="A" />);
+    mockInvoke.mockResolvedValueOnce({ ...fakeDetail, oid: "B", message: "B's message" });
+    rerender(<CommitDetail oid="B" />);
+    await screen.findByText("B's message");
+    resolveA!({ ...fakeDetail, oid: "A", message: "A's message" });
+
+    // Use waitFor to give the microtask queue time to process the stale response
+    await waitFor(() => {
+      expect(screen.queryByText("A's message")).not.toBeInTheDocument();
+    });
+  });
 });
