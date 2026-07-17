@@ -65,7 +65,7 @@ release build (`cargo test --release`).
 | 10× viewport re-requests, no ref change (per-scroll ref-fingerprint cost) | 1.636ms / 10 calls (~164µs/call) | fingerprint reused, not recomputed, when Task B2 lands | |
 | `list_branches`, 21 branches (`compute_ahead_behind` per branch) | 7.863ms (~0.37ms/branch) | near-instant list; ahead/behind fetched lazily per-branch on demand (Task B3) | |
 | `get_working_tree_status`, 1000 unstaged files | 3.394ms | n/a — not a target of this plan, recorded as context for the stage-all number | |
-| `get_commit_detail`, 1000-file seed commit | 25.566ms | single diff pass, same result (Task B5) | |
+| `get_commit_detail`, 1000-file seed commit | 25.566ms | single diff pass, same result (Task B5) | **~18ms** (~25-30%) |
 
 **Read for what it says, not more:** at only 10k commits / 21 branches the
 graph-layout and list_branches numbers are already small in absolute terms —
@@ -295,3 +295,32 @@ emit) is the one place that notices *external* changes for the graph cache,
 so coalescing the emit at the source means it's called once per debounce
 window rather than once per raw filesystem event too — a second-order
 benefit of this task on top of B2's own.
+
+## Task B5 — single stats pass for commit-detail counts
+
+`get_commit_detail` computed each file's added/deleted line counts via its
+own `Patch::from_diff(&diff, idx)` call — one hunk/line re-parse per file.
+Replaced with a single `diff.foreach` pass (`compute_line_stats`) that
+accumulates per-file counts as it walks the whole diff once, indexed by
+delta order — mirroring the existing `collect_hunks` function's own
+`diff.foreach` usage and its same reliance on libgit2's guaranteed
+file-callback-before-that-file's-hunks/lines ordering. Binary files still
+correctly get `(0, 0)` (no line callback fires for them, matching
+`Patch::line_stats`'s prior behaviour — not a fallback).
+
+Pinned with two new tests: a direct test of `compute_line_stats` against a
+synthetic 3-file diff (add/modify/new-file, each with a distinct known
+shape) asserting counts land on the *correct* file — the regression this
+guards against is a single accumulating pass leaking one file's line counts
+into a neighbour's total if the "which file am I counting for" index isn't
+reset correctly at each file callback — plus an end-to-end pin at the
+`get_commit_detail` level with the same fixture. Both passed against the
+existing `Patch::from_diff`-based implementation before the refactor
+(confirming the pin was accurate) and after (confirming equivalence).
+
+Measured on the bench repo's 1000-file seed commit: **25.566ms → ~18ms**
+(~25-30%, consistent across three re-runs after discarding one noisy first
+run at 32ms). Modest, not dramatic — total line-scanning work is O(diff
+size) either way; the saving comes from one diff traversal instead of
+1000 separate `Patch` constructions, not from doing asymptotically less
+work.
