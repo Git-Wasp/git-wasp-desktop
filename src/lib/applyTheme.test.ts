@@ -202,4 +202,25 @@ describe("sanitizeThemeCss", () => {
     const css = ".hover\\:bg-red { background: red; }";
     expect(sanitizeThemeCss(css)).toBe(css);
   });
+
+  it("neutralizes a url() with an opening quote that never finds its close", () => {
+    // No closing " anywhere after this point in the file — a naive lazy
+    // regex backtracks into treating the quote as ordinary content and
+    // leaves the real payload completely unexamined.
+    const out = sanitizeThemeCss('a{background:url("https://evil.example/x)}');
+    expect(out).not.toContain("evil.example");
+    expect(out).toContain("url()");
+  });
+
+  it("still leaves an earlier well-formed relative url() untouched when a later one is unterminated", () => {
+    const css = 'a{background:url("./relative.png")} b{background:url("https://evil.example/unterminated}';
+    const out = sanitizeThemeCss(css);
+    expect(out).toContain("./relative.png");
+    expect(out).not.toContain("evil.example");
+  });
+
+  it("leaves a properly closed quoted relative url() untouched", () => {
+    const css = 'a{background:url("./foo.png")}';
+    expect(sanitizeThemeCss(css)).toBe(css);
+  });
 });

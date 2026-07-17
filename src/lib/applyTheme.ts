@@ -43,7 +43,19 @@ function flexKeyword(word: string): string {
 }
 
 const IMPORT_RE = new RegExp(`${flexLetter("@")}${flexKeyword("import")}[^;]*;?`, "gi");
-const URL_ARGS_RE = new RegExp(`${flexKeyword("url")}\\(\\s*(['"]?)([\\s\\S]*?)\\1\\s*\\)`, "gi");
+// Quoted and unquoted arguments are two distinct alternatives (not one
+// pattern with an optional quote) so a quote character can never be
+// silently reinterpreted as ordinary content when its matching close is
+// missing — see `stripUnterminatedUrlStrings` below for why that distinction
+// matters.
+const URL_ARGS_RE = new RegExp(
+  `${flexKeyword("url")}\\(\\s*(?:(['"])((?:\\\\[\\s\\S]|(?!\\1)[\\s\\S])*?)\\1|([^'"()\\s][^()]*?))\\s*\\)`,
+  "gi",
+);
+const URL_UNTERMINATED_STRING_RE = new RegExp(
+  `${flexKeyword("url")}\\(\\s*(['"])(?:(?!\\1)[\\s\\S])*$`,
+  "gi",
+);
 const DANGEROUS_SCHEME_RE = /^(?:https?:)?\/\//i;
 
 /**
@@ -73,10 +85,28 @@ function decodeCssEscapes(text: string): string {
  * and same-origin-relative `url()` intact.
  */
 function sanitizeUrlFunctions(css: string): string {
-  return css.replace(URL_ARGS_RE, (match: string, _quote: string, rawArg: string) => {
-    const decoded = decodeCssEscapes(rawArg).trim();
-    return DANGEROUS_SCHEME_RE.test(decoded) ? "url()" : match;
-  });
+  return css.replace(
+    URL_ARGS_RE,
+    (match: string, _quote: string, quotedArg: string | undefined, unquotedArg: string | undefined) => {
+      const decoded = decodeCssEscapes(quotedArg ?? unquotedArg ?? "").trim();
+      return DANGEROUS_SCHEME_RE.test(decoded) ? "url()" : match;
+    },
+  );
+}
+
+/**
+ * Fail-closed fallback for a `url(` whose quoted argument never finds a
+ * matching closing quote anywhere in the rest of the stylesheet (a theme
+ * file can simply omit it). `URL_ARGS_RE` requires the quote to close
+ * properly — deliberately, so a missing close can't fall back to treating
+ * the quote character itself as ordinary unquoted content, which previously
+ * let an unterminated `url("https://evil.example/x)` slip through
+ * completely unexamined. Rather than assume a browser's own malformed-CSS
+ * recovery makes such a construct inert, treat everything from that `url(`
+ * onward as unsafe and drop it.
+ */
+function stripUnterminatedUrlStrings(css: string): string {
+  return css.replace(URL_UNTERMINATED_STRING_RE, "url()");
 }
 
 /**
@@ -90,14 +120,16 @@ function sanitizeUrlFunctions(css: string): string {
  * variation, whitespace/newlines inside `url(...)`, protocol-relative URLs
  * (`//evil.example`), a CSS comment splitting the keyword mid-token (e.g. "@im",
  * a comment, then "port"), CSS unicode-escape obfuscation of the keyword itself
- * (e.g. `\75rl(`, `\40 \69mport`), and CSS unicode-escape obfuscation of the
- * URL's own scheme/value (e.g. `url(\0068ttps://evil.example)`). A full CSS
- * parser is out of scope; this is regex hardening against the specific bypass
- * classes above, not a guarantee against every conceivable obfuscation.
+ * (e.g. `\75rl(`, `\40 \69mport`), CSS unicode-escape obfuscation of the
+ * URL's own scheme/value (e.g. `url(\0068ttps://evil.example)`), and an
+ * unterminated quoted argument used to smuggle a scheme past the argument
+ * matcher entirely. A full CSS parser is out of scope; this is regex
+ * hardening against the specific bypass classes above, not a guarantee
+ * against every conceivable obfuscation.
  */
 export function sanitizeThemeCss(css: string): string {
   const normalized = stripCssComments(css);
-  return sanitizeUrlFunctions(normalized.replace(IMPORT_RE, ""));
+  return stripUnterminatedUrlStrings(sanitizeUrlFunctions(normalized.replace(IMPORT_RE, "")));
 }
 
 function customStyleElement(): HTMLStyleElement {
