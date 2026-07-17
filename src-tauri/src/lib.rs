@@ -83,6 +83,8 @@ pub fn run() {
             // Staging
             commands::staging::stage_file,
             commands::staging::unstage_file,
+            commands::staging::stage_all,
+            commands::staging::unstage_all,
             commands::staging::stage_hunk,
             commands::staging::unstage_hunk,
             commands::staging::get_stage_file_contents,

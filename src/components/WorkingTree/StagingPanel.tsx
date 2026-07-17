@@ -140,6 +140,8 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
     selectFile,
     stageFile,
     unstageFile,
+    stageAll: stageAllPaths,
+    unstageAll: unstageAllPaths,
     discardFile,
     deleteFile,
   } = useWorkingTreeStore();
@@ -218,21 +220,14 @@ export function StagingPanel({ onCommitted }: { onCommitted?: () => void } = {})
   const staged = status?.staged ?? [];
   const stagedCount = staged.length;
 
-  // Sequential, not `Array.forEach` firing every invoke concurrently: git's
-  // index is a single file, so N concurrent `stage_file`/`unstage_file` calls
-  // race each other. `stageOne`/`unstageOne` already toast per-file failures,
-  // so a rejection here just moves on to the next file rather than aborting
-  // the rest of the batch.
-  const stageAll = async () => {
-    for (const e of changes) {
-      await stageOne(e.path);
-    }
-  };
-  const unstageAll = async () => {
-    for (const e of staged) {
-      await unstageOne(e.path);
-    }
-  };
+  const stageAll = () =>
+    stageAllPaths(changes.map((e) => e.path)).catch((e: unknown) =>
+      useToastStore.getState().error(String(e), { title: "Stage failed" }),
+    );
+  const unstageAll = () =>
+    unstageAllPaths(staged.map((e) => e.path)).catch((e: unknown) =>
+      useToastStore.getState().error(String(e), { title: "Unstage failed" }),
+    );
 
   // Stash all tracked changes (staged + unstaged). Untracked files aren't
   // stashed, so the button is offered only when there's something git will

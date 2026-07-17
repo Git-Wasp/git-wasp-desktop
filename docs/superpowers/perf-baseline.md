@@ -60,7 +60,7 @@ release build (`cargo test --release`).
 | Scenario | Before | After-target | Actual-after |
 |---|---|---|---|
 | First graph paint (cold, rows 0-100 of 10,002) | 183.1ms | sub-scenario of B2; watch this scale on larger repos, not necessarily reduced at this size | |
-| Stage all ~1000 files (current per-file loop: `stage_file` × 1000, each a full index write + full status rescan) | **2.444s** | one index write + one status rescan total (Task A3) | |
+| Stage all ~1000 files (current per-file loop: `stage_file` × 1000, each a full index write + full status rescan) | **2.444s** (2.466s on re-run) | one index write + one status rescan total (Task A3) | **127.5ms** (~19x) |
 | Warm viewport fetch, scroll to row 5000 | 252.6µs | unchanged — already cheap once cached | |
 | 10× viewport re-requests, no ref change (per-scroll ref-fingerprint cost) | 1.636ms / 10 calls (~164µs/call) | fingerprint reused, not recomputed, when Task B2 lands | |
 | `list_branches`, 21 branches (`compute_ahead_behind` per branch) | 7.863ms (~0.37ms/branch) | near-instant list; ahead/behind fetched lazily per-branch on demand (Task B3) | |

@@ -317,6 +317,74 @@ pub fn unstage_file(repo: &Repository, path: &str) -> anyhow::Result<WorkingTree
     get_working_tree_status(repo)
 }
 
+/// Batched form of [`stage_file`]: one index open, one `write()`, and one
+/// status rescan for the whole set instead of one of each per path.
+pub fn stage_all(repo: &Repository, paths: &[String]) -> anyhow::Result<WorkingTreeStatus> {
+    let mut index = repo.index().context("failed to get index")?;
+    let workdir = repo
+        .workdir()
+        .context("bare repository has no working directory")?;
+    for path in paths {
+        let p = Path::new(path);
+        if workdir.join(path).exists() {
+            index
+                .add_path(p)
+                .with_context(|| format!("failed to stage: {path}"))?;
+        } else {
+            index
+                .remove_path(p)
+                .with_context(|| format!("failed to stage deletion: {path}"))?;
+        }
+    }
+    index.write().context("failed to write index")?;
+    get_working_tree_status(repo)
+}
+
+/// Batched form of [`unstage_file`]: paths already in HEAD are reset in one
+/// `reset_default` call, paths new to the index are removed in one index
+/// write, and the whole set gets a single status rescan — instead of one of
+/// each per path.
+pub fn unstage_all(repo: &Repository, paths: &[String]) -> anyhow::Result<WorkingTreeStatus> {
+    let head_commit = match repo.head() {
+        Ok(head) => Some(head.peel_to_commit().context("HEAD is not a commit")?),
+        Err(_) => None,
+    };
+
+    match &head_commit {
+        Some(commit) => {
+            let tree = commit.tree().context("HEAD commit has no tree")?;
+            let (in_head, new_only): (Vec<&String>, Vec<&String>) = paths
+                .iter()
+                .partition(|p| tree.get_path(Path::new(p.as_str())).is_ok());
+
+            if !in_head.is_empty() {
+                repo.reset_default(Some(commit.as_object()), in_head.iter().map(|s| s.as_str()))
+                    .context("failed to unstage")?;
+            }
+            if !new_only.is_empty() {
+                let mut index = repo.index().context("failed to get index")?;
+                for path in new_only {
+                    index
+                        .remove_path(Path::new(path))
+                        .with_context(|| format!("failed to remove from index: {path}"))?;
+                }
+                index.write().context("failed to write index")?;
+            }
+        }
+        None => {
+            let mut index = repo.index().context("failed to get index")?;
+            for path in paths {
+                index
+                    .remove_path(Path::new(path))
+                    .with_context(|| format!("failed to remove from index: {path}"))?;
+            }
+            index.write().context("failed to write index")?;
+        }
+    }
+
+    get_working_tree_status(repo)
+}
+
 /// The blob bytes for `path` in HEAD's tree, or empty when the path isn't in
 /// HEAD (an unborn HEAD, or a newly added file).
 fn read_head_blob(repo: &Repository, path: &str) -> Vec<u8> {
@@ -1160,6 +1228,17 @@ mod tests {
             paths.len(),
             t_loop.elapsed()
         );
+
+        // Undo the loop's staging (index back to HEAD, workdir edits kept) so
+        // the same paths are unstaged again, then time Task A3's replacement.
+        unstage_all(&repo, &paths).unwrap();
+        let t_batch = std::time::Instant::now();
+        let status = stage_all(&repo, &paths).unwrap();
+        println!(
+            "stage_all (batched), {} files staged, one index-write + one status rescan total: {:?}",
+            status.staged.len(),
+            t_batch.elapsed()
+        );
     }
 
     #[test]
@@ -1412,6 +1491,53 @@ mod tests {
         let status = unstage_file(&repo, "file.txt").unwrap();
         assert!(status.staged.iter().all(|e| e.path != "file.txt"));
         assert!(status.unstaged.iter().any(|e| e.path == "file.txt"));
+    }
+
+    #[test]
+    fn stage_all_stages_new_modified_and_deleted_paths_in_one_call() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "modified.txt", "original");
+        write_and_stage(&repo, &dir, "deleted.txt", "content");
+        make_initial_commit(&repo);
+        fs::write(dir.path().join("new.txt"), "content").unwrap();
+        fs::write(dir.path().join("modified.txt"), "changed").unwrap();
+        fs::remove_file(dir.path().join("deleted.txt")).unwrap();
+
+        let status = stage_all(
+            &repo,
+            &[
+                "new.txt".into(),
+                "modified.txt".into(),
+                "deleted.txt".into(),
+            ],
+        )
+        .unwrap();
+
+        assert!(status.staged.iter().any(|e| e.path == "new.txt"));
+        assert!(status.staged.iter().any(|e| e.path == "modified.txt"));
+        let deleted = status
+            .staged
+            .iter()
+            .find(|e| e.path == "deleted.txt")
+            .expect("staged");
+        assert!(matches!(deleted.status, StatusCode::Deleted));
+        assert!(status.unstaged.is_empty());
+        assert!(status.untracked.is_empty());
+    }
+
+    #[test]
+    fn unstage_all_handles_a_mix_of_head_tracked_and_new_paths_in_one_call() {
+        let (dir, repo) = init_repo();
+        write_and_stage(&repo, &dir, "tracked.txt", "original");
+        make_initial_commit(&repo);
+        write_and_stage(&repo, &dir, "tracked.txt", "modified");
+        write_and_stage(&repo, &dir, "new.txt", "content");
+
+        let status = unstage_all(&repo, &["tracked.txt".into(), "new.txt".into()]).unwrap();
+
+        assert!(status.staged.is_empty());
+        assert!(status.unstaged.iter().any(|e| e.path == "tracked.txt"));
+        assert!(status.untracked.iter().any(|e| e.path == "new.txt"));
     }
 
     #[test]

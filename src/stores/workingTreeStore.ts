@@ -30,6 +30,8 @@ interface WorkingTreeStore {
   clearSelectedFile: () => void;
   stageFile: (path: string) => Promise<void>;
   unstageFile: (path: string) => Promise<void>;
+  stageAll: (paths: string[]) => Promise<void>;
+  unstageAll: (paths: string[]) => Promise<void>;
   /** Write `content` as the file's index blob (line-level stage/unstage) and
    *  re-fetch the open file's diff in its current mode so the editor updates. */
   applyIndexContent: (path: string, content: string) => Promise<void>;
@@ -126,6 +128,16 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
 
   unstageFile: async (path: string) => {
     const status = await invoke<WorkingTreeStatus>("unstage_file", { path });
+    set({ status });
+  },
+
+  stageAll: async (paths: string[]) => {
+    const status = await invoke<WorkingTreeStatus>("stage_all", { paths });
+    set({ status });
+  },
+
+  unstageAll: async (paths: string[]) => {
+    const status = await invoke<WorkingTreeStatus>("unstage_all", { paths });
     set({ status });
   },
 
