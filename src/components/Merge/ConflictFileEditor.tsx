@@ -266,6 +266,7 @@ export function ConflictFileEditor({ file, onMarkResolved, onDirtyChange }: Conf
       const view = resultViewRef.current;
       if (!view) return;
       const block = file.conflictBlocks[blockIndex];
+      if (!block) return;
       const text = composeBlockText(
         splitBlockLines(block.oursText),
         splitBlockLines(block.theirsText),
@@ -316,6 +317,7 @@ export function ConflictFileEditor({ file, onMarkResolved, onDirtyChange }: Conf
   const selectWholeSide = useCallback(
     (blockIndex: number, side: "current" | "source") => {
       const block = file.conflictBlocks[blockIndex];
+      if (!block) return;
       const lines =
         side === "current" ? splitBlockLines(block.oursText) : splitBlockLines(block.theirsText);
       const all = new Set(lines.map((_, i) => i));

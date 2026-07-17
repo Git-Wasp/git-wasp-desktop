@@ -47,8 +47,11 @@ export function buildPaneDecorations(
     if (charRanges.length === 0) continue;
 
     const starts = lineStartOffsets(sideText);
+    // changedLineNumbers(sideText, ...) returns line indices bounded by
+    // sideText's own line count, and `starts` is built over that same
+    // sideText, so every localLine is a valid index into `starts`.
     for (const localLine of changedLineNumbers(sideText, charRanges)) {
-      ranges.push(Decoration.line({ class: LINE_CLASS[side] }).range(base + starts[localLine]));
+      ranges.push(Decoration.line({ class: LINE_CLASS[side] }).range(base + starts[localLine]!));
     }
     for (const r of charRanges) {
       ranges.push(Decoration.mark({ class: CHAR_CLASS[side] }).range(base + r.from, base + r.to));

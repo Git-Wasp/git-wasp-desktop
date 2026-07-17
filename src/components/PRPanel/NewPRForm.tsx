@@ -249,6 +249,13 @@ export function NewPRForm({
           <div
             className="markdown-preview"
             style={{ ...fieldStyle, minHeight: 88, overflowY: "auto" }}
+            onClick={(e) => {
+              const anchor = (e.target as HTMLElement).closest("a");
+              if (anchor?.href) {
+                e.preventDefault();
+                void openUrl(anchor.href);
+              }
+            }}
             // Safe: renderMarkdown HTML-escapes input before adding its own tags.
             dangerouslySetInnerHTML={{
               __html:

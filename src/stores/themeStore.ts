@@ -61,7 +61,8 @@ interface ThemeStore {
 }
 
 const findTheme = (themes: ThemeInfo[], id: string): ThemeInfo =>
-  themes.find((t) => t.id === id) ?? BUILT_IN_THEMES[0];
+  // BUILT_IN_THEMES is a non-empty literal array declared above.
+  themes.find((t) => t.id === id) ?? BUILT_IN_THEMES[0]!;
 
 export const useThemeStore = create<ThemeStore>((set, get) => ({
   themes: BUILT_IN_THEMES,
@@ -85,10 +86,10 @@ export const useThemeStore = create<ThemeStore>((set, get) => ({
   setActiveTheme: async (id: string) => {
     const theme = findTheme(get().themes, id);
     const applied = toApplied(theme);
-    applyTheme(applied);
+    await invoke("set_active_theme", { id: theme.id }); // persist first
+    applyTheme(applied); // only apply once persistence succeeded
     cacheActiveTheme(applied);
     set({ activeThemeId: theme.id });
-    await invoke("set_active_theme", { id: theme.id });
   },
 
   importTheme: async () => {

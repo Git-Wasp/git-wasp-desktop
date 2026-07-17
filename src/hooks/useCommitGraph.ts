@@ -75,7 +75,7 @@ function resolveConfig(rowHeightOverride?: number, dotRadiusOverride?: number): 
   const px = (v: string) => parseFloat(v) || 0;
   return {
     rowHeight: rowHeightOverride ?? (px(resolveCssVar("--graph-row-height")) || 34),
-    laneWidth: px(resolveCssVar("--graph-lane-width")) || 20,
+    laneWidth: px(resolveCssVar("--graph-lane-width")) || 24, // matches GraphSkeleton's fallback
     dotRadius: dotRadiusOverride ?? (px(resolveCssVar("--graph-dot-radius")) || 5),
     lineWidth: px(resolveCssVar("--graph-line-width")) || 2,
   };
@@ -137,6 +137,27 @@ export function useCommitGraph(
     window.addEventListener(THEME_CHANGE_EVENT, onThemeChange);
     return () => window.removeEventListener(THEME_CHANGE_EVENT, onThemeChange);
   }, [rowHeight, dotRadius]);
+
+  // Redraw when the window moves to a display with a different device pixel
+  // ratio (e.g. Retina → 1x) — there's no scroll/theme event for that, so
+  // without this the canvas stays at the old DPR until some unrelated redraw
+  // happens to fire. A bare `(resolution: Xdppx)` query only ever fires
+  // `change` when the live DPR crosses exactly the value `X` it was created
+  // with, so a stale query (subscribed once at mount) would catch a 1x→2x
+  // move but then miss a subsequent 2x→3x move entirely. Re-subscribing to a
+  // fresh query for the current DPR on every firing keeps it armed for the
+  // next transition too, however many happen in a session.
+  useEffect(() => {
+    let mql = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    const onChange = () => {
+      setThemeTick((t) => t + 1); // dpr changed → re-run the draw effect
+      mql.removeEventListener("change", onChange);
+      mql = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      mql.addEventListener("change", onChange);
+    };
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -336,7 +357,9 @@ export function useCommitGraph(
     // HEAD's absolute row (clamped to the loaded slice) when HEAD isn't in view.
     const wtIdx = viewport.nodes.findIndex((n) => n.isWorkingTree);
     if (wtIdx >= 0) {
-      const wt = viewport.nodes[wtIdx];
+      // wtIdx >= 0 here (the findIndex "not found" case is excluded), so this
+      // index is always in range.
+      const wt = viewport.nodes[wtIdx]!;
       const headIdx = viewport.nodes.findIndex((n) => n.isHead && !n.isWorkingTree);
       const localHeadRow =
         headIdx >= 0

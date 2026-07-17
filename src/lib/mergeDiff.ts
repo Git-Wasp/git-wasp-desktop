@@ -40,7 +40,8 @@ export function changedLineNumbers(text: string, ranges: Range[]): number[] {
     let ans = 0;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
-      if (lineStarts[mid] <= offset) {
+      // Binary search over [0, lineStarts.length - 1] — mid always in range.
+      if (lineStarts[mid]! <= offset) {
         ans = mid;
         lo = mid + 1;
       } else {

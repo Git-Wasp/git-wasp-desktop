@@ -127,16 +127,24 @@ export const useGithubStore = create<GithubStore>((set, get) => ({
     if (!init) {
       return { done: false, token: null, slowDown: false };
     }
-    const result = await invoke<DeviceFlowPollResult>("github_poll_device_flow", {
-      host,
-      deviceCode: init.deviceCode,
-    });
-    if (result.done) {
-      set({ deviceFlowInit: null, isAuthenticating: false });
-      // Validate the fresh token to populate the connected user (login).
-      await get().checkConnection(host);
+    try {
+      const result = await invoke<DeviceFlowPollResult>("github_poll_device_flow", {
+        host,
+        deviceCode: init.deviceCode,
+      });
+      if (result.done) {
+        set({ deviceFlowInit: null, isAuthenticating: false });
+        // Validate the fresh token to populate the connected user (login).
+        await get().checkConnection(host);
+      }
+      return result;
+    } catch (e) {
+      // The store must clear its own flag on a poll failure too — otherwise
+      // isAuthenticating stays stuck true even though DeviceFlowModal's own
+      // catch (unchanged) is what actually surfaces the error to the user.
+      set({ isAuthenticating: false });
+      throw e;
     }
-    return result;
   },
 
   cancelDeviceFlow: () => {

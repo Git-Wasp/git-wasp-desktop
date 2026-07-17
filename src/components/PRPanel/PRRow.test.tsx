@@ -71,4 +71,11 @@ describe("PRRow", () => {
       expect(error).toHaveBeenCalledWith("Error: no browser", { title: "Couldn't open pull request" }),
     );
   });
+
+  it("does not call openUrl for a non-http(s) pr.url", () => {
+    render(<PRRow pr={{ ...basePr, url: "file:///etc/passwd" }} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+
+    expect(mockOpenUrl).not.toHaveBeenCalled();
+  });
 });

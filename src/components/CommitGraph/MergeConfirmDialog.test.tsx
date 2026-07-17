@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { MergeConfirmDialog } from "./MergeConfirmDialog";
@@ -37,6 +38,15 @@ describe("MergeConfirmDialog", () => {
     );
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("Escape closes MergeConfirmDialog without clicking into it first", async () => {
+    const onCancel = vi.fn();
+    render(
+      <MergeConfirmDialog source="feat" target="main" onConfirm={vi.fn()} onCancel={onCancel} />,
+    );
+    await userEvent.keyboard("{Escape}"); // no prior click/focus into the dialog
+    expect(onCancel).toHaveBeenCalled();
   });
 
   it("offers a Start pull request action only when the handler is provided", () => {

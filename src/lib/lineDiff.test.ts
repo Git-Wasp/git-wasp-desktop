@@ -277,7 +277,7 @@ describe("hunkLines", () => {
     // A single hunk: header + [l4, l5(removed), L5(added), l6].
     const headers = out.filter((l) => l.kind === "header");
     expect(headers).toHaveLength(1);
-    expect(headers[0].text).toBe("@@ -4,3 +4,3 @@");
+    expect(headers[0]!.text).toBe("@@ -4,3 +4,3 @@");
 
     expect(out.map((l) => `${l.kind}:${l.text}`)).toEqual([
       "header:@@ -4,3 +4,3 @@",

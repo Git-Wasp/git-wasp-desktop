@@ -1,5 +1,6 @@
 import { act } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -130,5 +131,35 @@ describe("DeviceFlowModal", () => {
 
     expect(onClose).toHaveBeenCalled();
     expect(useGithubStore.getState().deviceFlowInit).toBeNull();
+  });
+
+  it("Escape cancels the device flow (not just the UI) without clicking into it first", async () => {
+    const onClose = vi.fn();
+    mockInvoke.mockResolvedValueOnce(fakeInit);
+
+    render(<DeviceFlowModal host="github.com" onClose={onClose} />);
+    await screen.findByText("WXYZ-1234");
+
+    await userEvent.keyboard("{Escape}"); // no prior click/focus into the dialog
+
+    expect(onClose).toHaveBeenCalled();
+    // Escape must actually cancel the in-flight device flow, not merely hide
+    // the modal while polling keeps running in the background.
+    expect(useGithubStore.getState().deviceFlowInit).toBeNull();
+  });
+
+  it("does not call openUrl for a non-http(s) verificationUri", async () => {
+    const maliciousInit = {
+      ...fakeInit,
+      verificationUri: "file:///etc/passwd",
+    };
+    mockInvoke.mockResolvedValueOnce(maliciousInit);
+
+    render(<DeviceFlowModal host="github.com" onClose={vi.fn()} />);
+
+    const button = await screen.findByRole("button", { name: /open in browser/i });
+    fireEvent.click(button);
+
+    expect(mockOpenUrl).not.toHaveBeenCalled();
   });
 });

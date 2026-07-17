@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useWorkingTreeStore } from "../../stores/workingTreeStore";
 import { useRepoStore } from "../../stores/repoStore";
 import { Button } from "../ui/Button";
@@ -287,6 +288,13 @@ export function CommitForm({
             fontSize: "var(--font-size-sm)",
             padding: "var(--space-2)",
             overflowY: "auto",
+          }}
+          onClick={(e) => {
+            const anchor = (e.target as HTMLElement).closest("a");
+            if (anchor?.href) {
+              e.preventDefault();
+              void openUrl(anchor.href);
+            }
           }}
           // Safe: renderMarkdown HTML-escapes input before adding its own tags.
           dangerouslySetInnerHTML={{

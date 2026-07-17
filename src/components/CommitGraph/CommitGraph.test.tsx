@@ -3,6 +3,7 @@ import { Profiler } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { CommitGraph } from "./CommitGraph";
+import { THEME_CHANGE_EVENT } from "../../lib/applyTheme";
 import { useGraphStore, type SelectMode } from "../../stores/graphStore";
 import { useRepoStore } from "../../stores/repoStore";
 import { useGithubStore } from "../../stores/githubStore";
@@ -11,6 +12,7 @@ import { useRemoteStore } from "../../stores/remoteStore";
 import { useStashStore } from "../../stores/stashStore";
 import { useTagStore } from "../../stores/tagStore";
 import type { GraphNode, GraphViewport } from "../../types/graph";
+import { triggerResizeObserver } from "../../test/setup";
 
 const node = (over: Partial<GraphNode>): GraphNode => ({
   oid: "a".repeat(40),
@@ -248,6 +250,78 @@ describe("CommitGraph columns", () => {
       "hash",
     ]);
   });
+
+  it("cancels a column drag on pointercancel without reordering", () => {
+    const { container } = render(<CommitGraph />);
+    const fireWindow = (type: string, clientX: number, clientY: number) =>
+      act(() => {
+        window.dispatchEvent(new MouseEvent(type, { clientX, clientY, bubbles: true }));
+      });
+
+    void act(() => fireEvent.pointerDown(screen.getByText("Date"), { clientX: 400, clientY: 10 }));
+    fireWindow("pointermove", 440, 10); // past the drag threshold
+    void act(() => fireEvent.pointerEnter(container.querySelector('[data-header="commit"]')!));
+    act(() => {
+      window.dispatchEvent(new Event("pointercancel"));
+    });
+
+    expect(useGraphStore.getState().columnOrder.ledger).toEqual([
+      "commit",
+      "author",
+      "branch",
+      "hash",
+      "date",
+    ]);
+    expect(document.body.classList.contains("dragging-column")).toBe(false);
+  });
+
+  it("cancels a column drag on window blur without reordering", () => {
+    const { container } = render(<CommitGraph />);
+    const fireWindow = (type: string, clientX: number, clientY: number) =>
+      act(() => {
+        window.dispatchEvent(new MouseEvent(type, { clientX, clientY, bubbles: true }));
+      });
+
+    void act(() => fireEvent.pointerDown(screen.getByText("Date"), { clientX: 400, clientY: 10 }));
+    fireWindow("pointermove", 440, 10);
+    void act(() => fireEvent.pointerEnter(container.querySelector('[data-header="commit"]')!));
+    act(() => {
+      window.dispatchEvent(new Event("blur"));
+    });
+
+    expect(useGraphStore.getState().columnOrder.ledger).toEqual([
+      "commit",
+      "author",
+      "branch",
+      "hash",
+      "date",
+    ]);
+    expect(document.body.classList.contains("dragging-column")).toBe(false);
+  });
+
+  it("cancels a column drag on Escape without reordering", () => {
+    const { container } = render(<CommitGraph />);
+    const fireWindow = (type: string, clientX: number, clientY: number) =>
+      act(() => {
+        window.dispatchEvent(new MouseEvent(type, { clientX, clientY, bubbles: true }));
+      });
+
+    void act(() => fireEvent.pointerDown(screen.getByText("Date"), { clientX: 400, clientY: 10 }));
+    fireWindow("pointermove", 440, 10);
+    void act(() => fireEvent.pointerEnter(container.querySelector('[data-header="commit"]')!));
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+
+    expect(useGraphStore.getState().columnOrder.ledger).toEqual([
+      "commit",
+      "author",
+      "branch",
+      "hash",
+      "date",
+    ]);
+    expect(document.body.classList.contains("dragging-column")).toBe(false);
+  });
 });
 
 describe("CommitGraph loading skeleton", () => {
@@ -264,6 +338,72 @@ describe("CommitGraph loading skeleton", () => {
     render(<CommitGraph />);
     expect(screen.queryByTestId("graph-skeleton")).not.toBeInTheDocument();
     expect(screen.getByText("first commit")).toBeInTheDocument();
+  });
+});
+
+describe("CommitGraph resize", () => {
+  it("fetches more rows when the container grows beyond the current buffer", async () => {
+    const fetchViewportSpy = vi.fn().mockResolvedValue(undefined);
+    useGraphStore.setState({
+      fetchViewport: fetchViewportSpy,
+      // A small loaded slice (2 of 500 rows) — well short of covering a container
+      // that grows to 2000px tall.
+      viewport: { totalCount: 500, offset: 0, nodes: makeViewport().nodes },
+    });
+    const { container } = render(<CommitGraph />);
+    // Drop the mount-time initial-load call so the assertion below can only be
+    // satisfied by the ResizeObserver path.
+    fetchViewportSpy.mockClear();
+
+    const scrollEl = container.querySelector('[style*="overflow: auto"]') as HTMLElement;
+    Object.defineProperty(scrollEl, "clientHeight", { value: 2000, configurable: true }); // simulate a big resize
+
+    triggerResizeObserver(scrollEl);
+
+    await waitFor(() => expect(fetchViewportSpy).toHaveBeenCalled());
+  });
+
+  it("does not refetch on resize when the loaded slice already covers the container", async () => {
+    const fetchViewportSpy = vi.fn().mockResolvedValue(undefined);
+    useGraphStore.setState({
+      fetchViewport: fetchViewportSpy,
+      viewport: makeViewport(), // totalCount 2, nodes.length 2 — fully loaded
+    });
+    const { container } = render(<CommitGraph />);
+    fetchViewportSpy.mockClear();
+
+    const scrollEl = container.querySelector('[style*="overflow: auto"]') as HTMLElement;
+    Object.defineProperty(scrollEl, "clientHeight", { value: 2000, configurable: true });
+
+    triggerResizeObserver(scrollEl);
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(r));
+    });
+
+    expect(fetchViewportSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not fetch when the ResizeObserver's initial queued callback fires before the initial load has landed (viewport still null)", async () => {
+    // Per the ResizeObserver spec, observe() queues an initial callback for a
+    // newly-observed target even with no real size change, which can fire before
+    // the initial-load effect's own fetchViewport(0, limit) has resolved — i.e.
+    // while the store's viewport is still null. That first fetch belongs to the
+    // initial-load effect; the resize path must not also fire one.
+    const fetchViewportSpy = vi.fn().mockResolvedValue(undefined);
+    useGraphStore.setState({ fetchViewport: fetchViewportSpy, viewport: null });
+    const { container } = render(<CommitGraph />);
+    // Drop the initial-load effect's own mount-time call — only the resize path
+    // is under test here.
+    fetchViewportSpy.mockClear();
+
+    const scrollEl = container.querySelector('[style*="overflow: auto"]') as HTMLElement;
+    triggerResizeObserver(scrollEl); // simulates observe()'s initial queued callback
+
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(r));
+    });
+
+    expect(fetchViewportSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -310,6 +450,21 @@ describe("CommitGraph checked-out indicators", () => {
     act(() => useGraphStore.getState().setGraphDensity("compact"));
     const after = screen.getByTestId("head-pulse");
     expect(after).not.toBe(before);
+  });
+
+  it("repositions the HEAD pulse after a theme change (lane width may change)", () => {
+    // headPulse re-derives its x position from the --graph-lane-width CSS
+    // token via getComputedStyle, but its memo previously had no dependency
+    // that changed on a theme swap, so a lane-width change baked into a new
+    // theme never moved the pulse until some unrelated prop forced a
+    // recompute.
+    render(<CommitGraph />);
+    const before = screen.getByTestId("head-pulse").style.left;
+    act(() => {
+      document.documentElement.style.setProperty("--graph-lane-width", "40px");
+      window.dispatchEvent(new Event(THEME_CHANGE_EVENT));
+    });
+    expect(screen.getByTestId("head-pulse").style.left).not.toBe(before);
   });
 });
 

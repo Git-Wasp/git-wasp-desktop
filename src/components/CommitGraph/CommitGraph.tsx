@@ -22,6 +22,7 @@ import { SquashDialog } from "./SquashDialog";
 import { buildSquashPlan, commitFullMessage } from "./squash";
 import { GraphSearch } from "./GraphSearch";
 import { GraphSkeleton } from "./GraphSkeleton";
+import { THEME_CHANGE_EVENT } from "../../lib/applyTheme";
 import { AuthorCell, BranchCell, DateCell, HashCell, MessageCell } from "./columns";
 import {
   columnsForVariant,
@@ -441,6 +442,41 @@ export function CommitGraph({
     };
   }, []);
 
+  // The container growing (e.g. maximizing the window) can reveal unloaded rows
+  // below the fold without firing a scroll event at all — a ResizeObserver
+  // catches that case. Reuses the scroll handler's scrollRaf throttle, so a
+  // resize storm still fetches at most once per frame.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const recomputeCoverage = () => {
+      // ResizeObserver.observe() queues an initial callback for a newly-observed
+      // target even with no size change — which fires before the initial-load
+      // effect's own first fetchViewport(0, limit) can resolve, while viewport is
+      // still null. That first fetch is the initial-load effect's job; falling
+      // through here would fire a redundant duplicate on every mount.
+      const vp = useGraphStore.getState().viewport;
+      if (!vp) return;
+      const limit = Math.ceil(container.clientHeight / rowHeight) + BUFFER_ROWS * 2;
+      const offset = Math.max(0, Math.floor(container.scrollTop / rowHeight) - BUFFER_ROWS);
+      const loadedEnd = vp.offset + vp.nodes.length;
+      const covered = offset >= vp.offset && (offset + limit <= loadedEnd || loadedEnd >= vp.totalCount);
+      if (covered) return;
+      fetchViewport(offset, limit).catch((e: unknown) =>
+        toastError(String(e), { title: "Couldn't load history" }),
+      );
+    };
+    const observer = new ResizeObserver(() => {
+      if (scrollRaf.current !== null) return;
+      scrollRaf.current = requestAnimationFrame(() => {
+        scrollRaf.current = null;
+        recomputeCoverage();
+      });
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [fetchViewport, rowHeight, toastError]);
+
   // Keep the header's data scroll aligned with the body after any layout change
   // (variant, widths, visibility, a new slice) — the graph itself is CSS-sticky.
   useLayoutEffect(() => {
@@ -807,6 +843,18 @@ export function CommitGraph({
   const canvasTop = offset * rowHeight;
   const sliceHeight = (viewport?.nodes.length ?? 0) * rowHeight;
 
+  // headPulse reads --graph-lane-width via getComputedStyle, which only
+  // reflects the *current* theme's tokens — a theme swap can change the lane
+  // width, but nothing else in this memo's dependency list changes on a theme
+  // change, so without this tick the pulse would stay put at its pre-swap x
+  // position until some unrelated prop forced a recompute.
+  const [graphThemeTick, setGraphThemeTick] = useState(0);
+  useEffect(() => {
+    const onThemeChange = () => setGraphThemeTick((t) => t + 1);
+    window.addEventListener(THEME_CHANGE_EVENT, onThemeChange);
+    return () => window.removeEventListener(THEME_CHANGE_EVENT, onThemeChange);
+  }, []);
+
   // Position of the HEAD commit dot (when it's in the loaded slice), so a CSS
   // pulse overlay can draw expanding rings on it — a clear "you are here" cue.
   // The pulse lives inside the CSS-sticky graph wrapper, so its coordinates are
@@ -818,10 +866,15 @@ export function CommitGraph({
     const laneWidth =
       parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--graph-lane-width")) ||
       24;
-    const x = GRAPH_PAD_LEFT + nodes[idx].lane * laneWidth + laneWidth / 2;
+    // idx >= 0 here (the < 0 case returned above), so this index is in range.
+    const x = GRAPH_PAD_LEFT + nodes[idx]!.lane * laneWidth + laneWidth / 2;
     const y = (offset + idx) * rowHeight + rowHeight / 2;
     return { x, y };
-  }, [viewport, offset, rowHeight]);
+    // graphThemeTick isn't read in the body above — it's a pure recompute
+    // trigger for the getComputedStyle('--graph-lane-width') read, which a
+    // theme swap can change with no other dependency here reflecting it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewport, offset, rowHeight, graphThemeTick]);
 
   const dataColumns = columns.filter((c) => c.kind !== "graph");
 
@@ -884,11 +937,29 @@ export function CommitGraph({
       setDragCol(null);
       setDropCol(null);
     };
+    const cancel = () => {
+      dragCandidate.current = null;
+      draggingRef.current = false;
+      dropRef.current = null;
+      document.body.classList.remove("dragging-column");
+      setDragCol(null);
+      setDropCol(null);
+      // no reorder committed — a cancelled drag leaves columnOrder untouched
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && draggingRef.current) cancel();
+    };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("blur", cancel);
+    window.addEventListener("keydown", onKeyDown);
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("blur", cancel);
+      window.removeEventListener("keydown", onKeyDown);
       document.body.classList.remove("dragging-column");
     };
   }, []);

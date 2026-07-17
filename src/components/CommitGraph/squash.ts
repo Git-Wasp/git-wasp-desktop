@@ -42,11 +42,13 @@ export function buildSquashPlan(
   if (selectedIdxs.length < 2) return null;
 
   // Contiguous ⇔ the selected commits occupy an unbroken slice of the sequence.
-  const first = selectedIdxs[0];
-  const last = selectedIdxs[selectedIdxs.length - 1];
+  // selectedIdxs.length >= 2 here, so both ends are always in range.
+  const first = selectedIdxs[0]!;
+  const last = selectedIdxs[selectedIdxs.length - 1]!;
   if (last - first + 1 !== selectedIdxs.length) return null;
 
-  const newestFirst = selectedIdxs.map((i) => commits[i]);
+  // Every i came from mapping over `commits` above, so it's always in range.
+  const newestFirst = selectedIdxs.map((i) => commits[i]!);
   const oldestFirst = [...newestFirst].reverse();
 
   return {

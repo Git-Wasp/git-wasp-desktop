@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -44,5 +45,12 @@ describe("ConfirmDialog", () => {
     render(<ConfirmDialog title="t" message="m" onConfirm={vi.fn()} onCancel={onCancel} />);
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("Escape closes ConfirmDialog without clicking into it first", async () => {
+    const onCancel = vi.fn();
+    render(<ConfirmDialog title="t" message="m" onConfirm={vi.fn()} onCancel={onCancel} />);
+    await userEvent.keyboard("{Escape}"); // no prior click/focus into the dialog
+    expect(onCancel).toHaveBeenCalled();
   });
 });

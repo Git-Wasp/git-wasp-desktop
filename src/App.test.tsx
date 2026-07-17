@@ -200,7 +200,8 @@ describe("App per-line staging guard", () => {
       return buttons;
     });
 
-    fireEvent.click(toggles[0]);
+    // toggles.length >= 2, asserted in the waitFor above.
+    fireEvent.click(toggles[0]!);
     // Flush one microtask turn before the second click — mirroring two real,
     // separate click events (each its own browser task, with the microtask
     // queue drained in between). This is what makes the regression this test
@@ -215,7 +216,7 @@ describe("App per-line staging guard", () => {
     // distinguish this, since the guard's synchronous flag-set blocks the
     // second click regardless of the returned-promise timing.
     await Promise.resolve();
-    fireEvent.click(toggles[1]); // fired before the first apply resolves
+    fireEvent.click(toggles[1]!); // fired before the first apply resolves
 
     expect(applyIndexContent).toHaveBeenCalledTimes(1);
 
@@ -223,7 +224,7 @@ describe("App per-line staging guard", () => {
     await new Promise((r) => setTimeout(r, 0)); // let the in-flight promise's `.finally` settle
 
     // The guard re-arms once the first apply resolves.
-    fireEvent.click(toggles[1]);
+    fireEvent.click(toggles[1]!);
     expect(applyIndexContent).toHaveBeenCalledTimes(2);
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useGithubStore } from "../../stores/githubStore";
@@ -15,17 +15,20 @@ export function CloneDialog({ host, onClose }: { host: string; onClose: () => vo
   const [destDir, setDestDir] = useState<string | null>(null);
   const [isCloning, setIsCloning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadGithubRepos(host).catch((e) => setError(String(e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host]);
 
+  useEffect(() => {
+    rootRef.current?.focus();
+  }, []);
+
   const filtered = githubRepos.filter((r) =>
     r.fullName.toLowerCase().includes(search.trim().toLowerCase()),
   );
-
-  const destPath = selected && destDir ? `${destDir}/${selected.name}` : null;
 
   const handleChooseFolder = async () => {
     const dir = await open({ directory: true, multiple: false });
@@ -33,11 +36,11 @@ export function CloneDialog({ host, onClose }: { host: string; onClose: () => vo
   };
 
   const handleClone = async () => {
-    if (!selected || !destPath) return;
+    if (!selected || !destDir) return;
     setIsCloning(true);
     setError(null);
     try {
-      const repo = await invoke<RepoInfo>("clone_repo", { url: selected.cloneUrl, destPath });
+      const repo = await invoke<RepoInfo>("clone_repo", { url: selected.cloneUrl, destDir, repoName: selected.name });
       useRepoStore.setState({ currentRepo: repo });
       onClose();
     } catch (e) {
@@ -49,15 +52,23 @@ export function CloneDialog({ host, onClose }: { host: string; onClose: () => vo
 
   return (
     <div
+      ref={rootRef}
       role="dialog"
       aria-label="Clone from GitHub"
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          onClose();
+        }
+      }}
       style={{
         position: "fixed",
         inset: 0,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "rgba(0, 0, 0, 0.5)",
+        background: "var(--color-overlay)",
         zIndex: 100,
       }}
     >
@@ -135,7 +146,7 @@ export function CloneDialog({ host, onClose }: { host: string; onClose: () => vo
                 whiteSpace: "nowrap",
               }}
             >
-              {destPath ?? "No destination chosen"}
+              {destDir ? `${destDir}/${selected.name}` : "No destination chosen"}
             </span>
           </div>
         )}
@@ -150,7 +161,12 @@ export function CloneDialog({ host, onClose }: { host: string; onClose: () => vo
           <Button variant="secondary" fullWidth onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" fullWidth disabled={!destPath || isCloning} onClick={() => void handleClone()}>
+          <Button
+            variant="primary"
+            fullWidth
+            disabled={!selected || !destDir || isCloning}
+            onClick={() => void handleClone()}
+          >
             {isCloning ? "Cloning…" : "Clone"}
           </Button>
         </div>

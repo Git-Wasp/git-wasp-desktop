@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { CommitDetail as CommitDetailData } from "../../types/repo";
 import { FileList } from "./FileList";
@@ -17,6 +17,12 @@ export function CommitDetail({ oid }: CommitDetailProps) {
     selectFile,
     clear: clearCommitFile,
   } = useCommitFileStore();
+  const oidRef = useRef<string | null>(null);
+
+  // Track the latest requested oid so we can drop stale responses
+  useEffect(() => {
+    oidRef.current = oid;
+  }, [oid]);
 
   useEffect(() => {
     if (!oid) {
@@ -28,7 +34,9 @@ export function CommitDetail({ oid }: CommitDetailProps) {
     // to the graph and this commit's file list reads fresh.
     clearCommitFile();
     invoke<CommitDetailData>("get_commit_diff", { oid })
-      .then(setDetail)
+      .then((detail) => {
+        if (oidRef.current === oid) setDetail(detail);
+      })
       .catch((e: unknown) =>
         useToastStore.getState().error(String(e), { title: "Couldn't load commit" }),
       );

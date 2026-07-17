@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -235,7 +236,8 @@ describe("NewPRForm", () => {
     fireEvent.click(screen.getByRole("button", { name: /continue on github/i }));
 
     expect(mockOpenUrl).toHaveBeenCalledTimes(1);
-    const url = mockOpenUrl.mock.calls[0][0] as string;
+    // toHaveBeenCalledTimes(1) above guarantees calls[0] exists.
+    const url = mockOpenUrl.mock.calls[0]![0] as string;
     expect(url).toContain("https://github.com/mike/gitclient/compare/main...feat%2Fx");
     expect(url).toContain("title=My+PR");
   });
@@ -247,6 +249,17 @@ describe("NewPRForm", () => {
 
     expect(screen.getByLabelText("head branch")).toHaveValue("feat/x");
     expect(screen.getByLabelText("base branch")).toHaveValue("develop");
+  });
+
+  it("clicking a link in the markdown preview opens it via the opener plugin instead of navigating the webview", async () => {
+    render(<NewPRForm onCreated={vi.fn()} onCancel={vi.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText(/description/i), {
+      target: { value: "[link](https://example.com)" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Preview" }));
+    await userEvent.click(screen.getByRole("link", { name: "link" }));
+
+    expect(mockOpenUrl).toHaveBeenCalledWith("https://example.com/");
   });
 
   it("calls onCancel when the cancel button is clicked", () => {

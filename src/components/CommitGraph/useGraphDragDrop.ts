@@ -86,11 +86,30 @@ export function useGraphDragDrop({ onMerge, onStartPullRequest }: UseGraphDragDr
       setGhostPos(null);
       setDropTarget(null);
     };
+    const cancel = () => {
+      candidateRef.current = null;
+      draggingRef.current = false;
+      dropTargetRef.current = null;
+      document.body.classList.remove("dragging-branch-pill");
+      setDragging(false);
+      setGhostPos(null);
+      setDropTarget(null);
+      // no menu opened — a cancelled drag never offers a merge
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && draggingRef.current) cancel();
+    };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("blur", cancel);
+    window.addEventListener("keydown", onKeyDown);
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("blur", cancel);
+      window.removeEventListener("keydown", onKeyDown);
       document.body.classList.remove("dragging-branch-pill");
     };
   }, []);

@@ -88,7 +88,7 @@ function HeadBadge() {
         padding: "2.5px 7px",
         borderRadius: "var(--radius-full)",
         background: "var(--color-warning)",
-        color: "#241a00",
+        color: "var(--color-text-on-warning)",
       }}
     >
       HEAD
@@ -158,7 +158,8 @@ function MultiTagChip({
   tags: BranchLabel[];
   isTagOnRemote?: (name: string) => boolean;
 }) {
-  const first = tags[0];
+  // Only rendered when tags.length > 1 (see the call site below).
+  const first = tags[0]!;
   return (
     <Tooltip label={<TagList tags={tags} isTagOnRemote={isTagOnRemote} />}>
       <span data-tag={first.name} data-tag-count={tags.length} style={tagChipStyle}>
@@ -204,7 +205,7 @@ export function BranchCell({
           whose hover reveals the full list over the graph, so overlapping tags
           don't clutter the row. */}
       {tags.length === 1 ? (
-        <TagChip label={tags[0]} onRemote={isTagOnRemote?.(tags[0].name) ?? false} />
+        <TagChip label={tags[0]!} onRemote={isTagOnRemote?.(tags[0]!.name) ?? false} />
       ) : tags.length > 1 ? (
         <MultiTagChip tags={tags} isTagOnRemote={isTagOnRemote} />
       ) : null}
@@ -345,7 +346,7 @@ export function AuthorCell({ node }: { node: GraphNode }) {
             height: AVATAR_SIZE,
             borderRadius: "var(--radius-full)",
             background: color,
-            color: "#fff",
+            color: "var(--color-text-on-accent)",
             fontSize: "10.5px",
             fontWeight: "var(--font-weight-bold)",
             display: "flex",

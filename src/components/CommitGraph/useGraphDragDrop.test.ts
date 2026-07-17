@@ -112,6 +112,69 @@ describe("useGraphDragDrop (DOM pills)", () => {
     expect(result.current.consumeClick()).toBe(false);
   });
 
+  it("pointercancel aborts the drag and clears ghost state", () => {
+    const { result } = setup();
+    act(() => result.current.onPillPointerDown(down(10, 8), label("main")));
+    act(() => fireWindow("pointermove", 20, 0));
+    expect(result.current.dragging).toBe(true);
+
+    act(() => {
+      window.dispatchEvent(new Event("pointercancel"));
+    });
+
+    expect(result.current.dragging).toBe(false);
+    expect(result.current.ghostPos).toBeNull();
+    expect(result.current.dropTarget).toBeNull();
+    expect(result.current.menu).toBeNull();
+    expect(document.body.classList.contains("dragging-branch-pill")).toBe(false);
+  });
+
+  it("does not open a menu when pointercancel fires over a drop target", () => {
+    const { result, onMerge } = setup();
+    act(() => result.current.onPillPointerDown(down(10, 8), label("main")));
+    act(() => fireWindow("pointermove", 20, 0));
+    act(() => result.current.onPillPointerEnter(label("feat")));
+
+    act(() => {
+      window.dispatchEvent(new Event("pointercancel"));
+    });
+
+    expect(result.current.menu).toBeNull();
+    expect(onMerge).not.toHaveBeenCalled();
+  });
+
+  it("window blur aborts the drag and clears ghost state", () => {
+    const { result } = setup();
+    act(() => result.current.onPillPointerDown(down(10, 8), label("main")));
+    act(() => fireWindow("pointermove", 20, 0));
+    expect(result.current.dragging).toBe(true);
+
+    act(() => {
+      window.dispatchEvent(new Event("blur"));
+    });
+
+    expect(result.current.dragging).toBe(false);
+    expect(document.body.classList.contains("dragging-branch-pill")).toBe(false);
+  });
+
+  it("Escape aborts an in-progress drag but is a no-op when not dragging", () => {
+    const { result } = setup();
+    // Not dragging yet — Escape should not throw or change anything observable.
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    expect(result.current.dragging).toBe(false);
+
+    act(() => result.current.onPillPointerDown(down(10, 8), label("main")));
+    act(() => fireWindow("pointermove", 20, 0));
+    expect(result.current.dragging).toBe(true);
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    expect(result.current.dragging).toBe(false);
+  });
+
   it("returns a referentially stable object across renders when nothing changed", () => {
     const onMerge = vi.fn();
     const onStartPullRequest = vi.fn();

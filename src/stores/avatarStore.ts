@@ -24,6 +24,28 @@ interface AvatarStore {
 
 const norm = (email: string) => email.trim().toLowerCase();
 
+// Cap on the avatar map so a long session doesn't accumulate one entry per
+// author forever. Evicts the oldest-inserted entries first (Map iteration
+// order = insertion order) — simple and cheap.
+export const AVATAR_CACHE_CAP = 2000;
+
+// Called from both the synchronous "loading" placeholder write (request())
+// and the async resolved-entry write (settle()) — a loading placeholder can
+// in principle be evicted before its settle() call lands if enough newer
+// requests arrive in between; settle() then just re-inserts it as a fresh
+// (newest) entry. Accepted as a benign quirk of plain FIFO with no
+// touch-on-access semantics, not a correctness bug.
+const evictOverflow = (avatars: Map<string, AvatarEntry>): void => {
+  if (avatars.size <= AVATAR_CACHE_CAP) return;
+  const excess = avatars.size - AVATAR_CACHE_CAP;
+  const keys = avatars.keys();
+  for (let i = 0; i < excess; i++) {
+    const next = keys.next();
+    if (next.done) break;
+    avatars.delete(next.value);
+  }
+};
+
 /**
  * Resolves and holds commit-author avatars. Each email is requested at most once
  * per session (an in-flight/"loading" marker dedupes), and the heavy lifting —
@@ -36,6 +58,7 @@ export const useAvatarStore = create<AvatarStore>((set, get) => {
   const settle = (email: string, entry: AvatarEntry) => {
     const avatars = new Map(get().avatars);
     avatars.set(email, entry);
+    evictOverflow(avatars);
     set({ avatars, version: get().version + 1 });
   };
 
@@ -51,6 +74,7 @@ export const useAvatarStore = create<AvatarStore>((set, get) => {
       // Mark as in-flight up front so concurrent/subsequent calls don't refetch.
       const next = new Map(avatars);
       unique.forEach((e) => next.set(e, { status: "loading" }));
+      evictOverflow(next);
       set({ avatars: next });
 
       const fetchOne = async (email: string) => {

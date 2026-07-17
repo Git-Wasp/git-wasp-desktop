@@ -129,7 +129,8 @@ describe("StagingPanel toasts on failed mutations", () => {
     useToastStore.setState({ error });
 
     render(<StagingPanel />);
-    fireEvent.click(screen.getAllByText("Stage")[0]);
+    // getAllByText throws if it finds nothing, so index 0 always exists.
+    fireEvent.click(screen.getAllByText("Stage")[0]!);
 
     await waitFor(() => expect(error).toHaveBeenCalledWith("Error: boom", { title: "Stage failed" }));
   });

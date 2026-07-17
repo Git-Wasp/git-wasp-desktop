@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useGithubStore } from "../../stores/githubStore";
 import { Button } from "../ui/Button";
+import { isHttpUrl } from "../../lib/safeUrl";
 
 export function DeviceFlowModal({
   host,
@@ -12,6 +13,11 @@ export function DeviceFlowModal({
 }) {
   const { deviceFlowInit, startDeviceFlow, pollDeviceFlow, cancelDeviceFlow } = useGithubStore();
   const [error, setError] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    rootRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     if (!deviceFlowInit) {
@@ -59,20 +65,30 @@ export function DeviceFlowModal({
   };
 
   const handleOpenBrowser = () => {
-    if (deviceFlowInit) openUrl(deviceFlowInit.verificationUri).catch((e: unknown) => setError(String(e)));
+    if (deviceFlowInit && isHttpUrl(deviceFlowInit.verificationUri)) {
+      void openUrl(deviceFlowInit.verificationUri).catch((e: unknown) => setError(String(e)));
+    }
   };
 
   return (
     <div
+      ref={rootRef}
       role="dialog"
       aria-label="Connect GitHub account"
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          handleCancel();
+        }
+      }}
       style={{
         position: "fixed",
         inset: 0,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "rgba(0, 0, 0, 0.5)",
+        background: "var(--color-overlay)",
         zIndex: 100,
       }}
     >

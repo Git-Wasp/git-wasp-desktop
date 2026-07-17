@@ -21,7 +21,8 @@ const META: Record<string, StatusMeta> = {
 
 /** A coloured status icon for a changed file (added/modified/removed/…). */
 export function FileStatusIcon({ status, size = 13 }: { status: string; size?: number }) {
-  const meta = META[status] ?? META.Modified;
+  // META.Modified is a literal key defined above, always present.
+  const meta = META[status] ?? META.Modified!;
   const Icon = meta.Icon;
   return (
     <span

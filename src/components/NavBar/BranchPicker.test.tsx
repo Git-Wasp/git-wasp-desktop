@@ -61,7 +61,8 @@ describe("BranchPicker", () => {
     fireEvent.click(screen.getByRole("button", { name: /branch picker/i }));
     // "main" appears both on the trigger and as the active item; click the menu item.
     const items = screen.getAllByText("main");
-    fireEvent.click(items[items.length - 1]);
+    // getAllByText throws if it finds nothing, so items is always non-empty.
+    fireEvent.click(items[items.length - 1]!);
     expect(useRepoStore.getState().checkoutBranch).not.toHaveBeenCalled();
   });
 

@@ -62,6 +62,16 @@ describe("themeStore", () => {
     expect(mockInvoke).toHaveBeenCalledWith("set_active_theme", { id: "light" });
   });
 
+  it("does not apply or persist the theme locally if the backend persist fails", async () => {
+    mockInvoke.mockRejectedValueOnce(new Error("disk full")); // set_active_theme
+
+    await expect(useThemeStore.getState().setActiveTheme("light")).rejects.toThrow("disk full");
+
+    // Still showing "dark" — a failed persist must not have applied "light" first.
+    expect(document.documentElement.getAttribute("data-theme")).toBeNull();
+    expect(useThemeStore.getState().activeThemeId).toBe("dark");
+  });
+
   it("setActiveTheme injects custom CSS for a custom theme", async () => {
     useThemeStore.setState({
       themes: [

@@ -18,9 +18,11 @@ interface RowData<T> {
 // react-window passes `{ index, style, ariaAttributes }` plus our `rowProps`.
 // The `style` positions the row absolutely and MUST be applied to the outer node.
 function VirtualRow<T>({ index, style, ariaAttributes, items, render }: RowComponentProps<RowData<T>>) {
+  // react-window only ever renders indices within [0, rowCount), which we
+  // pass as `items.length` below, so this index is always in range.
   return (
     <div style={style} {...ariaAttributes}>
-      {render(items[index], index)}
+      {render(items[index]!, index)}
     </div>
   );
 }

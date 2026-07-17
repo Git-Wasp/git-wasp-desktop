@@ -105,15 +105,20 @@ export function diffLines(head: string, worktree: string, options: DiffOptions =
   const kb = bMid.map(key);
 
   // dp[i][j] = LCS length of aMid[i..] and bMid[j..], compared by key.
+  // Below, every `!` is on an index that's provably in range: dp has exactly
+  // m+1 rows of n+1 entries, and each loop's bounds mirror that shape.
   const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
   for (let i = m - 1; i >= 0; i--) {
+    const row = dp[i]!;
+    const nextRow = dp[i + 1]!;
     for (let j = n - 1; j >= 0; j--) {
-      dp[i][j] = ka[i] === kb[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+      row[j] = ka[i] === kb[j] ? nextRow[j + 1]! + 1 : Math.max(nextRow[j]!, row[j + 1]!);
     }
   }
 
   const rows: DiffRow[] = [];
-  for (let k = 0; k < prefix; k++) rows.push({ kind: "context", text: b[k] });
+  // k < prefix <= min(a.length, b.length), so b[k] is always in range.
+  for (let k = 0; k < prefix; k++) rows.push({ kind: "context", text: b[k]! });
 
   let i = 0;
   let j = 0;
@@ -124,23 +129,24 @@ export function diffLines(head: string, worktree: string, options: DiffOptions =
       const folded = options.ignoreWhitespace && aMid[i] !== bMid[j];
       rows.push({
         kind: "context",
-        text: bMid[j],
-        ...(folded ? { composeText: aMid[i] } : {}),
+        text: bMid[j]!,
+        ...(folded ? { composeText: aMid[i]! } : {}),
       });
       i++;
       j++;
-    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
-      rows.push({ kind: "removed", text: aMid[i] });
+    } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) {
+      rows.push({ kind: "removed", text: aMid[i]! });
       i++;
     } else {
-      rows.push({ kind: "added", text: bMid[j] });
+      rows.push({ kind: "added", text: bMid[j]! });
       j++;
     }
   }
-  while (i < m) rows.push({ kind: "removed", text: aMid[i++] });
-  while (j < n) rows.push({ kind: "added", text: bMid[j++] });
+  while (i < m) rows.push({ kind: "removed", text: aMid[i++]! });
+  while (j < n) rows.push({ kind: "added", text: bMid[j++]! });
 
-  for (let k = b.length - suffix; k < b.length; k++) rows.push({ kind: "context", text: b[k] });
+  // b.length - suffix >= 0 and k < b.length throughout, by trimmedMiddle's invariant.
+  for (let k = b.length - suffix; k < b.length; k++) rows.push({ kind: "context", text: b[k]! });
   return rows;
 }
 
@@ -176,7 +182,7 @@ export function overviewMarks(rows: DiffRow[]): OverviewMark[] {
   const marks: OverviewMark[] = [];
   let i = 0;
   while (i < rows.length) {
-    if (rows[i].kind === "context") {
+    if (rows[i]!.kind === "context") {
       i++;
       continue;
     }
@@ -184,14 +190,14 @@ export function overviewMarks(rows: DiffRow[]): OverviewMark[] {
     let j = i;
     let hasAdd = false;
     let hasDel = false;
-    while (j < rows.length && rows[j].kind !== "context") {
-      if (rows[j].kind === "added") hasAdd = true;
+    while (j < rows.length && rows[j]!.kind !== "context") {
+      if (rows[j]!.kind === "added") hasAdd = true;
       else hasDel = true;
       j++;
     }
     const modified = hasAdd && hasDel;
     for (let k = i; k < j; k++) {
-      if (rows[k].kind === "removed") {
+      if (rows[k]!.kind === "removed") {
         marks.push({ rowIndex: k, lane: "left", color: modified ? "mod" : "del" });
       } else {
         marks.push({ rowIndex: k, lane: "right", color: modified ? "mod" : "add" });
@@ -389,14 +395,17 @@ export function hunkLines(rows: DiffRow[], context = 3): HunkLine[] {
     let newStart: number | null = null;
     let oldLen = 0;
     let newLen = 0;
+    // i ranges over [h.start, h.end] and h.end <= rows.length - 1 by
+    // construction, and oldNos/newNos were built with one entry per row, so
+    // every index below is in range.
     for (let i = h.start; i <= h.end; i++) {
-      if (rows[i].kind !== "added") {
+      if (rows[i]!.kind !== "added") {
         oldLen++;
-        if (oldStart == null) oldStart = oldNos[i];
+        if (oldStart == null) oldStart = oldNos[i]!;
       }
-      if (rows[i].kind !== "removed") {
+      if (rows[i]!.kind !== "removed") {
         newLen++;
-        if (newStart == null) newStart = newNos[i];
+        if (newStart == null) newStart = newNos[i]!;
       }
     }
     out.push({
@@ -407,7 +416,7 @@ export function hunkLines(rows: DiffRow[], context = 3): HunkLine[] {
       newNo: null,
     });
     for (let i = h.start; i <= h.end; i++) {
-      out.push({ kind: rows[i].kind, text: rows[i].text, rowIndex: i, oldNo: oldNos[i], newNo: newNos[i] });
+      out.push({ kind: rows[i]!.kind, text: rows[i]!.text, rowIndex: i, oldNo: oldNos[i]!, newNo: newNos[i]! });
     }
   }
   return out;

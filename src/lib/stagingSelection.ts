@@ -31,5 +31,7 @@ export function nextSelectionAfterStaging(
 ): string {
   if (newChanges.includes(path) || newChanges.length === 0) return path;
   const k = prevChanges.indexOf(path);
-  return newChanges[Math.min(k < 0 ? 0 : k, newChanges.length - 1)];
+  // newChanges.length > 0 here (the ===0 case returned above), so the clamped
+  // index is always within [0, newChanges.length - 1].
+  return newChanges[Math.min(k < 0 ? 0 : k, newChanges.length - 1)]!;
 }

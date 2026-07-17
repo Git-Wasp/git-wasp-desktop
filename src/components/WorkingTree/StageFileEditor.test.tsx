@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
-import { StageFileEditor } from "./StageFileEditor";
+import { Decoration } from "@codemirror/view";
+import { ReadOnlyStagePane, StageFileEditor } from "./StageFileEditor";
 import type { StageFileContents } from "../../types/workingTree";
 
 // A pure insertion: the right (working-tree / index) side adds line "b".
@@ -95,7 +96,7 @@ describe("StageFileEditor", () => {
     await waitFor(() => {
       const buttons = container.querySelectorAll<HTMLButtonElement>(".cm-stage-toggle");
       expect(buttons.length).toBe(1);
-      expect(buttons[0].textContent).toBe("+");
+      expect(buttons[0]!.textContent).toBe("+");
     });
   });
 
@@ -105,7 +106,7 @@ describe("StageFileEditor", () => {
     await waitFor(() => {
       const buttons = container.querySelectorAll<HTMLButtonElement>(".cm-stage-toggle");
       expect(buttons.length).toBe(1);
-      expect(buttons[0].textContent).toBe("−");
+      expect(buttons[0]!.textContent).toBe("−");
     });
   });
 
@@ -202,15 +203,16 @@ describe("StageFileEditor", () => {
       return buttons;
     });
 
-    fireEvent.click(toggles[0]);
-    fireEvent.click(toggles[1]); // fired before the first resolves
+    // toggles.length >= 2, asserted in the waitFor above.
+    fireEvent.click(toggles[0]!);
+    fireEvent.click(toggles[1]!); // fired before the first resolves
 
     expect(onApplyIndex).toHaveBeenCalledTimes(1); // second click ignored, not composed from stale rows
 
     resolveFirst!();
     // Once the first apply resolves, a subsequent toggle is honoured again.
     await new Promise((r) => setTimeout(r, 0)); // let the in-flight promise's `.finally` settle
-    fireEvent.click(toggles[1]);
+    fireEvent.click(toggles[1]!);
     expect(onApplyIndex).toHaveBeenCalledTimes(2);
   });
 
@@ -316,7 +318,7 @@ describe("StageFileEditor", () => {
     expect(overview).not.toBeNull();
     const marks = overview!.querySelectorAll("[data-overview-mark]");
     expect(marks.length).toBe(1);
-    expect(marks[0].getAttribute("data-color")).toBe("add");
+    expect(marks[0]!.getAttribute("data-color")).toBe("add");
   });
 
   describe("diff-view options", () => {
@@ -514,6 +516,68 @@ describe("StageFileEditor", () => {
     expect(container.querySelector('[data-testid="head-pane"]')).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Stage whole file" }));
     expect(onStageWholeFile).toHaveBeenCalledWith("bundle.min.js");
+  });
+
+  describe("ReadOnlyStagePane scroll preservation", () => {
+    // A tall doc so the pane can scroll (jsdom doesn't lay out real content
+    // height, but scrollTop is a plain settable property, so this just proves
+    // the rebuild doesn't stomp on it back to 0).
+    const bigContent = (prefix: string) =>
+      Array.from({ length: 400 }, (_, i) => `${prefix}${i}`).join("\n");
+    const lineNumberMapFor = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
+
+    function pane(content: string, changedLines: Set<number>, fileKey: string) {
+      return (
+        <ReadOnlyStagePane
+          testId="head-pane"
+          content={content}
+          changedLines={changedLines}
+          stagedLines={new Set()}
+          onToggle={() => {}}
+          decorations={Decoration.none}
+          lineNumberMap={lineNumberMapFor(400)}
+          language={null}
+          fileKey={fileKey}
+        />
+      );
+    }
+
+    it("keeps the scroll position when a line toggle causes new content/decorations to arrive", () => {
+      const { rerender } = render(pane(bigContent("a"), new Set([5]), "file-a.txt"));
+
+      const scroller = screen.getByTestId("head-pane").querySelector(".cm-scroller");
+      expect(scroller).not.toBeNull();
+      scroller!.scrollTop = 4000;
+
+      // A realistic line-toggle: brand-new `content`/`changedLines` (and thus a
+      // brand-new `decorations` set, computed by the parent from fresh rows),
+      // exactly what happens on every stage/unstage click, but the SAME file.
+      rerender(pane(bigContent("b"), new Set([6]), "file-a.txt"));
+
+      const newScroller = screen.getByTestId("head-pane").querySelector(".cm-scroller");
+      expect(newScroller).not.toBeNull();
+      expect(newScroller!.scrollTop).toBeGreaterThan(3900); // did not snap back to 0
+    });
+
+    it("does not carry a stale file's scroll position onto a freshly opened file", () => {
+      // Regression: the same pane instance persists across a genuine file
+      // switch (e.g. clicking a different row in the working-tree list),
+      // which — from the pane's perspective — presents new content/decorations
+      // exactly like a same-file line toggle does. Only `fileKey` tells them
+      // apart; without that check, file B would inherit file A's scroll.
+      const { rerender } = render(pane(bigContent("a"), new Set([5]), "file-a.txt"));
+
+      const scroller = screen.getByTestId("head-pane").querySelector(".cm-scroller");
+      expect(scroller).not.toBeNull();
+      scroller!.scrollTop = 4000;
+
+      // A genuine file switch: different `fileKey`, different content.
+      rerender(pane(bigContent("c"), new Set([2]), "file-b.txt"));
+
+      const newScroller = screen.getByTestId("head-pane").querySelector(".cm-scroller");
+      expect(newScroller).not.toBeNull();
+      expect(newScroller!.scrollTop).toBe(0); // file B opens fresh, not at file A's position
+    });
   });
 
   describe("discard confirmation", () => {

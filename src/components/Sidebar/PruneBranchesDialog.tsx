@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRepoStore } from "../../stores/repoStore";
 import { useRemoteStore } from "../../stores/remoteStore";
 import { useToastStore } from "../../stores/toastStore";
@@ -48,6 +48,10 @@ export function PruneBranchesDialog({ onClose }: { onClose: () => void }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    rootRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -147,6 +151,7 @@ export function PruneBranchesDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <div
+      ref={rootRef}
       role="dialog"
       aria-label="Prune branches"
       tabIndex={-1}
@@ -162,7 +167,7 @@ export function PruneBranchesDialog({ onClose }: { onClose: () => void }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "rgba(0, 0, 0, 0.5)",
+        background: "var(--color-overlay)",
         zIndex: 100,
       }}
     >

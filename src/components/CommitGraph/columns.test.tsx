@@ -212,8 +212,9 @@ describe("BranchCell multiple tags", () => {
     // A single chip, showing the first tag name and the count of all tags.
     const chips = container.querySelectorAll("[data-tag]");
     expect(chips).toHaveLength(1);
-    expect(chips[0].getAttribute("data-tag")).toBe("v2.0.0");
-    expect(chips[0].getAttribute("data-tag-count")).toBe("3");
+    // chips.length === 1, asserted above.
+    expect(chips[0]!.getAttribute("data-tag")).toBe("v2.0.0");
+    expect(chips[0]!.getAttribute("data-tag-count")).toBe("3");
     expect(chips[0]).toHaveTextContent("v2.0.0");
     expect(chips[0]).toHaveTextContent("(3)");
     // The other tag names are NOT revealed inline (only on hover, over the graph).
@@ -243,7 +244,8 @@ describe("BranchCell multiple tags", () => {
     );
     const chips = container.querySelectorAll("[data-tag]");
     expect(chips).toHaveLength(1);
-    expect(chips[0].getAttribute("data-tag-count")).toBeNull();
+    // chips.length === 1, asserted above.
+    expect(chips[0]!.getAttribute("data-tag-count")).toBeNull();
     expect(chips[0]).not.toHaveTextContent("(1)");
   });
 });

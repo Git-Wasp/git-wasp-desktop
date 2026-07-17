@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../ui/Button";
 
 /**
@@ -17,9 +17,14 @@ export function TagDeleteDialog({
   onCancel: () => void;
 }) {
   const [alsoRemote, setAlsoRemote] = useState(onRemote);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    rootRef.current?.focus();
+  }, []);
 
   return (
     <div
+      ref={rootRef}
       role="dialog"
       aria-label="Delete tag"
       tabIndex={-1}
@@ -35,7 +40,7 @@ export function TagDeleteDialog({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "rgba(0, 0, 0, 0.5)",
+        background: "var(--color-overlay)",
         zIndex: 100,
       }}
     >

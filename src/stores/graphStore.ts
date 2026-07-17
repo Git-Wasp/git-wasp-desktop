@@ -234,9 +234,26 @@ const sliceFromCache = (
   return { nodes, totalCount, offset, headRow };
 };
 
-const mergeIntoCache = (cache: Map<number, GraphNode>, viewport: GraphViewport): void => {
+// Cap on the row cache — ~20k rows of cached layout data, generous headroom
+// for the 10k+-commit target, capped so a very long session doesn't grow
+// without bound.
+export const GRAPH_ROW_CACHE_CAP = 20_000;
+
+export const mergeIntoCache = (cache: Map<number, GraphNode>, viewport: GraphViewport): void => {
   for (const node of viewport.nodes) {
     cache.set(node.row, node);
+  }
+  if (cache.size > GRAPH_ROW_CACHE_CAP) {
+    // Evict the oldest-inserted entries first (Map iteration order = insertion
+    // order) — simple and cheap; a scrolling session's most-recently-fetched
+    // rows are the ones worth keeping.
+    const excess = cache.size - GRAPH_ROW_CACHE_CAP;
+    const keys = cache.keys();
+    for (let i = 0; i < excess; i++) {
+      const next = keys.next();
+      if (next.done) break;
+      cache.delete(next.value);
+    }
   }
 };
 
@@ -378,7 +395,9 @@ export const useGraphStore = create<GraphStore>((set, get) => {
         }
         // Removing the anchor/primary hands those roles to a surviving member so
         // a following shift-click still has an anchor to extend from.
-        const last = [...range][range.size - 1];
+        // range.size > 0 here (the ===0 case returned above), so this index
+        // is always in range.
+        const last = [...range][range.size - 1]!;
         const anchor = selection.anchor && range.has(selection.anchor) ? selection.anchor : last;
         set({
           selection: { anchor, focus: anchor, range },
@@ -526,21 +545,23 @@ export const useGraphStore = create<GraphStore>((set, get) => {
       return;
     }
     // Jump to the first match (top-most) and highlight the whole set.
-    revealHit(hits[0], { searchHits: hits, searchMatchOids: oids, searchIndex: 0 });
+    // hits.length !== 0 here (the ===0 case returned above).
+    revealHit(hits[0]!, { searchHits: hits, searchMatchOids: oids, searchIndex: 0 });
   },
 
   nextMatch: () => {
     const { searchHits, searchIndex } = get();
     if (searchHits.length === 0) return;
     const idx = (searchIndex + 1) % searchHits.length;
-    revealHit(searchHits[idx], { searchIndex: idx });
+    // searchHits.length > 0 here, so the wrapped index is always in range.
+    revealHit(searchHits[idx]!, { searchIndex: idx });
   },
 
   prevMatch: () => {
     const { searchHits, searchIndex } = get();
     if (searchHits.length === 0) return;
     const idx = (searchIndex - 1 + searchHits.length) % searchHits.length;
-    revealHit(searchHits[idx], { searchIndex: idx });
+    revealHit(searchHits[idx]!, { searchIndex: idx });
   },
 
   reset: () => {

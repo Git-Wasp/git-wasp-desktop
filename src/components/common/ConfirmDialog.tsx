@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Button } from "../ui/Button";
 
 interface ConfirmDialogProps {
@@ -25,8 +26,14 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    rootRef.current?.focus();
+  }, []);
+
   return (
     <div
+      ref={rootRef}
       role="dialog"
       aria-label={title}
       tabIndex={-1}
@@ -42,7 +49,7 @@ export function ConfirmDialog({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "rgba(0, 0, 0, 0.5)",
+        background: "var(--color-overlay)",
         zIndex: 100,
       }}
     >
