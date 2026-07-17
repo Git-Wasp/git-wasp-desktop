@@ -1,8 +1,53 @@
 import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { useCommitGraph } from "./useCommitGraph";
+import { useCommitGraph, GRAPH_PAD_LEFT } from "./useCommitGraph";
+import type { GraphNode, GraphViewport } from "../types/graph";
 
 describe("useCommitGraph", () => {
+  it("falls back to 24px lane width (matching GraphSkeleton's hardcoded fallback), not 20px", () => {
+    // No --graph-lane-width token is set on document.documentElement in this
+    // test environment, so resolveConfig() must fall through to its hardcoded
+    // fallback. GraphSkeleton (the loading placeholder shown before the real
+    // graph mounts) hardcodes 24px; the real graph's own fallback must match it,
+    // otherwise the skeleton-to-real-graph handoff visibly jumps lane x-positions
+    // whenever the CSS token happens to be unset.
+    const arc = vi.fn();
+    const canvasRef = { current: document.createElement("canvas") };
+    vi.spyOn(canvasRef.current, "getContext").mockReturnValue({
+      clearRect: vi.fn(), fillRect: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
+      bezierCurveTo: vi.fn(), stroke: vi.fn(), arc, fill: vi.fn(), fillText: vi.fn(),
+      setLineDash: vi.fn(), save: vi.fn(), restore: vi.fn(), clip: vi.fn(), drawImage: vi.fn(),
+      setTransform: vi.fn(),
+    } as unknown as CanvasRenderingContext2D);
+
+    const graphNode: GraphNode = {
+      oid: "a".repeat(40),
+      shortOid: "aaaaaaa",
+      summary: "first commit",
+      body: "",
+      authorName: "A",
+      authorEmail: "a@a",
+      authorTimestamp: 0,
+      lane: 0,
+      row: 0,
+      colorIndex: 0,
+      parents: [],
+      children: [],
+      edges: [],
+      branchLabels: [],
+      isHead: false,
+      onHeadLine: true,
+    };
+    const viewport: GraphViewport = { nodes: [graphNode], totalCount: 1, offset: 0, headRow: null };
+    const selection = { anchor: null, focus: null, range: new Set<string>() };
+    renderHook(() => useCommitGraph(canvasRef, viewport, selection, 200, null, false, 34, 5));
+
+    // GRAPH_PAD_LEFT + lane 0 * laneWidth + laneWidth / 2 — with a 24px
+    // fallback this is 22; with the old 20px fallback it would be 20.
+    const expectedX = GRAPH_PAD_LEFT + 0 * 24 + 24 / 2;
+    expect(arc.mock.calls[0][0]).toBeCloseTo(expectedX);
+  });
+
   it("resolves CSS custom properties once per theme/density change, not once per draw", () => {
     const getComputedStyleSpy = vi.spyOn(window, "getComputedStyle");
     const canvasRef = { current: document.createElement("canvas") };

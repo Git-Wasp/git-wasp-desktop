@@ -75,7 +75,7 @@ function resolveConfig(rowHeightOverride?: number, dotRadiusOverride?: number): 
   const px = (v: string) => parseFloat(v) || 0;
   return {
     rowHeight: rowHeightOverride ?? (px(resolveCssVar("--graph-row-height")) || 34),
-    laneWidth: px(resolveCssVar("--graph-lane-width")) || 20,
+    laneWidth: px(resolveCssVar("--graph-lane-width")) || 24, // matches GraphSkeleton's fallback
     dotRadius: dotRadiusOverride ?? (px(resolveCssVar("--graph-dot-radius")) || 5),
     lineWidth: px(resolveCssVar("--graph-line-width")) || 2,
   };

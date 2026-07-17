@@ -3,6 +3,7 @@ import { Profiler } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { CommitGraph } from "./CommitGraph";
+import { THEME_CHANGE_EVENT } from "../../lib/applyTheme";
 import { useGraphStore, type SelectMode } from "../../stores/graphStore";
 import { useRepoStore } from "../../stores/repoStore";
 import { useGithubStore } from "../../stores/githubStore";
@@ -449,6 +450,21 @@ describe("CommitGraph checked-out indicators", () => {
     act(() => useGraphStore.getState().setGraphDensity("compact"));
     const after = screen.getByTestId("head-pulse");
     expect(after).not.toBe(before);
+  });
+
+  it("repositions the HEAD pulse after a theme change (lane width may change)", () => {
+    // headPulse re-derives its x position from the --graph-lane-width CSS
+    // token via getComputedStyle, but its memo previously had no dependency
+    // that changed on a theme swap, so a lane-width change baked into a new
+    // theme never moved the pulse until some unrelated prop forced a
+    // recompute.
+    render(<CommitGraph />);
+    const before = screen.getByTestId("head-pulse").style.left;
+    act(() => {
+      document.documentElement.style.setProperty("--graph-lane-width", "40px");
+      window.dispatchEvent(new Event(THEME_CHANGE_EVENT));
+    });
+    expect(screen.getByTestId("head-pulse").style.left).not.toBe(before);
   });
 });
 

@@ -22,6 +22,7 @@ import { SquashDialog } from "./SquashDialog";
 import { buildSquashPlan, commitFullMessage } from "./squash";
 import { GraphSearch } from "./GraphSearch";
 import { GraphSkeleton } from "./GraphSkeleton";
+import { THEME_CHANGE_EVENT } from "../../lib/applyTheme";
 import { AuthorCell, BranchCell, DateCell, HashCell, MessageCell } from "./columns";
 import {
   columnsForVariant,
@@ -842,6 +843,18 @@ export function CommitGraph({
   const canvasTop = offset * rowHeight;
   const sliceHeight = (viewport?.nodes.length ?? 0) * rowHeight;
 
+  // headPulse reads --graph-lane-width via getComputedStyle, which only
+  // reflects the *current* theme's tokens — a theme swap can change the lane
+  // width, but nothing else in this memo's dependency list changes on a theme
+  // change, so without this tick the pulse would stay put at its pre-swap x
+  // position until some unrelated prop forced a recompute.
+  const [graphThemeTick, setGraphThemeTick] = useState(0);
+  useEffect(() => {
+    const onThemeChange = () => setGraphThemeTick((t) => t + 1);
+    window.addEventListener(THEME_CHANGE_EVENT, onThemeChange);
+    return () => window.removeEventListener(THEME_CHANGE_EVENT, onThemeChange);
+  }, []);
+
   // Position of the HEAD commit dot (when it's in the loaded slice), so a CSS
   // pulse overlay can draw expanding rings on it — a clear "you are here" cue.
   // The pulse lives inside the CSS-sticky graph wrapper, so its coordinates are
@@ -856,7 +869,11 @@ export function CommitGraph({
     const x = GRAPH_PAD_LEFT + nodes[idx].lane * laneWidth + laneWidth / 2;
     const y = (offset + idx) * rowHeight + rowHeight / 2;
     return { x, y };
-  }, [viewport, offset, rowHeight]);
+    // graphThemeTick isn't read in the body above — it's a pure recompute
+    // trigger for the getComputedStyle('--graph-lane-width') read, which a
+    // theme swap can change with no other dependency here reflecting it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewport, offset, rowHeight, graphThemeTick]);
 
   const dataColumns = columns.filter((c) => c.kind !== "graph");
 
