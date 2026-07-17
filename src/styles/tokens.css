@@ -45,6 +45,8 @@
   /* Translucent viewport thumb over the diff change-overview ("gutter") strip. */
   --color-overview-thumb: rgba(255, 255, 255, 0.16);
   --color-bg-overlay:  rgba(0, 0, 0, 0.6);
+  /* Scrim backdrop for dialogs and modals. */
+  --color-overlay:     rgba(0, 0, 0, 0.5);
 
   /* === COLOUR — Text === */
   --color-text-primary:   var(--color-neutral-900);
@@ -129,6 +131,7 @@
   --color-bg-selected:    var(--color-accent-muted);
   --color-bg-input:       var(--color-neutral-100);
   --color-text-on-accent: #ffffff;
+  --color-text-on-warning: #241a00;
   --color-bg-hover:       var(--color-neutral-200);
   --color-accent-hover:   var(--color-accent-secondary);
 
@@ -184,6 +187,7 @@
   --color-bg-elevated: #e8eaed;
   --color-overview-thumb: rgba(0, 0, 0, 0.13);
   --color-bg-overlay:  rgba(0, 0, 0, 0.35);
+  --color-overlay:     rgba(0, 0, 0, 0.3);
 
   --color-text-primary:   #1a1d23;
   --color-text-secondary: #3d4454;
@@ -220,6 +224,7 @@
   /* Interactive surfaces */
   --color-bg-selected: #d6e6fb;
   --color-bg-input:    #ffffff;
+  --color-text-on-warning: #ffffff;
   --color-bg-hover:    #e3e7ec;
   --color-graph-bg: #e7ebf1;
   --color-graph-node-bg: rgba(0, 0, 0, 0.04);

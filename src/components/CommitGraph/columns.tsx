@@ -88,7 +88,7 @@ function HeadBadge() {
         padding: "2.5px 7px",
         borderRadius: "var(--radius-full)",
         background: "var(--color-warning)",
-        color: "#241a00",
+        color: "var(--color-text-on-warning)",
       }}
     >
       HEAD
@@ -345,7 +345,7 @@ export function AuthorCell({ node }: { node: GraphNode }) {
             height: AVATAR_SIZE,
             borderRadius: "var(--radius-full)",
             background: color,
-            color: "#fff",
+            color: "var(--color-text-on-accent)",
             fontSize: "10.5px",
             fontWeight: "var(--font-weight-bold)",
             display: "flex",
