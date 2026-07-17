@@ -52,4 +52,42 @@ describe("useCommitGraph", () => {
     handler();
     expect(getContextSpy).toHaveBeenCalled(); // a redraw happened
   });
+
+  it("keeps redrawing on a second DPR change, not just the first (re-subscribes rather than going stale)", () => {
+    // A bare `(resolution: Xdppx)` query only fires `change` when the live DPR
+    // crosses exactly the `X` it was created with. A listener subscribed once at
+    // mount for the mount-time DPR would catch a 1x->2x move but then go silent
+    // on a subsequent 2x->3x move. window.matchMedia is stubbed to always return
+    // this same `mql`, so a second "change" registration on it is direct proof
+    // the effect re-subscribed a fresh query after the first firing.
+    const mql = {
+      matches: false,
+      addEventListener: vi.fn<(type: string, cb: () => void) => void>(),
+      removeEventListener: vi.fn<(type: string, cb: () => void) => void>(),
+    };
+    vi.spyOn(window, "matchMedia").mockReturnValue(mql as unknown as MediaQueryList);
+    const canvasRef = { current: document.createElement("canvas") };
+    vi.spyOn(canvasRef.current, "getContext").mockReturnValue({
+      clearRect: vi.fn(), fillRect: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
+      bezierCurveTo: vi.fn(), stroke: vi.fn(), arc: vi.fn(), fill: vi.fn(), fillText: vi.fn(),
+      setLineDash: vi.fn(), save: vi.fn(), restore: vi.fn(), clip: vi.fn(), drawImage: vi.fn(),
+      setTransform: vi.fn(),
+    } as unknown as CanvasRenderingContext2D);
+
+    const viewport = { nodes: [], totalCount: 0, offset: 0, headRow: null };
+    const selection = { anchor: null, focus: null, range: new Set<string>() };
+    renderHook(() => useCommitGraph(canvasRef, viewport, selection, 200, null, false, 34, 5));
+
+    const changeRegistrations = () => mql.addEventListener.mock.calls.filter(([type]) => type === "change");
+    const [, firstHandler] = changeRegistrations()[0];
+    firstHandler(); // first DPR change, e.g. 1x -> 2x
+
+    // A fresh "change" listener must have been registered for the next transition.
+    expect(changeRegistrations().length).toBeGreaterThan(1);
+    const [, secondHandler] = changeRegistrations()[changeRegistrations().length - 1];
+
+    const getContextSpy = vi.spyOn(canvasRef.current, "getContext");
+    secondHandler(); // second DPR change, e.g. 2x -> 3x — must still redraw
+    expect(getContextSpy).toHaveBeenCalled();
+  });
 });

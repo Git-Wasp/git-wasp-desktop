@@ -449,14 +449,18 @@ export function CommitGraph({
     const container = containerRef.current;
     if (!container) return;
     const recomputeCoverage = () => {
+      // ResizeObserver.observe() queues an initial callback for a newly-observed
+      // target even with no size change — which fires before the initial-load
+      // effect's own first fetchViewport(0, limit) can resolve, while viewport is
+      // still null. That first fetch is the initial-load effect's job; falling
+      // through here would fire a redundant duplicate on every mount.
+      const vp = useGraphStore.getState().viewport;
+      if (!vp) return;
       const limit = Math.ceil(container.clientHeight / rowHeight) + BUFFER_ROWS * 2;
       const offset = Math.max(0, Math.floor(container.scrollTop / rowHeight) - BUFFER_ROWS);
-      const vp = useGraphStore.getState().viewport;
-      if (vp) {
-        const loadedEnd = vp.offset + vp.nodes.length;
-        const covered = offset >= vp.offset && (offset + limit <= loadedEnd || loadedEnd >= vp.totalCount);
-        if (covered) return;
-      }
+      const loadedEnd = vp.offset + vp.nodes.length;
+      const covered = offset >= vp.offset && (offset + limit <= loadedEnd || loadedEnd >= vp.totalCount);
+      if (covered) return;
       fetchViewport(offset, limit).catch((e: unknown) =>
         toastError(String(e), { title: "Couldn't load history" }),
       );

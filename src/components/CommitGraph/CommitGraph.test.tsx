@@ -309,6 +309,29 @@ describe("CommitGraph resize", () => {
 
     expect(fetchViewportSpy).not.toHaveBeenCalled();
   });
+
+  it("does not fetch when the ResizeObserver's initial queued callback fires before the initial load has landed (viewport still null)", async () => {
+    // Per the ResizeObserver spec, observe() queues an initial callback for a
+    // newly-observed target even with no real size change, which can fire before
+    // the initial-load effect's own fetchViewport(0, limit) has resolved — i.e.
+    // while the store's viewport is still null. That first fetch belongs to the
+    // initial-load effect; the resize path must not also fire one.
+    const fetchViewportSpy = vi.fn().mockResolvedValue(undefined);
+    useGraphStore.setState({ fetchViewport: fetchViewportSpy, viewport: null });
+    const { container } = render(<CommitGraph />);
+    // Drop the initial-load effect's own mount-time call — only the resize path
+    // is under test here.
+    fetchViewportSpy.mockClear();
+
+    const scrollEl = container.querySelector('[style*="overflow: auto"]') as HTMLElement;
+    triggerResizeObserver(scrollEl); // simulates observe()'s initial queued callback
+
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(r));
+    });
+
+    expect(fetchViewportSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe("CommitGraph checked-out indicators", () => {

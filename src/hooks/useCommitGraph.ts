@@ -141,10 +141,20 @@ export function useCommitGraph(
   // Redraw when the window moves to a display with a different device pixel
   // ratio (e.g. Retina → 1x) — there's no scroll/theme event for that, so
   // without this the canvas stays at the old DPR until some unrelated redraw
-  // happens to fire.
+  // happens to fire. A bare `(resolution: Xdppx)` query only ever fires
+  // `change` when the live DPR crosses exactly the value `X` it was created
+  // with, so a stale query (subscribed once at mount) would catch a 1x→2x
+  // move but then miss a subsequent 2x→3x move entirely. Re-subscribing to a
+  // fresh query for the current DPR on every firing keeps it armed for the
+  // next transition too, however many happen in a session.
   useEffect(() => {
-    const mql = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
-    const onChange = () => setThemeTick((t) => t + 1); // dpr changed → re-run the draw effect
+    let mql = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    const onChange = () => {
+      setThemeTick((t) => t + 1); // dpr changed → re-run the draw effect
+      mql.removeEventListener("change", onChange);
+      mql = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      mql.addEventListener("change", onChange);
+    };
     mql.addEventListener("change", onChange);
     return () => mql.removeEventListener("change", onChange);
   }, []);
