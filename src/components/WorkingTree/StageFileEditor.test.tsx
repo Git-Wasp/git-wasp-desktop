@@ -525,8 +525,8 @@ describe("StageFileEditor", () => {
       Array.from({ length: 400 }, (_, i) => `${prefix}${i}`).join("\n");
     const lineNumberMapFor = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
 
-    function renderPane(content: string, changedLines: Set<number>) {
-      return render(
+    function pane(content: string, changedLines: Set<number>, fileKey: string) {
+      return (
         <ReadOnlyStagePane
           testId="head-pane"
           content={content}
@@ -536,12 +536,13 @@ describe("StageFileEditor", () => {
           decorations={Decoration.none}
           lineNumberMap={lineNumberMapFor(400)}
           language={null}
-        />,
+          fileKey={fileKey}
+        />
       );
     }
 
     it("keeps the scroll position when a line toggle causes new content/decorations to arrive", () => {
-      const { rerender } = renderPane(bigContent("a"), new Set([5]));
+      const { rerender } = render(pane(bigContent("a"), new Set([5]), "file-a.txt"));
 
       const scroller = screen.getByTestId("head-pane").querySelector(".cm-scroller");
       expect(scroller).not.toBeNull();
@@ -549,23 +550,32 @@ describe("StageFileEditor", () => {
 
       // A realistic line-toggle: brand-new `content`/`changedLines` (and thus a
       // brand-new `decorations` set, computed by the parent from fresh rows),
-      // exactly what happens on every stage/unstage click.
-      rerender(
-        <ReadOnlyStagePane
-          testId="head-pane"
-          content={bigContent("b")}
-          changedLines={new Set([6])}
-          stagedLines={new Set()}
-          onToggle={() => {}}
-          decorations={Decoration.none}
-          lineNumberMap={lineNumberMapFor(400)}
-          language={null}
-        />,
-      );
+      // exactly what happens on every stage/unstage click, but the SAME file.
+      rerender(pane(bigContent("b"), new Set([6]), "file-a.txt"));
 
       const newScroller = screen.getByTestId("head-pane").querySelector(".cm-scroller");
       expect(newScroller).not.toBeNull();
       expect(newScroller!.scrollTop).toBeGreaterThan(3900); // did not snap back to 0
+    });
+
+    it("does not carry a stale file's scroll position onto a freshly opened file", () => {
+      // Regression: the same pane instance persists across a genuine file
+      // switch (e.g. clicking a different row in the working-tree list),
+      // which — from the pane's perspective — presents new content/decorations
+      // exactly like a same-file line toggle does. Only `fileKey` tells them
+      // apart; without that check, file B would inherit file A's scroll.
+      const { rerender } = render(pane(bigContent("a"), new Set([5]), "file-a.txt"));
+
+      const scroller = screen.getByTestId("head-pane").querySelector(".cm-scroller");
+      expect(scroller).not.toBeNull();
+      scroller!.scrollTop = 4000;
+
+      // A genuine file switch: different `fileKey`, different content.
+      rerender(pane(bigContent("c"), new Set([2]), "file-b.txt"));
+
+      const newScroller = screen.getByTestId("head-pane").querySelector(".cm-scroller");
+      expect(newScroller).not.toBeNull();
+      expect(newScroller!.scrollTop).toBe(0); // file B opens fresh, not at file A's position
     });
   });
 

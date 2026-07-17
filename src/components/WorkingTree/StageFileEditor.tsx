@@ -282,6 +282,7 @@ export function ReadOnlyStagePane({
   onScroll,
   showStageGutter = true,
   wrap = true,
+  fileKey,
 }: {
   label?: string;
   content: string;
@@ -303,6 +304,14 @@ export function ReadOnlyStagePane({
   showStageGutter?: boolean;
   /** Soft-wrap long lines; when false they overflow horizontally (scrollbar). */
   wrap?: boolean;
+  /** Identifies which file this pane is showing (its path). The caller reuses
+   *  this same pane instance across both same-file line toggles (which should
+   *  preserve scroll — see the build effect below) and switching to a wholly
+   *  different file (which must NOT carry over the previous file's scroll
+   *  position). Comparing this against the previous build's value is how the
+   *  effect tells those two cases apart — required, not optional, so a caller
+   *  can't silently opt out of the file-switch guard by omitting it. */
+  fileKey: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -323,11 +332,22 @@ export function ReadOnlyStagePane({
   // from `viewRef` at the top of the new run — it has to be latched by the
   // cleanup itself, right before `view.destroy()`, into a ref that survives.
   const lastScrollRef = useRef<{ top: number; left: number } | null>(null);
+  // The file this pane was showing on its *previous* build — distinct from
+  // `fileKey` (this render's prop), so the effect can tell a same-file
+  // rebuild (a line toggle: restore the latched scroll) apart from a
+  // rebuild caused by the caller swapping in a different file entirely
+  // (e.g. clicking a different row in the working-tree list while this same
+  // pane instance persists): that case must NOT inherit the old file's
+  // scroll position, matching the pre-fix (accidental) behaviour of always
+  // resetting to the top.
+  const prevFileKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
-    const prevScrollTop = lastScrollRef.current?.top ?? 0;
-    const prevScrollLeft = lastScrollRef.current?.left ?? 0;
+    const sameFile = prevFileKeyRef.current === fileKey;
+    prevFileKeyRef.current = fileKey;
+    const prevScrollTop = sameFile ? (lastScrollRef.current?.top ?? 0) : 0;
+    const prevScrollLeft = sameFile ? (lastScrollRef.current?.left ?? 0) : 0;
     const numberGutter = oldLineNumberMap
       ? dualNumberGutter(oldLineNumberMap, lineNumberMap)
       : lineNumbers({
@@ -384,6 +404,7 @@ export function ReadOnlyStagePane({
     onView,
     onScroll,
     showStageGutter,
+    fileKey,
   ]);
 
   // Toggle wrapping on the live editor via the compartment (no rebuild).
@@ -1054,6 +1075,7 @@ export function StageFileEditor({
                 onScroll={onScrollHead}
                 showStageGutter={!readOnly}
                 wrap={wrap}
+                fileKey={path}
               />
               <ReadOnlyStagePane
                 label={rightLabel}
@@ -1069,6 +1091,7 @@ export function StageFileEditor({
                 onScroll={onScrollWorktree}
                 showStageGutter={!readOnly}
                 wrap={wrap}
+                fileKey={path}
               />
             </div>
           ) : viewMode === "inline" ? (
@@ -1088,6 +1111,7 @@ export function StageFileEditor({
                 onScroll={onScrollSingle}
                 showStageGutter={!readOnly}
                 wrap={wrap}
+                fileKey={path}
               />
             </div>
           ) : (
@@ -1107,6 +1131,7 @@ export function StageFileEditor({
                 onScroll={onScrollSingle}
                 showStageGutter={!readOnly}
                 wrap={wrap}
+                fileKey={path}
               />
             </div>
           )}
