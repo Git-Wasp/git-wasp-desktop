@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
@@ -61,17 +61,21 @@ describe("GitHooksSettings", () => {
     });
   });
 
-  it("normalizes the repository path and only reloads when it changes", async () => {
+  it("reloads when the backend-issued repository path changes verbatim", async () => {
     mockInvoke.mockResolvedValue({ preCommit: true, prePush: true });
-    const { rerender } = render(<GitHooksSettings />);
+    render(<GitHooksSettings />);
     await screen.findByLabelText("Run pre-commit");
 
-    useRepoStore.setState({
-      currentRepo: { name: "renamed", path: "/repo/", headBranch: "develop" },
+    act(() => {
+      useRepoStore.setState({
+        currentRepo: { name: "renamed", path: "/repo/", headBranch: "develop" },
+      });
     });
-    rerender(<GitHooksSettings />);
 
-    expect(mockInvoke).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(2));
+    expect(mockInvoke).toHaveBeenLastCalledWith("get_hook_preferences", {
+      repoPath: "/repo/",
+    });
   });
 
   it("discards a stale load after the current repository changes", async () => {

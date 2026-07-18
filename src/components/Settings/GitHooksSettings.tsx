@@ -18,15 +18,8 @@ const checkboxLabelStyle: React.CSSProperties = {
   color: "var(--color-text-primary)",
 };
 
-function normalizeRepoPath(repoPath: string): string {
-  const normalized = repoPath.replace(/\\/g, "/");
-  return normalized === "/" ? normalized : normalized.replace(/\/+$/, "");
-}
-
 export function GitHooksSettings() {
-  const currentRepoPath = useRepoStore((state) => state.currentRepo?.path ?? null);
-  const repoPath =
-    currentRepoPath === null ? null : normalizeRepoPath(currentRepoPath);
+  const repoPath = useRepoStore((state) => state.currentRepo?.path ?? null);
   const requestIdRef = useRef(0);
   const [preferences, setPreferences] = useState<HookPreferences | null>(null);
   const [loading, setLoading] = useState(repoPath !== null);
