@@ -6,6 +6,7 @@ mod diff_engine;
 mod file_watcher;
 mod github_client;
 mod graph;
+mod hook_runner;
 mod logging;
 mod merge_ops;
 mod operation_runner;

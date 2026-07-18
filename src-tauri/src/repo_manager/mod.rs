@@ -719,6 +719,7 @@ pub struct AppState {
     pub manager: Arc<RepoManager>,
     pub watcher: Mutex<Option<FileWatcher>>,
     pub credentials: Box<dyn crate::credential_store::CredentialStore>,
+    hook_runs: crate::hook_runner::RunRegistry,
 }
 
 impl AppState {
@@ -727,7 +728,15 @@ impl AppState {
             manager: Arc::new(RepoManager::new()),
             watcher: Mutex::new(None),
             credentials: Box::new(crate::credential_store::KeyringStore),
+            hook_runs: crate::hook_runner::RunRegistry::default(),
         }
+    }
+
+    pub fn begin_hook_run(
+        &self,
+        repo_path: &str,
+    ) -> anyhow::Result<crate::hook_runner::HookRunGuard> {
+        self.hook_runs.begin(repo_path)
     }
 
     pub fn known_github_hosts(&self) -> anyhow::Result<Vec<String>> {
