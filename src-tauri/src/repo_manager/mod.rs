@@ -80,6 +80,21 @@ struct RepoState {
     graph_cache: Option<crate::graph::GraphCache>,
 }
 
+pub(crate) struct RepoGraphDirtyHandle {
+    state: Arc<Mutex<RepoState>>,
+}
+
+impl RepoGraphDirtyHandle {
+    pub(crate) fn mark_dirty(&self) -> anyhow::Result<()> {
+        let mut guard = self
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("repo state lock poisoned"))?;
+        crate::graph::mark_dirty(&mut guard.graph_cache);
+        Ok(())
+    }
+}
+
 /// A single open repository tab, carrying its own in-progress operation so a
 /// merge (or future rebase) in one tab can't leak into another.
 struct OpenRepo {
@@ -334,7 +349,10 @@ impl RepoManager {
             .ok_or_else(|| anyhow::anyhow!("repository not open: {repo_path}"))
     }
 
-    pub fn open_repo_worktree(&self, repo_path: &str) -> anyhow::Result<PathBuf> {
+    pub(crate) fn open_repo_worktree_and_graph_handle(
+        &self,
+        repo_path: &str,
+    ) -> anyhow::Result<(PathBuf, RepoGraphDirtyHandle)> {
         let state = {
             let repos = self.repos_lock()?;
             repos
@@ -343,30 +361,17 @@ impl RepoManager {
                 .map(|repo| Arc::clone(&repo.state))
                 .ok_or_else(|| anyhow::anyhow!("repository not open: {repo_path}"))?
         };
-        let guard = state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("repo state lock poisoned"))?;
-        guard
-            .repo
-            .workdir()
-            .map(Path::to_path_buf)
-            .context("open repository has no working tree")
-    }
-
-    pub fn mark_repo_graph_dirty(&self, repo_path: &str) -> anyhow::Result<()> {
-        let state = {
-            let repos = self.repos_lock()?;
-            repos
-                .iter()
-                .find(|repo| repo.key == repo_path)
-                .map(|repo| Arc::clone(&repo.state))
-                .ok_or_else(|| anyhow::anyhow!("repository not open: {repo_path}"))?
+        let worktree = {
+            let guard = state
+                .lock()
+                .map_err(|_| anyhow::anyhow!("repo state lock poisoned"))?;
+            guard
+                .repo
+                .workdir()
+                .map(Path::to_path_buf)
+                .context("open repository has no working tree")?
         };
-        let mut guard = state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("repo state lock poisoned"))?;
-        crate::graph::mark_dirty(&mut guard.graph_cache);
-        Ok(())
+        Ok((worktree, RepoGraphDirtyHandle { state }))
     }
 
     pub fn hook_preferences(&self, repo_path: &str) -> anyhow::Result<HookPreferences> {
@@ -852,10 +857,6 @@ impl AppState {
         self.manager.hook_preferences(repo_path)
     }
 
-    pub fn open_repo_worktree(&self, repo_path: &str) -> anyhow::Result<PathBuf> {
-        self.manager.open_repo_worktree(repo_path)
-    }
-
     pub fn set_hook_preferences(
         &self,
         repo_path: &str,
@@ -1294,6 +1295,42 @@ mod tests {
         );
         drop(first);
         assert!(state.begin_hook_run(&info.path).is_ok());
+    }
+
+    #[test]
+    fn captured_graph_handle_dirties_the_original_repo_after_tab_closes() {
+        let (dir, external_repo) = make_git_repo_with_commit();
+        let manager = RepoManager::new();
+        let info = manager.open(dir.path().to_str().unwrap()).unwrap();
+        let (_, graph_handle) = manager
+            .open_repo_worktree_and_graph_handle(&info.path)
+            .unwrap();
+        {
+            let mut state = graph_handle.state.lock().unwrap();
+            let RepoState {
+                repo, graph_cache, ..
+            } = &mut *state;
+            let layout = crate::graph::compute_layout_cached(repo, graph_cache, 0, 10).unwrap();
+            assert_eq!(layout.total_count, 1);
+        }
+
+        manager.close(&info.path).unwrap();
+        {
+            let sig = Signature::now("Test", "test@test.com").unwrap();
+            let head = external_repo.head().unwrap().peel_to_commit().unwrap();
+            let tree = head.tree().unwrap();
+            external_repo
+                .commit(Some("HEAD"), &sig, &sig, "second", &tree, &[&head])
+                .unwrap();
+        }
+        graph_handle.mark_dirty().unwrap();
+
+        let mut state = graph_handle.state.lock().unwrap();
+        let RepoState {
+            repo, graph_cache, ..
+        } = &mut *state;
+        let layout = crate::graph::compute_layout_cached(repo, graph_cache, 0, 10).unwrap();
+        assert_eq!(layout.total_count, 2);
     }
 
     /// Task B2: `with_repo_mut` must flag the graph cache dirty after any

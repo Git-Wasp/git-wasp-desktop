@@ -338,24 +338,29 @@ pub fn run_commit<R: Runtime>(
     command.arg("-m").arg(message);
 
     let command_result = stream_command(app, &metadata, command, None);
-    let (outcome, exit_code, summary) = match &command_result {
-        Ok(output) if output.status.success() => (
-            HookOutcome::Succeeded,
-            output.status.code(),
-            "commit completed",
-        ),
-        Ok(output) => (
-            HookOutcome::Failed,
-            output.status.code(),
-            "pre-commit failed; review hook output",
-        ),
-        Err(_) => (
-            HookOutcome::Failed,
-            None,
-            "pre-commit failed; review hook output",
-        ),
+    let exit_code = command_result
+        .as_ref()
+        .ok()
+        .and_then(|output| output.status.code());
+    let commit_result = command_result.and_then(|output| {
+        if !output.status.success() {
+            anyhow::bail!("pre-commit failed; review hook output");
+        }
+        let repo = git2::Repository::open(repo_path).context("could not reopen repository")?;
+        let oid = repo
+            .head()
+            .context("could not resolve HEAD")?
+            .peel_to_commit()
+            .context("could not resolve HEAD to a commit")?
+            .id();
+        Ok(oid.to_string())
+    });
+    let (outcome, summary) = if commit_result.is_ok() {
+        (HookOutcome::Succeeded, "commit completed")
+    } else {
+        (HookOutcome::Failed, "pre-commit failed; review hook output")
     };
-    app.emit(
+    let emit_result = app.emit(
         FINISHED_EVENT,
         HookFinished {
             repo_path: metadata.repo_path.clone(),
@@ -365,21 +370,14 @@ pub fn run_commit<R: Runtime>(
             exit_code,
             summary: summary.to_string(),
         },
-    )
-    .context("could not emit hook finished event")?;
-
-    let output = command_result?;
-    if !output.status.success() {
-        anyhow::bail!("pre-commit failed; review hook output");
+    );
+    match commit_result {
+        Err(error) => Err(error),
+        Ok(oid) => {
+            emit_result.context("could not emit hook finished event")?;
+            Ok(oid)
+        }
     }
-    let repo = git2::Repository::open(repo_path).context("could not reopen repository")?;
-    let oid = repo
-        .head()
-        .context("could not resolve HEAD")?
-        .peel_to_commit()
-        .context("could not resolve HEAD to a commit")?
-        .id();
-    Ok(oid.to_string())
 }
 
 #[cfg(test)]
@@ -483,6 +481,132 @@ mod tests {
             message,
             pre_commit_enabled,
         )
+    }
+
+    #[cfg(unix)]
+    fn record_commit_events(
+        app: &tauri::App<tauri::test::MockRuntime>,
+    ) -> Arc<Mutex<Vec<(String, serde_json::Value)>>> {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        for event_name in [STARTED_EVENT, OUTPUT_EVENT, FINISHED_EVENT] {
+            let events = Arc::clone(&events);
+            app.listen(event_name, move |event| {
+                events.lock().unwrap().push((
+                    event_name.to_string(),
+                    serde_json::from_str(event.payload()).unwrap(),
+                ));
+            });
+        }
+        events
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn successful_commit_emits_started_output_then_one_success() {
+        let fixture = CommitFixture::new();
+        fixture.stage("file.txt", "changed\n");
+        fixture.install_hook("pre-commit", "#!/bin/sh\nprintf 'hook output\\n'\n");
+        let app = tauri::test::mock_app();
+        let events = record_commit_events(&app);
+
+        run_commit(
+            app.handle(),
+            fixture.path(),
+            "event-success",
+            "event success",
+            true,
+        )
+        .unwrap();
+
+        let events = events.lock().unwrap();
+        assert_eq!(events.first().unwrap().0, STARTED_EVENT);
+        assert!(events.iter().any(|(name, payload)| {
+            name == OUTPUT_EVENT && payload["chunk"].as_str().unwrap().contains("hook output")
+        }));
+        let finished = events
+            .iter()
+            .filter(|(name, _)| name == FINISHED_EVENT)
+            .collect::<Vec<_>>();
+        assert_eq!(finished.len(), 1);
+        assert_eq!(finished[0].1["outcome"], "succeeded");
+        assert_eq!(events.last().unwrap().0, FINISHED_EVENT);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn post_commit_resolution_failure_emits_one_failed_terminal_event() {
+        let fixture = CommitFixture::new();
+        fixture.stage("file.txt", "changed\n");
+        fixture.install_hook(
+            "post-commit",
+            "#!/bin/sh\nprintf 'post output\\n'\nrm .git/HEAD\n",
+        );
+        let app = tauri::test::mock_app();
+        let events = record_commit_events(&app);
+
+        let error = run_commit(
+            app.handle(),
+            fixture.path(),
+            "event-resolution-failure",
+            "break head after commit",
+            true,
+        )
+        .unwrap_err();
+
+        assert!(
+            error.to_string().contains("could not reopen repository")
+                || error.to_string().contains("could not resolve HEAD"),
+            "unexpected error: {error:#}"
+        );
+        let events = events.lock().unwrap();
+        assert_eq!(events.first().unwrap().0, STARTED_EVENT);
+        assert!(events.iter().any(|(name, payload)| {
+            name == OUTPUT_EVENT && payload["chunk"].as_str().unwrap().contains("post output")
+        }));
+        let finished = events
+            .iter()
+            .filter(|(name, _)| name == FINISHED_EVENT)
+            .collect::<Vec<_>>();
+        assert_eq!(finished.len(), 1);
+        assert_eq!(finished[0].1["outcome"], "failed");
+        assert_eq!(events.last().unwrap().0, FINISHED_EVENT);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_hook_emits_started_output_then_one_failed_terminal_event() {
+        let fixture = CommitFixture::new();
+        fixture.stage("file.txt", "changed\n");
+        fixture.install_hook(
+            "pre-commit",
+            "#!/bin/sh\nprintf 'lint failed\\n' >&2\nexit 7\n",
+        );
+        let app = tauri::test::mock_app();
+        let events = record_commit_events(&app);
+
+        let error = run_commit(
+            app.handle(),
+            fixture.path(),
+            "event-hook-failure",
+            "blocked",
+            true,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "pre-commit failed; review hook output");
+        let events = events.lock().unwrap();
+        assert_eq!(events.first().unwrap().0, STARTED_EVENT);
+        assert!(events.iter().any(|(name, payload)| {
+            name == OUTPUT_EVENT && payload["chunk"].as_str().unwrap().contains("lint failed")
+        }));
+        let finished = events
+            .iter()
+            .filter(|(name, _)| name == FINISHED_EVENT)
+            .collect::<Vec<_>>();
+        assert_eq!(finished.len(), 1);
+        assert_eq!(finished[0].1["outcome"], "failed");
+        assert_eq!(finished[0].1["exitCode"], 1);
+        assert_eq!(events.last().unwrap().0, FINISHED_EVENT);
     }
 
     #[cfg(unix)]

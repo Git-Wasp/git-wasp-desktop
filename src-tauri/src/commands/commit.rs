@@ -7,6 +7,16 @@ use crate::working_tree::{
 };
 use tauri::{AppHandle, State};
 
+fn preserve_operation_result<T>(
+    operation_result: anyhow::Result<T>,
+    cache_result: anyhow::Result<()>,
+) -> anyhow::Result<T> {
+    if let Err(error) = cache_result {
+        log::debug!(target: "git", "could not invalidate commit graph cache: {error}");
+    }
+    operation_result
+}
+
 #[tauri::command]
 pub async fn create_commit(
     repo_path: String,
@@ -17,15 +27,14 @@ pub async fn create_commit(
     let preferences = state
         .hook_preferences(&repo_path)
         .map_err(|error| error.to_string())?;
-    let worktree = state
-        .open_repo_worktree(&repo_path)
+    let (worktree, graph_handle) = state
+        .manager
+        .open_repo_worktree_and_graph_handle(&repo_path)
         .map_err(|error| error.to_string())?;
     let guard = state
         .begin_hook_run(&repo_path)
         .map_err(|error| error.to_string())?;
     let run_id = guard.run_id().to_string();
-    let manager = std::sync::Arc::clone(&state.manager);
-    let captured_repo_path = repo_path;
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = guard;
         let result = crate::hook_runner::run_commit(
@@ -35,8 +44,7 @@ pub async fn create_commit(
             &message,
             preferences.pre_commit,
         );
-        manager.mark_repo_graph_dirty(&captured_repo_path)?;
-        result
+        preserve_operation_result(result, graph_handle.mark_dirty())
     })
     .await
     .map_err(|error| error.to_string())?
@@ -86,6 +94,28 @@ pub fn get_head_commit_info(
         .with_repo(|repo| wt_head_commit_info(repo))
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::preserve_operation_result;
+
+    #[test]
+    fn cache_invalidation_failure_does_not_mask_operation_result() {
+        let hook_error = preserve_operation_result::<String>(
+            Err(anyhow::anyhow!("hook failed")),
+            Err(anyhow::anyhow!("repository not open")),
+        )
+        .unwrap_err();
+        assert_eq!(hook_error.to_string(), "hook failed");
+
+        let oid = preserve_operation_result(
+            Ok("commit-oid".to_string()),
+            Err(anyhow::anyhow!("repository not open")),
+        )
+        .unwrap();
+        assert_eq!(oid, "commit-oid");
+    }
 }
 
 #[tauri::command]
