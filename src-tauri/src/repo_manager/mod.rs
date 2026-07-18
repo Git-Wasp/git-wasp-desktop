@@ -1,6 +1,6 @@
 mod config;
 
-pub use config::{AppConfig, RepoEntry};
+pub use config::{AppConfig, HookPreferences, RepoEntry};
 
 use crate::commands::branch::BranchInfo;
 use crate::commands::repo::RepoInfo;
@@ -323,6 +323,32 @@ impl RepoManager {
 
     pub fn get_recent(&self) -> anyhow::Result<Vec<RepoEntry>> {
         Ok(self.config_lock()?.recent_repos.clone())
+    }
+
+    fn require_open_repo_key(&self, repo_path: &str) -> anyhow::Result<PathBuf> {
+        let repos = self.repos_lock()?;
+        repos
+            .iter()
+            .find(|repo| repo.key == repo_path)
+            .map(|repo| PathBuf::from(&repo.key))
+            .ok_or_else(|| anyhow::anyhow!("repository not open: {repo_path}"))
+    }
+
+    pub fn hook_preferences(&self, repo_path: &str) -> anyhow::Result<HookPreferences> {
+        let repo_path = self.require_open_repo_key(repo_path)?;
+        Ok(self.config_lock()?.hook_preferences_for(&repo_path))
+    }
+
+    pub fn set_hook_preferences(
+        &self,
+        repo_path: &str,
+        preferences: HookPreferences,
+    ) -> anyhow::Result<HookPreferences> {
+        let repo_path = self.require_open_repo_key(repo_path)?;
+        let mut config = self.config_lock()?;
+        config.set_hook_preferences(repo_path, preferences);
+        config.save()?;
+        Ok(preferences)
     }
 
     /// Remove a repository from the recent list and return the updated list. Only
@@ -774,6 +800,18 @@ impl AppState {
         self.manager.remove_recent(path)
     }
 
+    pub fn hook_preferences(&self, repo_path: &str) -> anyhow::Result<HookPreferences> {
+        self.manager.hook_preferences(repo_path)
+    }
+
+    pub fn set_hook_preferences(
+        &self,
+        repo_path: &str,
+        preferences: HookPreferences,
+    ) -> anyhow::Result<HookPreferences> {
+        self.manager.set_hook_preferences(repo_path, preferences)
+    }
+
     pub fn with_repo<F, T>(&self, f: F) -> anyhow::Result<T>
     where
         F: FnOnce(&Repository) -> T,
@@ -1163,6 +1201,26 @@ mod tests {
             drop(tree);
         }
         (dir, repo)
+    }
+
+    #[test]
+    fn hook_preferences_require_an_open_normalized_repository_key() {
+        let (dir, _) = make_git_repo_with_commit();
+        let manager = RepoManager::new();
+        let info = manager.open(dir.path().to_str().unwrap()).unwrap();
+
+        assert_eq!(
+            manager.hook_preferences(&info.path).unwrap(),
+            HookPreferences::default()
+        );
+
+        let alias = dir.path().join(".").to_string_lossy().into_owned();
+        let error = manager.hook_preferences(&alias).unwrap_err();
+        assert!(error.to_string().contains("repository not open"));
+        let error = manager
+            .set_hook_preferences("/tmp/not-open", HookPreferences::default())
+            .unwrap_err();
+        assert!(error.to_string().contains("repository not open"));
     }
 
     /// Task B2: `with_repo_mut` must flag the graph cache dirty after any

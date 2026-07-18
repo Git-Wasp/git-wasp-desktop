@@ -1,5 +1,22 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct HookPreferences {
+    pub pre_commit: bool,
+    pub pre_push: bool,
+}
+
+impl Default for HookPreferences {
+    fn default() -> Self {
+        Self {
+            pre_commit: true,
+            pre_push: true,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,6 +64,8 @@ pub struct AppConfig {
     pub github_hosts: Vec<GithubHostConfig>,
     #[serde(default)]
     pub active_theme: Option<String>,
+    #[serde(default)]
+    pub hook_preferences: HashMap<PathBuf, HookPreferences>,
 }
 
 fn default_github_hosts() -> Vec<GithubHostConfig> {
@@ -62,6 +81,7 @@ impl Default for AppConfig {
             active_repo_path: None,
             github_hosts: default_github_hosts(),
             active_theme: None,
+            hook_preferences: HashMap::new(),
         }
     }
 }
@@ -141,11 +161,57 @@ impl AppConfig {
             self.last_repo_path = None;
         }
     }
+
+    pub fn hook_preferences_for(&self, path: &Path) -> HookPreferences {
+        self.hook_preferences.get(path).copied().unwrap_or_default()
+    }
+
+    pub fn set_hook_preferences(&mut self, path: PathBuf, preferences: HookPreferences) {
+        if preferences == HookPreferences::default() {
+            self.hook_preferences.remove(&path);
+        } else {
+            self.hook_preferences.insert(path, preferences);
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hook_preferences_default_to_enabled_for_legacy_config() {
+        let json = r#"{"recentRepos":[],"lastRepoPath":null}"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            config.hook_preferences_for(Path::new("/tmp/repo")),
+            HookPreferences::default()
+        );
+    }
+
+    #[test]
+    fn hook_preferences_are_isolated_and_round_trip() {
+        let mut config = AppConfig::default();
+        config.set_hook_preferences(
+            PathBuf::from("/tmp/a"),
+            HookPreferences {
+                pre_commit: false,
+                pre_push: true,
+            },
+        );
+        let json = serde_json::to_string(&config).unwrap();
+        let restored: AppConfig = serde_json::from_str(&json).unwrap();
+        assert!(
+            !restored
+                .hook_preferences_for(Path::new("/tmp/a"))
+                .pre_commit
+        );
+        assert!(restored.hook_preferences_for(Path::new("/tmp/a")).pre_push);
+        assert_eq!(
+            restored.hook_preferences_for(Path::new("/tmp/b")),
+            HookPreferences::default()
+        );
+    }
 
     #[test]
     fn default_config_has_github_com_host() {

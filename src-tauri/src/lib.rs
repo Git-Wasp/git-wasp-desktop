@@ -53,6 +53,8 @@ pub fn run() {
             commands::repo::list_open_repos,
             commands::repo::activate_repo,
             commands::repo::close_repo,
+            commands::hooks::get_hook_preferences,
+            commands::hooks::set_hook_preferences,
             // Graph
             commands::graph::get_graph_viewport,
             commands::graph::find_commit_row,
