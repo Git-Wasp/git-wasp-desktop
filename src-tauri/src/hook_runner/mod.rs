@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::io::{Read, Write};
-use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
@@ -44,7 +43,6 @@ pub struct HookRunMetadata {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PushHookInput {
-    pub hook_path: PathBuf,
     pub remote_name: String,
     pub remote_url: String,
     pub local_ref: String,
@@ -53,45 +51,12 @@ pub struct PushHookInput {
     pub remote_oid: String,
 }
 
-fn runnable_hook(path: &std::path::Path) -> anyhow::Result<bool> {
-    let Ok(metadata) = std::fs::metadata(path) else {
-        return Ok(false);
-    };
-    if !metadata.is_file() {
-        return Ok(false);
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        Ok(metadata.permissions().mode() & 0o111 != 0)
-    }
-    #[cfg(windows)]
-    {
-        Ok(true)
-    }
-}
-
 pub fn prepare_pre_push(
     repo: &git2::Repository,
     remote_name: &str,
     branch: &str,
     advertised_remote_oid: git2::Oid,
 ) -> anyhow::Result<Option<PushHookInput>> {
-    let hook_path = match repo.config()?.get_path("core.hooksPath") {
-        Ok(path) if path.is_absolute() => path.join("pre-push"),
-        Ok(path) => repo
-            .workdir()
-            .context("bare repository does not support hooksPath relative to a worktree")?
-            .join(path)
-            .join("pre-push"),
-        Err(error) if error.code() == git2::ErrorCode::NotFound => {
-            repo.path().join("hooks").join("pre-push")
-        }
-        Err(error) => return Err(error).context("could not read core.hooksPath"),
-    };
-    if !runnable_hook(&hook_path)? {
-        return Ok(None);
-    }
     let remote = repo
         .find_remote(remote_name)
         .with_context(|| format!("remote '{remote_name}' not found"))?;
@@ -104,7 +69,6 @@ pub fn prepare_pre_push(
         .refname_to_id(&local_ref)
         .with_context(|| format!("local branch ref '{local_ref}' not found"))?;
     Ok(Some(PushHookInput {
-        hook_path,
         remote_name: remote_name.to_string(),
         remote_url,
         local_ref: local_ref.clone(),
@@ -124,9 +88,22 @@ pub fn run_pre_push<R: Runtime>(
         "{} {} {} {}\n",
         input.local_ref, input.local_oid, input.remote_ref, input.remote_oid
     );
-    let mut command = pre_push_command(&input.hook_path, &input.remote_name, &input.remote_url)?;
-    command.current_dir(workdir);
-    let output = stream_command_after_started(app, metadata, command, Some(stdin.into_bytes()))?;
+    ensure_git_hook_run_available(&workdir)?;
+    let mut stdin_file =
+        tempfile::NamedTempFile::new().context("could not create pre-push input file")?;
+    stdin_file
+        .write_all(stdin.as_bytes())
+        .context("could not write pre-push input file")?;
+    stdin_file
+        .flush()
+        .context("could not flush pre-push input file")?;
+    let command = pre_push_command(
+        &workdir,
+        stdin_file.path(),
+        &input.remote_name,
+        &input.remote_url,
+    );
+    let output = stream_command_after_started(app, metadata, command, None)?;
     if !output.status.success() {
         anyhow::bail!("pre-push failed; review hook output");
     }
@@ -268,35 +245,49 @@ impl Drop for HookRunGuard {
 }
 
 fn pre_push_command(
-    hook_path: &std::path::Path,
+    workdir: &std::path::Path,
+    stdin_path: &std::path::Path,
     remote_name: &str,
     remote_url: &str,
-) -> anyhow::Result<Command> {
-    let bytes = std::fs::read(hook_path).context("could not read pre-push hook")?;
-    let first_line = bytes
-        .split(|byte| *byte == b'\n')
-        .next()
-        .unwrap_or_default();
-    let mut command = if let Some(shebang) = first_line.strip_prefix(b"#!") {
-        let shebang = std::str::from_utf8(shebang)
-            .context("pre-push hook shebang is not valid UTF-8")?
-            .trim();
-        let mut parts = shebang.splitn(2, char::is_whitespace);
-        let interpreter = parts
-            .next()
-            .filter(|part| !part.is_empty())
-            .context("pre-push hook has an empty shebang")?;
-        let mut command = Command::new(interpreter);
-        if let Some(argument) = parts.next().map(str::trim).filter(|arg| !arg.is_empty()) {
-            command.arg(argument);
-        }
-        command.arg(hook_path);
-        command
-    } else {
-        Command::new(hook_path)
-    };
-    command.arg(remote_name).arg(remote_url);
-    Ok(command)
+) -> Command {
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(workdir)
+        .arg("hook")
+        .arg("run")
+        .arg("--ignore-missing")
+        .arg("--to-stdin")
+        .arg(stdin_path)
+        .arg("pre-push")
+        .arg("--")
+        .arg(remote_name)
+        .arg(remote_url)
+        .current_dir(workdir);
+    command
+}
+
+fn ensure_git_hook_run_available(workdir: &std::path::Path) -> anyhow::Result<()> {
+    ensure_git_hook_run_available_with_program(workdir, std::ffi::OsStr::new("git"))
+}
+
+fn ensure_git_hook_run_available_with_program(
+    workdir: &std::path::Path,
+    program: &std::ffi::OsStr,
+) -> anyhow::Result<()> {
+    let output = Command::new(program)
+        .arg("-C")
+        .arg(workdir)
+        .args(["hook", "run", "-h"])
+        .output()
+        .context("could not start git to check hook support")?;
+    let help = [output.stdout, output.stderr].concat();
+    if !String::from_utf8_lossy(&help).contains("git hook run") {
+        anyhow::bail!(
+            "installed Git does not support 'git hook run'; upgrade Git to run pre-push hooks"
+        );
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -499,6 +490,41 @@ pub fn run_commit<R: Runtime>(
     message: &str,
     pre_commit_enabled: bool,
 ) -> anyhow::Result<String> {
+    run_commit_with_program(
+        app,
+        repo_path,
+        run_id,
+        message,
+        pre_commit_enabled,
+        std::ffi::OsStr::new("git"),
+    )
+}
+
+#[derive(Debug, Clone, Copy)]
+enum CommitFailurePhase {
+    Launch,
+    Commit,
+    Refresh,
+}
+
+impl CommitFailurePhase {
+    fn summary(self) -> &'static str {
+        match self {
+            Self::Launch => "could not start git commit",
+            Self::Commit => "commit failed; review hook output",
+            Self::Refresh => "commit completed but repository state could not be refreshed",
+        }
+    }
+}
+
+fn run_commit_with_program<R: Runtime>(
+    app: &AppHandle<R>,
+    repo_path: &std::path::Path,
+    run_id: &str,
+    message: &str,
+    pre_commit_enabled: bool,
+    program: &std::ffi::OsStr,
+) -> anyhow::Result<String> {
     let repo_path_string = repo_path
         .to_str()
         .context("open repository path is not valid UTF-8")?
@@ -509,7 +535,7 @@ pub fn run_commit<R: Runtime>(
         hook: HookName::PreCommit,
         operation: "commit",
     };
-    let mut command = Command::new("git");
+    let mut command = Command::new(program);
     command
         .arg("-C")
         .arg(repo_path)
@@ -525,23 +551,27 @@ pub fn run_commit<R: Runtime>(
         .as_ref()
         .ok()
         .and_then(|output| output.status.code());
-    let commit_result = command_result.and_then(|output| {
-        if !output.status.success() {
-            anyhow::bail!("commit failed; review hook output");
-        }
-        let repo = git2::Repository::open(repo_path).context("could not reopen repository")?;
-        let oid = repo
-            .head()
-            .context("could not resolve HEAD")?
-            .peel_to_commit()
-            .context("could not resolve HEAD to a commit")?
-            .id();
-        Ok(oid.to_string())
-    });
-    let (outcome, summary) = if commit_result.is_ok() {
-        (HookOutcome::Succeeded, "commit completed")
-    } else {
-        (HookOutcome::Failed, "commit failed; review hook output")
+    let phased_result: Result<String, (CommitFailurePhase, anyhow::Error)> = match command_result {
+        Err(error) => Err((CommitFailurePhase::Launch, error)),
+        Ok(output) if !output.status.success() => Err((
+            CommitFailurePhase::Commit,
+            anyhow::anyhow!("commit failed; review hook output"),
+        )),
+        Ok(_) => (|| {
+            let repo = git2::Repository::open(repo_path).context("could not reopen repository")?;
+            let oid = repo
+                .head()
+                .context("could not resolve HEAD")?
+                .peel_to_commit()
+                .context("could not resolve HEAD to a commit")?
+                .id();
+            Ok(oid.to_string())
+        })()
+        .map_err(|error| (CommitFailurePhase::Refresh, error)),
+    };
+    let (outcome, summary) = match &phased_result {
+        Ok(_) => (HookOutcome::Succeeded, "commit completed"),
+        Err((phase, _)) => (HookOutcome::Failed, phase.summary()),
     };
     let emit_result = app.emit(
         FINISHED_EVENT,
@@ -554,8 +584,8 @@ pub fn run_commit<R: Runtime>(
             summary: summary.to_string(),
         },
     );
-    match commit_result {
-        Err(error) => Err(error),
+    match phased_result {
+        Err((_, error)) => Err(error),
         Ok(oid) => {
             emit_result.context("could not emit hook finished event")?;
             Ok(oid)
@@ -665,6 +695,13 @@ mod tests {
             std::fs::set_permissions(path, permissions).unwrap();
         }
 
+        #[cfg(windows)]
+        fn install_hook(&self, path: &str, contents: &str) {
+            let path = self.directory.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, contents).unwrap();
+        }
+
         #[cfg(unix)]
         fn install_non_executable_hook(&self, name: &str, contents: &str) {
             use std::os::unix::fs::PermissionsExt;
@@ -676,7 +713,7 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     #[test]
     fn pre_push_honors_core_hooks_path_and_builds_git_input() {
         let fixture = PushFixture::new();
@@ -729,19 +766,22 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn missing_or_non_executable_pre_push_is_skipped() {
+    fn missing_or_non_executable_pre_push_is_skipped_by_git_hook_run() {
         let fixture = PushFixture::new();
-        assert!(
-            prepare_pre_push(&fixture.repo(), "origin", "main", fixture.remote_oid())
-                .unwrap()
-                .is_none()
-        );
+        let input = prepare_pre_push(&fixture.repo(), "origin", "main", fixture.remote_oid())
+            .unwrap()
+            .unwrap();
+        let app = tauri::test::mock_app();
+        let metadata = HookRunMetadata {
+            repo_path: fixture.directory.path().display().to_string(),
+            run_id: "missing-hook".into(),
+            hook: HookName::PrePush,
+            operation: "push",
+        };
+        emit_started(app.handle(), &metadata).unwrap();
+        run_pre_push(app.handle(), &metadata, input.clone()).unwrap();
         fixture.install_non_executable_hook("pre-push", "#!/bin/sh\nexit 1\n");
-        assert!(
-            prepare_pre_push(&fixture.repo(), "origin", "main", fixture.remote_oid())
-                .unwrap()
-                .is_none()
-        );
+        run_pre_push(app.handle(), &metadata, input).unwrap();
     }
 
     struct CommitFixture {
@@ -926,6 +966,10 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(finished.len(), 1);
         assert_eq!(finished[0].1["outcome"], "failed");
+        assert_eq!(
+            finished[0].1["summary"],
+            "commit completed but repository state could not be refreshed"
+        );
         assert_eq!(events.last().unwrap().0, FINISHED_EVENT);
     }
 
@@ -963,7 +1007,39 @@ mod tests {
         assert_eq!(finished.len(), 1);
         assert_eq!(finished[0].1["outcome"], "failed");
         assert_eq!(finished[0].1["exitCode"], 1);
+        assert_eq!(
+            finished[0].1["summary"],
+            "commit failed; review hook output"
+        );
         assert_eq!(events.last().unwrap().0, FINISHED_EVENT);
+    }
+
+    #[test]
+    fn unavailable_git_emits_one_actionable_failed_terminal_event() {
+        let fixture = CommitFixture::new();
+        fixture.stage("file.txt", "changed\n");
+        let app = tauri::test::mock_app();
+        let events = record_commit_events(&app);
+
+        let error = run_commit_with_program(
+            app.handle(),
+            fixture.path(),
+            "event-unavailable-git",
+            "cannot launch",
+            true,
+            std::ffi::OsStr::new("definitely-not-a-git-executable"),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("could not start hook command"));
+        let events = events.lock().unwrap();
+        let finished = events
+            .iter()
+            .filter(|(name, _)| name == FINISHED_EVENT)
+            .collect::<Vec<_>>();
+        assert_eq!(finished.len(), 1);
+        assert_eq!(finished[0].1["outcome"], "failed");
+        assert_eq!(finished[0].1["summary"], "could not start git commit");
     }
 
     #[cfg(unix)]
@@ -1026,30 +1102,58 @@ mod tests {
     }
 
     #[test]
-    fn shebang_hook_command_passes_arguments_without_a_shell_string() {
+    fn pre_push_command_uses_git_hook_run_with_direct_arguments() {
         let directory = tempfile::tempdir().unwrap();
-        let hook = directory.path().join("pre-push");
-        std::fs::write(&hook, "#!/usr/bin/env python3\n").unwrap();
-        let command = pre_push_command(&hook, "origin", "https://example.test/a b.git").unwrap();
-        assert_eq!(command.get_program(), "/usr/bin/env");
+        let stdin_path = directory.path().join("hook input");
+        let command = pre_push_command(
+            directory.path(),
+            &stdin_path,
+            "origin",
+            "https://example.test/a b.git",
+        );
+        assert_eq!(command.get_program(), "git");
         assert_eq!(
             command.get_args().collect::<Vec<_>>(),
             vec![
-                std::ffi::OsStr::new("python3"),
-                hook.as_os_str(),
+                std::ffi::OsStr::new("-C"),
+                directory.path().as_os_str(),
+                std::ffi::OsStr::new("hook"),
+                std::ffi::OsStr::new("run"),
+                std::ffi::OsStr::new("--ignore-missing"),
+                std::ffi::OsStr::new("--to-stdin"),
+                stdin_path.as_os_str(),
+                std::ffi::OsStr::new("pre-push"),
+                std::ffi::OsStr::new("--"),
                 std::ffi::OsStr::new("origin"),
                 std::ffi::OsStr::new("https://example.test/a b.git")
             ]
         );
     }
 
+    #[cfg(unix)]
     #[test]
-    fn hook_without_shebang_is_launched_directly() {
+    fn git_without_hook_run_reports_an_actionable_capability_error() {
+        use std::os::unix::fs::PermissionsExt;
+
         let directory = tempfile::tempdir().unwrap();
-        let hook = directory.path().join("pre-push.exe");
-        std::fs::write(&hook, b"native").unwrap();
-        let command = pre_push_command(&hook, "origin", "url").unwrap();
-        assert_eq!(command.get_program(), hook.as_os_str());
+        let fake_git = directory.path().join("old-git");
+        std::fs::write(
+            &fake_git,
+            "#!/bin/sh\nprintf \"git: 'hook' is not a git command\\n\" >&2\nexit 1\n",
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&fake_git).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&fake_git, permissions).unwrap();
+
+        let error =
+            ensure_git_hook_run_available_with_program(directory.path(), fake_git.as_os_str())
+                .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("upgrade Git to run pre-push hooks"));
+        assert!(!error.to_string().contains("pre-push failed"));
     }
 
     struct OneByteAtATime {

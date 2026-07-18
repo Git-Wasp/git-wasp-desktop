@@ -33,11 +33,11 @@ md5 = "0.7"
 base64 = "0.22"
 tauri-plugin-log = "2.8.0"
 notify-debouncer-full = "0.7.0"
+tempfile = "3"
 
 [features]
 ci = []
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
-tempfile = "3"
 httpmock = "0.8"

@@ -65,3 +65,61 @@ All whole-branch review findings were addressed.
   under direct CreateProcess launch.
 - The frontend avatar-store stress test exceeds its existing five-second
   timeout on this machine, but passes in the full suite with a 15-second limit.
+
+## Final Review Round 2
+
+### Fixes
+
+- HTTPS pre-push execution now delegates hook discovery and launch semantics to
+  Git itself with direct process arguments:
+  `git -C <worktree> hook run --ignore-missing --to-stdin <path> pre-push -- <remote> <url>`.
+  The exact native pre-push ref line is written to a securely created
+  `NamedTempFile`, flushed before launch, and removed by RAII on every return
+  path. The hook command receives no interpolated shell string and runs once.
+- Manual `core.hooksPath`, executable-bit, and shebang interpretation was
+  removed. Git now natively handles configured hook paths, missing hooks,
+  non-executable hooks, and Git-for-Windows extensionless shebang hooks.
+- A capability check uses the locally confirmed `git hook run -h` interface.
+  Git versions without `hook run` return an actionable upgrade error before
+  hook execution, so they are never classified as hook rejection.
+- Commit completion uses an internal typed failure phase. Finished summaries
+  now distinguish child launch (`could not start git commit`), nonzero commit
+  (`commit failed; review hook output`), and post-success repository refresh
+  (`commit completed but repository state could not be refreshed`) while
+  preserving detailed returned errors and exactly one finished event.
+
+### TDD and Platform Evidence
+
+- Command construction first failed because the old manual hook command had a
+  different signature; it now verifies the program and every argument,
+  including paths and URLs containing spaces, without platform-specific shell
+  assumptions.
+- An old-Git executable fixture first failed because the injectable capability
+  helper did not exist; it now proves unsupported Git yields the upgrade error,
+  not `pre-push failed`.
+- Unix integration proves relative `core.hooksPath`, remote arguments, exact
+  stdin, missing hooks, and non-executable hooks retain native Git behavior.
+  The core.hooksPath/shebang integration is also compiled and enabled on
+  Windows, where Git for Windows performs the extensionless hook launch.
+- Commit event tests assert one finished event and the phase-specific summary
+  for deterministic unavailable-Git launch, nonzero commit, and successful
+  commit followed by HEAD refresh failure.
+
+### Verification
+
+- `cargo test hook_runner::tests -- --nocapture`: 20 passed.
+- `cargo test commands::remote::tests -- --nocapture`: 11 passed.
+- `cargo test remote_ops::tests -- --nocapture`: 17 passed.
+- Full `cargo test` outside the sandbox: 339 passed, 0 failed, 5 ignored.
+- `cargo clippy --all-targets --all-features` outside the sandbox: exit 0; only
+  pre-existing warnings in unrelated code.
+- Only `src-tauri/src/hook_runner/mod.rs` was Rust-formatted directly.
+- Frontend verification was not rerun because no frontend files changed in this
+  review round.
+- `git diff --check`: passed.
+
+### Remaining Concerns
+
+- Native Windows execution was not available on this macOS host. The Windows
+  integration test is present for Windows CI, while command construction and
+  Git-native delegation are covered platform-independently.
