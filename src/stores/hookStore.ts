@@ -101,6 +101,7 @@ export const useHookStore = create<HookStore>((set) => ({
     set((state) => {
       const run = state.runs[repoPath];
       if (!run || run.runId !== event.runId) return state;
+      if (event.chunk.length === 0) return state;
       const retained = retainOutput(run.chunks, { stream: event.stream, chunk: event.chunk });
       return {
         runs: {

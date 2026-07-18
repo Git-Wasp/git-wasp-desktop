@@ -116,6 +116,20 @@ describe("hookStore", () => {
     expect(run.retainedLength).toBeLessThanOrEqual(MAX_RETAINED_OUTPUT);
   });
 
+  it("ignores empty output chunks instead of retaining unbounded entries", () => {
+    const store = useHookStore.getState();
+    store.started(started("/a", "run-1"));
+
+    for (let index = 0; index < 10_000; index += 1) {
+      store.appendOutput(output("/a", "run-1", ""));
+    }
+
+    expect(useHookStore.getState().runs["/a"]).toMatchObject({
+      chunks: [],
+      retainedLength: 0,
+    });
+  });
+
   it("subscribes to exact backend events and cleanup removes every listener", async () => {
     const handlers = new Map<string, (event: { payload: unknown }) => void>();
     const unlisten = [vi.fn(), vi.fn(), vi.fn()];
