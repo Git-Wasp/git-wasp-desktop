@@ -10,12 +10,12 @@ A Git desktop client built with Tauri v2 + React + TypeScript.
 
 ## Prerequisites
 
-| Tool | Minimum | Notes |
-|------|---------|-------|
-| Rust | stable (1.80+) | Install via [rustup](https://rustup.rs) |
-| Node.js | 20 LTS | |
-| npm | 10+ | Bundled with Node |
-| Xcode CLT | latest | macOS only — `xcode-select --install` |
+| Tool      | Minimum        | Notes                                   |
+| --------- | -------------- | --------------------------------------- |
+| Rust      | stable (1.80+) | Install via [rustup](https://rustup.rs) |
+| Node.js   | 20 LTS         |                                         |
+| npm       | 10+            | Bundled with Node                       |
+| Xcode CLT | latest         | macOS only — `xcode-select --install`   |
 
 > **No system OpenSSL or libgit2 required.** Both are vendored into the Rust build automatically.
 
@@ -34,6 +34,7 @@ npm run dev
 ```
 
 `npm run dev` starts Tauri dev, which:
+
 1. Starts the Vite dev server on `http://localhost:1420`
 2. Compiles the Rust backend
 3. Opens the app window with hot-reload
@@ -44,15 +45,15 @@ The first run compiles vendored libgit2 and OpenSSL — this takes a few minutes
 
 ## Available commands
 
-| Command | What it does |
-|---------|-------------|
-| `npm run dev` | Start the full app in development mode (Tauri + Vite HMR) |
-| `npm run dev:web` | Start only the Vite frontend (no Tauri window, browser at `http://localhost:1420`) |
-| `npm run build` | Build the Tauri app for distribution |
-| `npm run build:web` | Build only the frontend (`dist/`) |
-| `npm run test:unit` | Run all unit tests (Vitest + Rust) |
-| `npm run test:watch` | Run frontend tests in watch mode |
-| `npm run lint` | ESLint check across `src/` |
+| Command              | What it does                                                                       |
+| -------------------- | ---------------------------------------------------------------------------------- |
+| `npm run dev`        | Start the full app in development mode (Tauri + Vite HMR)                          |
+| `npm run dev:web`    | Start only the Vite frontend (no Tauri window, browser at `http://localhost:1420`) |
+| `npm run build`      | Build the Tauri app for distribution                                               |
+| `npm run build:web`  | Build only the frontend (`dist/`)                                                  |
+| `npm run test:unit`  | Run all unit tests (Vitest + Rust)                                                 |
+| `npm run test:watch` | Run frontend tests in watch mode                                                   |
+| `npm run lint`       | ESLint check across `src/`                                                         |
 
 ### Running Rust tests independently
 
@@ -87,7 +88,7 @@ Endpoint, common on Intune-joined devices) intercepts every file read. Git is
 I/O-heavy: a single `git status` on a large monorepo stats tens of thousands of
 files, and the app also runs a file watcher over the working tree. When each of
 those reads is scanned synchronously, throughput can drop several-fold — enough
-that a fast machine (e.g. an M4 Pro) performs *worse* than an unmanaged one.
+that a fast machine (e.g. an M4 Pro) performs _worse_ than an unmanaged one.
 
 Excluding your repositories and toolchain from real-time scanning usually
 restores native performance. Exclude:
@@ -96,7 +97,7 @@ restores native performance. Exclude:
   scanned/watched)
 - Build output that churns constantly: `target/` (Rust), `node_modules/`,
   `dist/`
-- Optionally, the `git`, `node`, and `cargo` binaries as *process* exclusions
+- Optionally, the `git`, `node`, and `cargo` binaries as _process_ exclusions
 
 > **Managed devices:** on an Intune-joined machine these settings are typically
 > controlled by your organisation's policy and you may not be able to change
@@ -188,18 +189,30 @@ Tauri command layer (Rust)
 
 GitHub Actions runs on every push and PR across three targets in parallel:
 
-| Target | Runner |
-|--------|--------|
-| macOS arm64 | `macos-latest` |
-| Linux x64 | `ubuntu-latest` |
+| Target      | Runner           |
+| ----------- | ---------------- |
+| macOS arm64 | `macos-latest`   |
+| Linux x64   | `ubuntu-latest`  |
 | Windows x64 | `windows-latest` |
 
 Each job runs frontend tests (`vitest`), Rust tests (`cargo test`), and a build check (`tauri build --no-bundle`).
 
 ---
 
+## Git hooks
+
+Running `npm install` installs the repository's tracked Git hooks through Husky.
+
+- **Pre-commit:** formats staged frontend and Rust files, then lints staged frontend source files. Partially staged files keep their unstaged edits out of the commit.
+- **Pre-push:** runs the complete frontend and Rust test suites and blocks the push if either suite fails.
+
+Git's standard `--no-verify` option bypasses these checks when an operator deliberately needs the emergency escape hatch.
+
+---
+
 ## Recommended IDE setup
 
 [VS Code](https://code.visualstudio.com/) with:
+
 - [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode)
 - [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
