@@ -32,6 +32,7 @@ export function HookOutputPane({
   const terminalRef = useRef<Terminal | null>(null);
   const writtenRef = useRef<Array<{ stream: string; chunk: string }>>([]);
   const runKeyRef = useRef<string | undefined>(undefined);
+  const terminalGenerationRef = useRef(0);
   const repoPathRef = useRef(repoPath);
   repoPathRef.current = repoPath;
 
@@ -63,11 +64,12 @@ export function HookOutputPane({
     terminalRef.current = terminal;
 
     return () => {
+      terminalGenerationRef.current += 1;
+      terminalRef.current = null;
+      runKeyRef.current = undefined;
       scrollListener.dispose();
       terminal.dispose();
-      terminalRef.current = null;
       writtenRef.current = [];
-      runKeyRef.current = undefined;
     };
   }, [run?.paneVisible]);
 
@@ -84,10 +86,15 @@ export function HookOutputPane({
 
     let start = previous.length;
     if (runChanged || prefixChanged) {
+      terminalGenerationRef.current += 1;
       terminal.clear();
       writtenRef.current = [];
       start = 0;
     }
+    if (runKeyRef.current === undefined) {
+      terminalGenerationRef.current += 1;
+    }
+    const generation = terminalGenerationRef.current;
 
     for (let index = start; index < run.chunks.length; index += 1) {
       terminal.write(run.chunks[index]!.chunk);
@@ -98,7 +105,15 @@ export function HookOutputPane({
       terminal.write("", () => {
         const current = selectHookRun(repoPath)(useHookStore.getState());
         const currentKey = current ? `${repoPath}\0${current.runId ?? ""}` : undefined;
-        if (current?.following && currentKey === runKey) terminal.scrollToBottom();
+        if (
+          terminalRef.current === terminal &&
+          terminalGenerationRef.current === generation &&
+          runKeyRef.current === runKey &&
+          current?.following &&
+          currentKey === runKey
+        ) {
+          terminal.scrollToBottom();
+        }
       });
     }
     writtenRef.current = run.chunks.map((chunk) => ({ ...chunk }));

@@ -63,6 +63,26 @@ function append(chunk: string) {
   });
 }
 
+function seedOtherRun(overrides: Partial<RepoHookRun> = {}) {
+  useHookStore.setState((state) => ({
+    runs: {
+      ...state.runs,
+      "/other": {
+        runId: "run-other",
+        hook: "pre-push",
+        operation: "push",
+        status: "running",
+        chunks: [],
+        retainedLength: 0,
+        summary: null,
+        paneVisible: true,
+        following: true,
+        ...overrides,
+      },
+    },
+  }));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   xterm.scroll = undefined;
@@ -137,6 +157,32 @@ describe("HookOutputPane", () => {
     act(() => xterm.writeCallbacks[xterm.writeCallbacks.length - 1]?.());
 
     expect(xterm.terminal.scrollToBottom).toHaveBeenCalledOnce();
+  });
+
+  it("does not scroll from a queued write after the pane is hidden and disposed", () => {
+    seedRun({ chunks: [{ stream: "stdout", chunk: "pending" }], retainedLength: 7 });
+    render(<HookOutputPane repoPath="/repo" height={180} onResize={vi.fn()} />);
+    const queuedScroll = xterm.writeCallbacks[xterm.writeCallbacks.length - 1]!;
+
+    act(() => useHookStore.getState().setPaneVisible("/repo", false));
+    act(() => queuedScroll());
+
+    expect(xterm.terminal.dispose).toHaveBeenCalledOnce();
+    expect(xterm.terminal.scrollToBottom).not.toHaveBeenCalled();
+  });
+
+  it("does not scroll from a queued write after switching the visible repository", () => {
+    seedRun({ chunks: [{ stream: "stdout", chunk: "old" }], retainedLength: 3 });
+    seedOtherRun({ chunks: [{ stream: "stdout", chunk: "new" }], retainedLength: 3 });
+    const { rerender } = render(
+      <HookOutputPane repoPath="/repo" height={180} onResize={vi.fn()} />,
+    );
+    const queuedOldScroll = xterm.writeCallbacks[xterm.writeCallbacks.length - 1]!;
+
+    rerender(<HookOutputPane repoPath="/other" height={180} onResize={vi.fn()} />);
+    act(() => queuedOldScroll());
+
+    expect(xterm.terminal.scrollToBottom).not.toHaveBeenCalled();
   });
 
   it("resumes follow from the button and scrolls to bottom", async () => {
