@@ -206,7 +206,11 @@ describe("NewPRForm", () => {
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(createdPr));
     // The branch is pushed first, then the PR is created.
-    expect(mockInvoke).toHaveBeenCalledWith("push_branch", { remoteName: null, branch: "feat/x" });
+    expect(mockInvoke).toHaveBeenCalledWith("push_branch", {
+      repoPath: "/repo",
+      remoteName: null,
+      branch: "feat/x",
+    });
     const order = mockInvoke.mock.calls.map((c) => c[0]);
     expect(order.indexOf("push_branch")).toBeLessThan(order.indexOf("create_pull_request"));
   });

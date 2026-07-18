@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useRemoteStore } from "../remoteStore";
+import { useRepoStore } from "../repoStore";
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -13,6 +14,9 @@ beforeEach(() => {
     isPulling: false,
     isPushing: false,
     lastError: null,
+  });
+  useRepoStore.setState({
+    currentRepo: { name: "repo", path: "/repo", headBranch: "main" },
   });
 });
 
@@ -130,9 +134,23 @@ describe("remoteStore remote operations", () => {
     expect(useRemoteStore.getState().isPushing).toBe(true);
     await promise;
 
-    expect(mockInvoke).toHaveBeenCalledWith("push_branch", { remoteName: null, branch: null });
+    expect(mockInvoke).toHaveBeenCalledWith("push_branch", {
+      repoPath: "/repo",
+      remoteName: null,
+      branch: null,
+    });
     expect(useRemoteStore.getState().isPushing).toBe(false);
     expect(useRemoteStore.getState().aheadBehindEpoch).toBe(1);
+  });
+
+  it("push rejects before invoking when no repository is open", async () => {
+    useRepoStore.setState({ currentRepo: null });
+
+    await expect(useRemoteStore.getState().push()).rejects.toThrow("No repository is open");
+
+    expect(mockInvoke).not.toHaveBeenCalledWith("push_branch", expect.anything());
+    expect(useRemoteStore.getState().isPushing).toBe(false);
+    expect(useRemoteStore.getState().lastError).toContain("No repository is open");
   });
 
   it("fastForwardToUpstream invalidates ahead/behind on success", async () => {

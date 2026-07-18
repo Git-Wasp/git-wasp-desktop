@@ -3,6 +3,7 @@ import { create } from "zustand";
 import type { FetchResult, PullResult } from "../types/github";
 import { logOperationError } from "../lib/logger";
 import { withAutoStash } from "../lib/autoStash";
+import { useRepoStore } from "./repoStore";
 
 export type PullMode = "ffOnly" | "ffOrMerge";
 
@@ -130,7 +131,13 @@ export const useRemoteStore = create<RemoteStore>((set, get) => ({
   push: async (remoteName?: string, branch?: string) => {
     set({ isPushing: true, lastError: null });
     try {
-      await invoke("push_branch", { remoteName: remoteName ?? null, branch: branch ?? null });
+      const repoPath = useRepoStore.getState().currentRepo?.path;
+      if (!repoPath) throw new Error("No repository is open");
+      await invoke("push_branch", {
+        repoPath,
+        remoteName: remoteName ?? null,
+        branch: branch ?? null,
+      });
       get().invalidateAheadBehind();
     } catch (e) {
       set({ lastError: logOperationError("push", e) });
