@@ -13,7 +13,7 @@ A Git desktop client built with Tauri v2 + React + TypeScript.
 | Tool      | Minimum        | Notes                                   |
 | --------- | -------------- | --------------------------------------- |
 | Rust      | stable (1.80+) | Install via [rustup](https://rustup.rs) |
-| Node.js   | 20 LTS         |                                         |
+| Node.js   | 20.17+         |                                         |
 | npm       | 10+            | Bundled with Node                       |
 | Xcode CLT | latest         | macOS only — `xcode-select --install`   |
 
