@@ -1,10 +1,10 @@
 use git2::Repository;
-use notify::{RecommendedWatcher, RecursiveMode};
+use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use notify_debouncer_full::{
-    new_debouncer, DebounceEventResult, DebouncedEvent, Debouncer, RecommendedCache,
+    new_debouncer_opt, DebounceEventResult, DebouncedEvent, Debouncer, RecommendedCache,
 };
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 /// How long to wait for a lull in filesystem activity before emitting
@@ -16,6 +16,25 @@ use tauri::{AppHandle, Emitter};
 /// (via `refresh_working_tree`, called once per emit rather than once per
 /// raw filesystem event).
 const DEBOUNCE_WINDOW: Duration = Duration::from_millis(250);
+
+#[derive(Default)]
+struct EmitGate {
+    last_emit: Option<Instant>,
+}
+
+impl EmitGate {
+    fn should_emit(&mut self, now: Instant) -> bool {
+        if self
+            .last_emit
+            .is_some_and(|last_emit| now.duration_since(last_emit) < DEBOUNCE_WINDOW)
+        {
+            return false;
+        }
+
+        self.last_emit = Some(now);
+        true
+    }
+}
 
 /// Whether a changed path is churn we should ignore — i.e. git-ignored by the
 /// repo's own rules (`target/`, `node_modules/`, `dist/`, …). Honouring
@@ -50,11 +69,13 @@ fn is_noise_batch(repo: &Repository, root: &Path, events: &[DebouncedEvent]) -> 
 /// [`DEBOUNCE_WINDOW`] when a non-noise batch of filesystem events arrives.
 /// Split out from [`start`] so the debounce + noise-filtering logic is
 /// testable without a real Tauri `AppHandle`.
-fn start_with_notifier<F>(
+fn start_with_watcher<T, F>(
     path: &Path,
+    config: Config,
     mut on_change: F,
-) -> notify::Result<Debouncer<RecommendedWatcher, RecommendedCache>>
+) -> notify::Result<Debouncer<T, RecommendedCache>>
 where
+    T: Watcher,
     F: FnMut() + Send + 'static,
 {
     // Canonicalise so event paths (which arrive resolved, e.g. /private/var on
@@ -64,19 +85,37 @@ where
     // debouncer thread (git2::Repository is Send). If it can't be opened we
     // fall back to emitting every non-empty batch.
     let repo = Repository::open(&root).ok();
+    let mut emit_gate = EmitGate::default();
 
-    let mut debouncer =
-        new_debouncer(DEBOUNCE_WINDOW, None, move |result: DebounceEventResult| {
+    let mut debouncer = new_debouncer_opt(
+        DEBOUNCE_WINDOW,
+        None,
+        move |result: DebounceEventResult| {
             let Ok(events) = result else { return };
             if let Some(repo) = &repo {
                 if is_noise_batch(repo, &root, &events) {
                     return;
                 }
             }
-            on_change();
-        })?;
+            if emit_gate.should_emit(Instant::now()) {
+                on_change();
+            }
+        },
+        RecommendedCache::new(),
+        config,
+    )?;
     debouncer.watch(path, RecursiveMode::Recursive)?;
     Ok(debouncer)
+}
+
+fn start_with_notifier<F>(
+    path: &Path,
+    on_change: F,
+) -> notify::Result<Debouncer<RecommendedWatcher, RecommendedCache>>
+where
+    F: FnMut() + Send + 'static,
+{
+    start_with_watcher(path, Config::default(), on_change)
 }
 
 pub fn start(
@@ -92,6 +131,7 @@ pub fn start(
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::mpsc;
     use std::sync::Arc;
     use tempfile::TempDir;
 
@@ -177,28 +217,64 @@ mod tests {
     }
 
     #[test]
+    fn emit_gate_suppresses_a_second_batch_within_the_debounce_window() {
+        let first_batch = Instant::now();
+        let mut gate = EmitGate::default();
+
+        assert!(gate.should_emit(first_batch));
+        assert!(!gate.should_emit(first_batch + DEBOUNCE_WINDOW / 2));
+        assert!(gate.should_emit(first_batch + DEBOUNCE_WINDOW));
+    }
+
+    #[test]
     fn debounced_watcher_collapses_a_burst_of_writes_into_one_emit() {
         let dir = TempDir::new().unwrap();
         Repository::init(dir.path()).unwrap();
-        let count = Arc::new(AtomicUsize::new(0));
-        let count_handle = Arc::clone(&count);
+        let (change_tx, change_rx) = mpsc::channel();
 
-        let debouncer = start_with_notifier(dir.path(), move || {
-            count_handle.fetch_add(1, Ordering::SeqCst);
-        })
+        let debouncer = start_with_watcher::<notify::PollWatcher, _>(
+            dir.path(),
+            Config::default().with_poll_interval(Duration::from_millis(10)),
+            move || {
+                change_tx.send(()).unwrap();
+            },
+        )
         .unwrap();
+
+        // Watcher startup is asynchronous. Probe until the callback confirms
+        // this directory is being observed before exercising the burst
+        // contract.
+        let ready_by = Instant::now() + Duration::from_secs(5);
+        let mut probe = 0;
+        loop {
+            std::fs::write(dir.path().join(".watcher-ready"), probe.to_string()).unwrap();
+            if change_rx.recv_timeout(Duration::from_millis(100)).is_ok() {
+                break;
+            }
+            assert!(
+                Instant::now() < ready_by,
+                "watcher did not become ready within 5 seconds"
+            );
+            probe += 1;
+        }
+
+        // Start the measured burst in a fresh output window and discard any
+        // already-coalesced probe notification.
+        std::thread::sleep(DEBOUNCE_WINDOW);
+        while change_rx.try_recv().is_ok() {}
 
         // A burst of writes, all within one debounce window.
         for i in 0..20 {
             std::fs::write(dir.path().join(format!("f{i}.txt")), "x").unwrap();
         }
 
-        // Generous margin over DEBOUNCE_WINDOW for OS filesystem-event
-        // propagation latency (FSEvents/inotify aren't instantaneous) on top
-        // of the debounce window itself.
-        std::thread::sleep(DEBOUNCE_WINDOW + Duration::from_millis(750));
-
-        assert_eq!(count.load(Ordering::SeqCst), 1);
+        change_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("watcher did not emit after the burst");
+        assert!(
+            change_rx.recv_timeout(DEBOUNCE_WINDOW).is_err(),
+            "watcher emitted more than once within the debounce window"
+        );
         debouncer.stop();
     }
 
