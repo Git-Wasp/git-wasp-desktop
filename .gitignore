@@ -29,3 +29,6 @@ src-tauri/gen/
 
 # Ladle component-workshop build output
 /build
+
+# Local feature worktrees
+/.worktrees/
