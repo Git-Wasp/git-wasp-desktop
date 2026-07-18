@@ -19,20 +19,42 @@ const DEBOUNCE_WINDOW: Duration = Duration::from_millis(250);
 
 #[derive(Default)]
 struct EmitGate {
-    last_emit: Option<Instant>,
+    last_batch_at: Option<Instant>,
 }
 
 impl EmitGate {
     fn should_emit(&mut self, now: Instant) -> bool {
-        if self
-            .last_emit
-            .is_some_and(|last_emit| now.duration_since(last_emit) < DEBOUNCE_WINDOW)
-        {
-            return false;
-        }
+        let should_emit = !self
+            .last_batch_at
+            .is_some_and(|last_batch| now.duration_since(last_batch) < DEBOUNCE_WINDOW);
 
-        self.last_emit = Some(now);
-        true
+        self.last_batch_at = Some(now);
+        should_emit
+    }
+}
+
+fn change_notifier<F, C>(
+    repo: Option<Repository>,
+    root: std::path::PathBuf,
+    mut on_change: F,
+    mut now: C,
+) -> impl FnMut(DebounceEventResult)
+where
+    F: FnMut(&[DebouncedEvent]) + Send + 'static,
+    C: FnMut() -> Instant + Send + 'static,
+{
+    let mut emit_gate = EmitGate::default();
+
+    move |result| {
+        let Ok(events) = result else { return };
+        if let Some(repo) = &repo {
+            if is_noise_batch(repo, &root, &events) {
+                return;
+            }
+        }
+        if emit_gate.should_emit(now()) {
+            on_change(&events);
+        }
     }
 }
 
@@ -72,11 +94,11 @@ fn is_noise_batch(repo: &Repository, root: &Path, events: &[DebouncedEvent]) -> 
 fn start_with_watcher<T, F>(
     path: &Path,
     config: Config,
-    mut on_change: F,
+    on_change: F,
 ) -> notify::Result<Debouncer<T, RecommendedCache>>
 where
     T: Watcher,
-    F: FnMut() + Send + 'static,
+    F: FnMut(&[DebouncedEvent]) + Send + 'static,
 {
     // Canonicalise so event paths (which arrive resolved, e.g. /private/var on
     // macOS) strip cleanly to repo-relative paths for the ignore check.
@@ -85,22 +107,12 @@ where
     // debouncer thread (git2::Repository is Send). If it can't be opened we
     // fall back to emitting every non-empty batch.
     let repo = Repository::open(&root).ok();
-    let mut emit_gate = EmitGate::default();
+    let notifier = change_notifier(repo, root, on_change, Instant::now);
 
     let mut debouncer = new_debouncer_opt(
         DEBOUNCE_WINDOW,
         None,
-        move |result: DebounceEventResult| {
-            let Ok(events) = result else { return };
-            if let Some(repo) = &repo {
-                if is_noise_batch(repo, &root, &events) {
-                    return;
-                }
-            }
-            if emit_gate.should_emit(Instant::now()) {
-                on_change();
-            }
-        },
+        notifier,
         RecommendedCache::new(),
         config,
     )?;
@@ -115,7 +127,8 @@ fn start_with_notifier<F>(
 where
     F: FnMut() + Send + 'static,
 {
-    start_with_watcher(path, Config::default(), on_change)
+    let mut on_change = on_change;
+    start_with_watcher(path, Config::default(), move |_| on_change())
 }
 
 pub fn start(
@@ -217,26 +230,61 @@ mod tests {
     }
 
     #[test]
-    fn emit_gate_suppresses_a_second_batch_within_the_debounce_window() {
+    fn notifier_emits_once_for_continuous_non_noise_batches_until_a_quiet_window() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().to_path_buf();
         let first_batch = Instant::now();
-        let mut gate = EmitGate::default();
+        let mut batch_times = [
+            first_batch,
+            first_batch + Duration::from_millis(200),
+            first_batch + Duration::from_millis(300),
+            first_batch + Duration::from_millis(600),
+        ]
+        .into_iter();
+        let count = Arc::new(AtomicUsize::new(0));
+        let count_handle = Arc::clone(&count);
+        let mut notifier = change_notifier(
+            None,
+            root.clone(),
+            move |_| {
+                count_handle.fetch_add(1, Ordering::SeqCst);
+            },
+            move || batch_times.next().unwrap(),
+        );
 
-        assert!(gate.should_emit(first_batch));
-        assert!(!gate.should_emit(first_batch + DEBOUNCE_WINDOW / 2));
-        assert!(gate.should_emit(first_batch + DEBOUNCE_WINDOW));
+        notifier(Ok(vec![debounced_event(&root.join("first.txt"))]));
+        notifier(Ok(vec![debounced_event(&root.join("second.txt"))]));
+        notifier(Ok(vec![debounced_event(&root.join("third.txt"))]));
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            1,
+            "continuous batches belong to one filesystem burst"
+        );
+
+        notifier(Ok(vec![debounced_event(&root.join("after-lull.txt"))]));
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            2,
+            "a new burst after a full quiet window must emit"
+        );
     }
 
     #[test]
     fn debounced_watcher_collapses_a_burst_of_writes_into_one_emit() {
-        let dir = TempDir::new().unwrap();
+        let dir = tempfile::tempdir_in(std::env::current_dir().unwrap()).unwrap();
         Repository::init(dir.path()).unwrap();
         let (change_tx, change_rx) = mpsc::channel();
 
-        let debouncer = start_with_watcher::<notify::PollWatcher, _>(
+        let debouncer = start_with_watcher::<RecommendedWatcher, _>(
             dir.path(),
-            Config::default().with_poll_interval(Duration::from_millis(10)),
-            move || {
-                change_tx.send(()).unwrap();
+            Config::default(),
+            move |events| {
+                let is_measured_burst = events.iter().flat_map(|event| &event.paths).any(|path| {
+                    path.file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| name.starts_with('f') && name.ends_with(".txt"))
+                });
+                change_tx.send(is_measured_burst).unwrap();
             },
         )
         .unwrap();
@@ -258,22 +306,27 @@ mod tests {
             probe += 1;
         }
 
-        // Start the measured burst in a fresh output window and discard any
-        // already-coalesced probe notification.
-        std::thread::sleep(DEBOUNCE_WINDOW);
-        while change_rx.try_recv().is_ok() {}
+        // Require a full quiet window after the last probe callback. A probe
+        // callback is also tagged false from its event paths, so it can never
+        // be mistaken for the measured burst even if it arrives later.
+        while change_rx.recv_timeout(DEBOUNCE_WINDOW).is_ok() {}
 
         // A burst of writes, all within one debounce window.
         for i in 0..20 {
             std::fs::write(dir.path().join(format!("f{i}.txt")), "x").unwrap();
         }
 
-        change_rx
-            .recv_timeout(Duration::from_secs(5))
-            .expect("watcher did not emit after the burst");
-        assert!(
-            change_rx.recv_timeout(DEBOUNCE_WINDOW).is_err(),
-            "watcher emitted more than once within the debounce window"
+        let mut measured_callbacks = usize::from(
+            change_rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("watcher did not emit after the burst"),
+        );
+        while let Ok(is_measured_burst) = change_rx.recv_timeout(DEBOUNCE_WINDOW * 2) {
+            measured_callbacks += usize::from(is_measured_burst);
+        }
+        assert_eq!(
+            measured_callbacks, 1,
+            "the measured burst must produce exactly one callback"
         );
         debouncer.stop();
     }
