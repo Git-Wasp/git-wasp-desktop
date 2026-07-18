@@ -1,3 +1,4 @@
+import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef } from "react";
@@ -9,7 +10,9 @@ const MIN_HEIGHT = 100;
 const MAX_HEIGHT = 480;
 
 function resolvedToken(name: string): string {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
 }
 
 function sameChunk(
@@ -52,11 +55,18 @@ export function HookOutputPane({
         foreground: resolvedToken("--color-text-primary"),
       },
     });
+    const fitAddon = new FitAddon();
+    terminal.loadAddon(fitAddon);
     terminal.open(hostRef.current);
+    fitAddon.fit();
+    const resizeObserver = new ResizeObserver(() => fitAddon.fit());
+    resizeObserver.observe(hostRef.current);
     const scrollListener = terminal.onScroll(() => {
       const buffer = terminal.buffer.active;
       const atBottom = buffer.viewportY >= buffer.baseY;
-      const currentRun = selectHookRun(repoPathRef.current)(useHookStore.getState());
+      const currentRun = selectHookRun(repoPathRef.current)(
+        useHookStore.getState(),
+      );
       if (currentRun && currentRun.following !== atBottom) {
         useHookStore.getState().setFollowing(repoPathRef.current, atBottom);
       }
@@ -67,6 +77,7 @@ export function HookOutputPane({
       terminalGenerationRef.current += 1;
       terminalRef.current = null;
       runKeyRef.current = undefined;
+      resizeObserver.disconnect();
       scrollListener.dispose();
       terminal.dispose();
       writtenRef.current = [];
@@ -79,7 +90,8 @@ export function HookOutputPane({
 
     const previous = writtenRef.current;
     const runKey = `${repoPath}\0${run.runId ?? ""}`;
-    const runChanged = runKeyRef.current !== undefined && runKeyRef.current !== runKey;
+    const runChanged =
+      runKeyRef.current !== undefined && runKeyRef.current !== runKey;
     const prefixChanged =
       previous.length > run.chunks.length ||
       previous.some((chunk, index) => !sameChunk(chunk, run.chunks[index]!));
@@ -104,7 +116,9 @@ export function HookOutputPane({
       // after all preceding output has reached its buffer.
       terminal.write("", () => {
         const current = selectHookRun(repoPath)(useHookStore.getState());
-        const currentKey = current ? `${repoPath}\0${current.runId ?? ""}` : undefined;
+        const currentKey = current
+          ? `${repoPath}\0${current.runId ?? ""}`
+          : undefined;
         if (
           terminalRef.current === terminal &&
           terminalGenerationRef.current === generation &&
@@ -118,7 +132,6 @@ export function HookOutputPane({
     }
     writtenRef.current = run.chunks.map((chunk) => ({ ...chunk }));
     runKeyRef.current = runKey;
-
   }, [repoPath, run]);
 
   if (!run?.paneVisible) return null;
@@ -145,7 +158,10 @@ export function HookOutputPane({
         orientation="horizontal"
         ariaLabel="Resize hook output"
         onResize={(delta) => {
-          const nextHeight = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, height - delta));
+          const nextHeight = Math.max(
+            MIN_HEIGHT,
+            Math.min(MAX_HEIGHT, height - delta),
+          );
           const clampedDelta = height - nextHeight;
           if (clampedDelta !== 0) onResize(clampedDelta);
         }}
@@ -178,7 +194,16 @@ export function HookOutputPane({
           </Button>
         </span>
       </div>
-      <div ref={hostRef} style={{ flex: 1, minHeight: 0, overflow: "hidden" }} />
+      <div
+        ref={hostRef}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          minHeight: 0,
+          width: "100%",
+          overflow: "hidden",
+        }}
+      />
     </section>
   );
 }

@@ -8,6 +8,7 @@ import { HookOutputPane } from "./HookOutputPane";
 const xterm = vi.hoisted(() => {
   const terminal = {
     open: vi.fn(),
+    loadAddon: vi.fn(),
     write: vi.fn(),
     clear: vi.fn(),
     scrollToBottom: vi.fn(),
@@ -23,6 +24,16 @@ const xterm = vi.hoisted(() => {
   };
 });
 
+const fitAddon = vi.hoisted(() => ({
+  fit: vi.fn(),
+}));
+
+const resizeObserver = vi.hoisted(() => ({
+  callback: undefined as ResizeObserverCallback | undefined,
+  observe: vi.fn(),
+  disconnect: vi.fn(),
+}));
+
 vi.mock("@xterm/xterm", () => ({
   Terminal: vi.fn(function () {
     xterm.terminal.onScroll.mockImplementation((callback: () => void) => {
@@ -32,6 +43,23 @@ vi.mock("@xterm/xterm", () => ({
     return xterm.terminal;
   }),
 }));
+
+vi.mock("@xterm/addon-fit", () => ({
+  FitAddon: vi.fn(function () {
+    return fitAddon;
+  }),
+}));
+
+vi.stubGlobal(
+  "ResizeObserver",
+  vi.fn(function (callback: ResizeObserverCallback) {
+    resizeObserver.callback = callback;
+    return {
+      observe: resizeObserver.observe,
+      disconnect: resizeObserver.disconnect,
+    };
+  }),
+);
 
 function seedRun(overrides: Partial<RepoHookRun> = {}) {
   useHookStore.setState({
@@ -87,15 +115,30 @@ beforeEach(() => {
   vi.clearAllMocks();
   xterm.scroll = undefined;
   xterm.writeCallbacks = [];
-  xterm.terminal.write.mockImplementation((_chunk: string, callback?: () => void) => {
-    if (callback) xterm.writeCallbacks.push(callback);
-  });
+  resizeObserver.callback = undefined;
+  xterm.terminal.write.mockImplementation(
+    (_chunk: string, callback?: () => void) => {
+      if (callback) xterm.writeCallbacks.push(callback);
+    },
+  );
   xterm.terminal.buffer.active.baseY = 0;
   xterm.terminal.buffer.active.viewportY = 0;
   useHookStore.setState({ runs: {} });
 });
 
 describe("HookOutputPane", () => {
+  it("fits the terminal to the output host and refits when the host resizes", () => {
+    seedRun();
+    render(<HookOutputPane repoPath="/repo" height={180} onResize={vi.fn()} />);
+
+    expect(xterm.terminal.loadAddon).toHaveBeenCalledWith(fitAddon);
+    expect(fitAddon.fit).toHaveBeenCalledOnce();
+    expect(resizeObserver.observe).toHaveBeenCalledOnce();
+
+    act(() => resizeObserver.callback?.([], {} as ResizeObserver));
+    expect(fitAddon.fit).toHaveBeenCalledTimes(2);
+  });
+
   it("replays retained chunks and writes new chunks exactly once", () => {
     seedRun({
       chunks: [{ stream: "stdout", chunk: "first\r\n" }],
@@ -107,10 +150,14 @@ describe("HookOutputPane", () => {
     expect(xterm.terminal.write).toHaveBeenCalledWith("first\r\n");
 
     append("second\r\n");
-    rerender(<HookOutputPane repoPath="/repo" height={180} onResize={vi.fn()} />);
+    rerender(
+      <HookOutputPane repoPath="/repo" height={180} onResize={vi.fn()} />,
+    );
     expect(xterm.terminal.write).toHaveBeenCalledWith("second\r\n");
     expect(
-      xterm.terminal.write.mock.calls.map((call) => String(call[0])).filter((chunk) => chunk !== ""),
+      xterm.terminal.write.mock.calls
+        .map((call) => String(call[0]))
+        .filter((chunk) => chunk !== ""),
     ).toEqual(["first\r\n", "second\r\n"]);
   });
 
@@ -150,7 +197,10 @@ describe("HookOutputPane", () => {
   });
 
   it("scrolls only after xterm has processed the appended output", () => {
-    seedRun({ chunks: [{ stream: "stdout", chunk: "pending" }], retainedLength: 7 });
+    seedRun({
+      chunks: [{ stream: "stdout", chunk: "pending" }],
+      retainedLength: 7,
+    });
     render(<HookOutputPane repoPath="/repo" height={180} onResize={vi.fn()} />);
     expect(xterm.terminal.scrollToBottom).not.toHaveBeenCalled();
 
@@ -160,7 +210,10 @@ describe("HookOutputPane", () => {
   });
 
   it("does not scroll from a queued write after the pane is hidden and disposed", () => {
-    seedRun({ chunks: [{ stream: "stdout", chunk: "pending" }], retainedLength: 7 });
+    seedRun({
+      chunks: [{ stream: "stdout", chunk: "pending" }],
+      retainedLength: 7,
+    });
     render(<HookOutputPane repoPath="/repo" height={180} onResize={vi.fn()} />);
     const queuedScroll = xterm.writeCallbacks[xterm.writeCallbacks.length - 1]!;
 
@@ -172,14 +225,23 @@ describe("HookOutputPane", () => {
   });
 
   it("does not scroll from a queued write after switching the visible repository", () => {
-    seedRun({ chunks: [{ stream: "stdout", chunk: "old" }], retainedLength: 3 });
-    seedOtherRun({ chunks: [{ stream: "stdout", chunk: "new" }], retainedLength: 3 });
+    seedRun({
+      chunks: [{ stream: "stdout", chunk: "old" }],
+      retainedLength: 3,
+    });
+    seedOtherRun({
+      chunks: [{ stream: "stdout", chunk: "new" }],
+      retainedLength: 3,
+    });
     const { rerender } = render(
       <HookOutputPane repoPath="/repo" height={180} onResize={vi.fn()} />,
     );
-    const queuedOldScroll = xterm.writeCallbacks[xterm.writeCallbacks.length - 1]!;
+    const queuedOldScroll =
+      xterm.writeCallbacks[xterm.writeCallbacks.length - 1]!;
 
-    rerender(<HookOutputPane repoPath="/other" height={180} onResize={vi.fn()} />);
+    rerender(
+      <HookOutputPane repoPath="/other" height={180} onResize={vi.fn()} />,
+    );
     act(() => queuedOldScroll());
 
     expect(xterm.terminal.scrollToBottom).not.toHaveBeenCalled();
@@ -188,7 +250,9 @@ describe("HookOutputPane", () => {
   it("resumes follow from the button and scrolls to bottom", async () => {
     seedRun({ following: false });
     render(<HookOutputPane repoPath="/repo" height={180} onResize={vi.fn()} />);
-    await userEvent.click(screen.getByRole("button", { name: "Follow output" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Follow output" }),
+    );
     expect(useHookStore.getState().runs["/repo"]?.following).toBe(true);
     expect(xterm.terminal.scrollToBottom).toHaveBeenCalled();
   });
@@ -216,13 +280,20 @@ describe("HookOutputPane", () => {
     );
     screen
       .getByRole("separator", { name: "Resize hook output" })
-      .dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, clientY: 100 }));
-    window.dispatchEvent(new MouseEvent("pointermove", { bubbles: true, clientY: 90 }));
+      .dispatchEvent(
+        new MouseEvent("pointerdown", { bubbles: true, clientY: 100 }),
+      );
+    window.dispatchEvent(
+      new MouseEvent("pointermove", { bubbles: true, clientY: 90 }),
+    );
     expect(onResize).toHaveBeenCalledWith(-10);
 
-    await userEvent.click(screen.getByRole("button", { name: "Close hook output" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Close hook output" }),
+    );
     expect(useHookStore.getState().runs["/repo"]?.paneVisible).toBe(false);
     unmount();
+    expect(resizeObserver.disconnect).toHaveBeenCalledOnce();
     expect(xterm.disposable.dispose).toHaveBeenCalledOnce();
     expect(xterm.terminal.dispose).toHaveBeenCalledOnce();
   });
