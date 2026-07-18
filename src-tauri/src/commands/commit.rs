@@ -1,21 +1,46 @@
 use crate::repo_manager::AppState;
 use crate::working_tree::{
-    amend_commit_message as wt_amend_commit_message, create_commit as wt_create_commit,
-    get_commit_identity as wt_get_identity, get_identity_config as wt_get_identity_config,
-    head_commit_info as wt_head_commit_info, revert_commit as wt_revert_commit,
-    set_identity as wt_set_identity, squash_commits as wt_squash_commits, HeadCommitInfo, Identity,
-    IdentityConfig,
+    amend_commit_message as wt_amend_commit_message, get_commit_identity as wt_get_identity,
+    get_identity_config as wt_get_identity_config, head_commit_info as wt_head_commit_info,
+    revert_commit as wt_revert_commit, set_identity as wt_set_identity,
+    squash_commits as wt_squash_commits, HeadCommitInfo, Identity, IdentityConfig,
 };
-use tauri::State;
+use tauri::{AppHandle, State};
 
-// Not `async`: every command body below is 100% synchronous git2/fs work with
-// no `.await` points — see commands/graph.rs for the full rationale.
 #[tauri::command]
-pub fn create_commit(message: String, state: State<'_, AppState>) -> Result<String, String> {
-    state
-        .with_repo(|repo| wt_create_commit(repo, &message))
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())
+pub async fn create_commit(
+    repo_path: String,
+    message: String,
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let preferences = state
+        .hook_preferences(&repo_path)
+        .map_err(|error| error.to_string())?;
+    let worktree = state
+        .open_repo_worktree(&repo_path)
+        .map_err(|error| error.to_string())?;
+    let guard = state
+        .begin_hook_run(&repo_path)
+        .map_err(|error| error.to_string())?;
+    let run_id = guard.run_id().to_string();
+    let manager = std::sync::Arc::clone(&state.manager);
+    let captured_repo_path = repo_path;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = guard;
+        let result = crate::hook_runner::run_commit(
+            &app_handle,
+            &worktree,
+            &run_id,
+            &message,
+            preferences.pre_commit,
+        );
+        manager.mark_repo_graph_dirty(&captured_repo_path)?;
+        result
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

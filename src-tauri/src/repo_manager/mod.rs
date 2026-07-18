@@ -334,6 +334,41 @@ impl RepoManager {
             .ok_or_else(|| anyhow::anyhow!("repository not open: {repo_path}"))
     }
 
+    pub fn open_repo_worktree(&self, repo_path: &str) -> anyhow::Result<PathBuf> {
+        let state = {
+            let repos = self.repos_lock()?;
+            repos
+                .iter()
+                .find(|repo| repo.key == repo_path)
+                .map(|repo| Arc::clone(&repo.state))
+                .ok_or_else(|| anyhow::anyhow!("repository not open: {repo_path}"))?
+        };
+        let guard = state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("repo state lock poisoned"))?;
+        guard
+            .repo
+            .workdir()
+            .map(Path::to_path_buf)
+            .context("open repository has no working tree")
+    }
+
+    pub fn mark_repo_graph_dirty(&self, repo_path: &str) -> anyhow::Result<()> {
+        let state = {
+            let repos = self.repos_lock()?;
+            repos
+                .iter()
+                .find(|repo| repo.key == repo_path)
+                .map(|repo| Arc::clone(&repo.state))
+                .ok_or_else(|| anyhow::anyhow!("repository not open: {repo_path}"))?
+        };
+        let mut guard = state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("repo state lock poisoned"))?;
+        crate::graph::mark_dirty(&mut guard.graph_cache);
+        Ok(())
+    }
+
     pub fn hook_preferences(&self, repo_path: &str) -> anyhow::Result<HookPreferences> {
         let repo_path = self.require_open_repo_key(repo_path)?;
         Ok(self.config_lock()?.hook_preferences_for(&repo_path))
@@ -815,6 +850,10 @@ impl AppState {
 
     pub fn hook_preferences(&self, repo_path: &str) -> anyhow::Result<HookPreferences> {
         self.manager.hook_preferences(repo_path)
+    }
+
+    pub fn open_repo_worktree(&self, repo_path: &str) -> anyhow::Result<PathBuf> {
+        self.manager.open_repo_worktree(repo_path)
     }
 
     pub fn set_hook_preferences(

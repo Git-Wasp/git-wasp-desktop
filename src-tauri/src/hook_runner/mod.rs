@@ -309,11 +309,235 @@ pub fn stream_command<R: Runtime>(
     })
 }
 
+pub fn run_commit<R: Runtime>(
+    app: &AppHandle<R>,
+    repo_path: &std::path::Path,
+    run_id: &str,
+    message: &str,
+    pre_commit_enabled: bool,
+) -> anyhow::Result<String> {
+    let repo_path_string = repo_path
+        .to_str()
+        .context("open repository path is not valid UTF-8")?
+        .to_string();
+    let metadata = HookRunMetadata {
+        repo_path: repo_path_string,
+        run_id: run_id.to_string(),
+        hook: HookName::PreCommit,
+        operation: "commit",
+    };
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(repo_path)
+        .arg("commit")
+        .current_dir(repo_path);
+    if !pre_commit_enabled {
+        command.arg("--no-verify");
+    }
+    command.arg("-m").arg(message);
+
+    let command_result = stream_command(app, &metadata, command, None);
+    let (outcome, exit_code, summary) = match &command_result {
+        Ok(output) if output.status.success() => (
+            HookOutcome::Succeeded,
+            output.status.code(),
+            "commit completed",
+        ),
+        Ok(output) => (
+            HookOutcome::Failed,
+            output.status.code(),
+            "pre-commit failed; review hook output",
+        ),
+        Err(_) => (
+            HookOutcome::Failed,
+            None,
+            "pre-commit failed; review hook output",
+        ),
+    };
+    app.emit(
+        FINISHED_EVENT,
+        HookFinished {
+            repo_path: metadata.repo_path.clone(),
+            run_id: metadata.run_id.clone(),
+            hook: HookName::PreCommit,
+            outcome,
+            exit_code,
+            summary: summary.to_string(),
+        },
+    )
+    .context("could not emit hook finished event")?;
+
+    let output = command_result?;
+    if !output.status.success() {
+        anyhow::bail!("pre-commit failed; review hook output");
+    }
+    let repo = git2::Repository::open(repo_path).context("could not reopen repository")?;
+    let oid = repo
+        .head()
+        .context("could not resolve HEAD")?
+        .peel_to_commit()
+        .context("could not resolve HEAD to a commit")?
+        .id();
+    Ok(oid.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
     use std::sync::{Arc, Mutex};
     use tauri::Listener;
+
+    struct CommitFixture {
+        directory: tempfile::TempDir,
+    }
+
+    impl CommitFixture {
+        fn new() -> Self {
+            let fixture = Self {
+                directory: tempfile::tempdir().unwrap(),
+            };
+            fixture.git(&["init"]);
+            fixture.git(&["config", "user.name", "Git Wasp Test"]);
+            fixture.git(&["config", "user.email", "git-wasp@example.test"]);
+            fixture.git(&["config", "core.autocrlf", "false"]);
+            fixture.git(&["config", "core.eol", "lf"]);
+            fixture.stage("file.txt", "initial\n");
+            fixture.git(&["commit", "-m", "initial"]);
+            fixture
+        }
+
+        fn path(&self) -> &Path {
+            self.directory.path()
+        }
+
+        fn git_dir(&self) -> std::path::PathBuf {
+            self.path().join(".git")
+        }
+
+        fn git(&self, args: &[&str]) {
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(self.path())
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        fn stage(&self, path: &str, contents: &str) {
+            std::fs::write(self.path().join(path), contents).unwrap();
+            self.git(&["add", path]);
+        }
+
+        #[cfg(unix)]
+        fn install_hook(&self, name: &str, contents: &str) {
+            use std::os::unix::fs::PermissionsExt;
+
+            let path = self.git_dir().join("hooks").join(name);
+            std::fs::write(&path, contents).unwrap();
+            let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(path, permissions).unwrap();
+        }
+
+        fn head_oid(&self) -> String {
+            let repo = git2::Repository::open(self.path()).unwrap();
+            let oid = repo.head().unwrap().peel_to_commit().unwrap().id();
+            oid.to_string()
+        }
+
+        fn is_staged(&self, path: &str) -> bool {
+            let repo = git2::Repository::open(self.path()).unwrap();
+            repo.status_file(Path::new(path))
+                .unwrap()
+                .intersects(git2::Status::INDEX_MODIFIED | git2::Status::INDEX_NEW)
+        }
+
+        fn head_file(&self, path: &str) -> String {
+            let repo = git2::Repository::open(self.path()).unwrap();
+            let commit = repo.head().unwrap().peel_to_commit().unwrap();
+            let tree = commit.tree().unwrap();
+            let entry = tree.get_path(Path::new(path)).unwrap();
+            let blob = repo.find_blob(entry.id()).unwrap();
+            String::from_utf8(blob.content().to_vec()).unwrap()
+        }
+    }
+
+    #[cfg(unix)]
+    fn run_commit_for_test(
+        repo_path: &Path,
+        message: &str,
+        pre_commit_enabled: bool,
+    ) -> anyhow::Result<String> {
+        let app = tauri::test::mock_app();
+        run_commit(
+            app.handle(),
+            repo_path,
+            "commit-test",
+            message,
+            pre_commit_enabled,
+        )
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn native_commit_runs_pre_commit_and_returns_head() {
+        let fixture = CommitFixture::new();
+        fixture.stage("file.txt", "changed\n");
+        fixture.install_hook(
+            "pre-commit",
+            "#!/bin/sh\nprintf ran > .git/pre-commit-ran\n",
+        );
+        let oid = run_commit_for_test(fixture.path(), "run hook", true).unwrap();
+        assert_eq!(oid, fixture.head_oid());
+        assert_eq!(
+            std::fs::read_to_string(fixture.git_dir().join("pre-commit-ran")).unwrap(),
+            "ran"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_pre_commit_blocks_commit_and_keeps_index() {
+        let fixture = CommitFixture::new();
+        fixture.stage("file.txt", "changed\n");
+        let before = fixture.head_oid();
+        fixture.install_hook(
+            "pre-commit",
+            "#!/bin/sh\nprintf 'lint failed\\n' >&2\nexit 7\n",
+        );
+        assert!(run_commit_for_test(fixture.path(), "blocked", true).is_err());
+        assert_eq!(fixture.head_oid(), before);
+        assert!(fixture.is_staged("file.txt"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn disabled_pre_commit_uses_no_verify() {
+        let fixture = CommitFixture::new();
+        fixture.stage("file.txt", "changed\n");
+        fixture.install_hook("pre-commit", "#!/bin/sh\nexit 9\n");
+        assert!(run_commit_for_test(fixture.path(), "skip hook", false).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pre_commit_can_change_the_index_before_commit() {
+        let fixture = CommitFixture::new();
+        fixture.stage("file.txt", "before hook\n");
+        fixture.install_hook(
+            "pre-commit",
+            "#!/bin/sh\nprintf 'from hook\\n' > file.txt\ngit add file.txt\n",
+        );
+        run_commit_for_test(fixture.path(), "index update", true).unwrap();
+        assert_eq!(fixture.head_file("file.txt"), "from hook\n");
+    }
 
     #[test]
     fn invalid_utf8_is_decoded_lossily() {
