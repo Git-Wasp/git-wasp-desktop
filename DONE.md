@@ -195,6 +195,8 @@ description. See TODO.md for work still outstanding.
 
 ## Working tree & committing
 
+- [x] Execute git hooks (pre-commit, pre-push) and show output in a built-in pane that can be hidden and reshown. The contents of the pane should be a "terminal view" with automatic scrolling to keep up with the progress of git hooks. When a repository has git hooks, they should be executed automatically. Add a new option to settings to allow users to choose _per-repository_ which git hooks should run/not run (e.g. pre-push is disabled but pre-commit is enabled for a sepecific repository) - all should be enabled by default for all respositories making hooks opt-out rather than opt-in. When hooks are running, make it very clear in the git graph view that hooks are running and disable buttons such as commit buttons for the current branch. The "status" of githooks should be clearly visible for a repo e.g. in a "footer" bar at the base of the git graph (for example).
+
 - [x] Add a "Stash changes" button before "Stage all" in the right-hand staging
       panel when viewing uncommitted files; remove the "Stash" button from the
       sidebar. — The Changes panel header now shows **Stash changes** (secondary)
