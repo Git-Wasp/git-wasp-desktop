@@ -5,6 +5,7 @@ import { GitIdentitySettings } from "./GitIdentitySettings";
 import { FontSettings } from "./FontSettings";
 import { GraphColorSettings } from "./GraphColorSettings";
 import { DiagnosticsSettings } from "./DiagnosticsSettings";
+import { GitHooksSettings } from "./GitHooksSettings";
 
 const sectionTitleStyle: React.CSSProperties = {
   fontSize: "var(--font-size-md)",
@@ -31,6 +32,11 @@ export function SettingsView() {
       <section style={{ maxWidth: 640, marginBottom: "var(--space-6)" }}>
         <h2 style={sectionTitleStyle}>Git identity</h2>
         <GitIdentitySettings />
+      </section>
+
+      <section style={{ maxWidth: 640, marginBottom: "var(--space-6)" }}>
+        <h2 style={sectionTitleStyle}>Git hooks</h2>
+        <GitHooksSettings />
       </section>
 
       <section style={{ maxWidth: 640, marginBottom: "var(--space-6)" }}>
