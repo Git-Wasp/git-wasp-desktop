@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import { useGraphStore } from "./graphStore";
+import { useRepoStore } from "./repoStore";
 import { nextSelectionAfterStaging, unstagedPaths } from "../lib/stagingSelection";
 import type {
   HeadCommitInfo,
@@ -184,7 +185,9 @@ export const useWorkingTreeStore = create<WorkingTreeStore>((set, get) => ({
   },
 
   createCommit: async (message: string) => {
-    await invoke("create_commit", { message });
+    const repoPath = useRepoStore.getState().currentRepo?.path;
+    if (!repoPath) throw new Error("No repository is open");
+    await invoke("create_commit", { repoPath, message });
     await get().loadStatus();
     await get().loadHeadCommit();
   },

@@ -8,6 +8,7 @@ import { Input } from "../ui/Input";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { useGraphStore, GRAPH_INITIAL_LIMIT } from "../../stores/graphStore";
 import { renderMarkdown, MARKDOWN_TAB_OPTIONS, type MarkdownTab } from "../../lib/markdown";
+import { useHookStore } from "../../stores/hookStore";
 
 /** Split a commit message into its subject line and (blank-line-separated) body. */
 function splitMessage(message: string): { subject: string; body: string } {
@@ -31,6 +32,12 @@ export function CommitForm({
     useWorkingTreeStore();
   const { fetchViewport } = useGraphStore();
   const currentRepo = useRepoStore((s) => s.currentRepo);
+  const repoHookRunning = useHookStore(
+    (s) => currentRepo ? s.runs[currentRepo.path]?.status === "running" : false,
+  );
+  const runningHook = useHookStore(
+    (s) => currentRepo ? s.runs[currentRepo.path]?.hook ?? null : null,
+  );
   const createBranch = useRepoStore((s) => s.createBranch);
   const checkoutBranch = useRepoStore((s) => s.checkoutBranch);
   const fastForwardBranch = useRepoStore((s) => s.fastForwardBranch);
@@ -89,7 +96,7 @@ export function CommitForm({
   const hasSubject = subject.trim().length > 0;
   // Amending the message needs no staged changes; a normal commit does.
   const canCommit =
-    !detached && hasSubject && !committing && (amending || stagedCount > 0);
+    !detached && hasSubject && !committing && !repoHookRunning && (amending || stagedCount > 0);
 
   const composeMessage = () =>
     body.trim() ? `${subject.trim()}\n\n${body.trim()}` : subject.trim();
@@ -127,7 +134,7 @@ export function CommitForm({
   // already matches, so no tree change), then land the commit on that branch.
   const handleCreateBranchAndCommit = async () => {
     const name = branchName.trim();
-    if (!name || !hasSubject || stagedCount === 0) return;
+    if (!name || !hasSubject || stagedCount === 0 || repoHookRunning) return;
     setCommitting(true);
     setError(null);
     try {
@@ -147,7 +154,7 @@ export function CommitForm({
   // Detached recovery B: advance an existing branch to this commit and switch to
   // it — the "fast-forward main to my detached commit, then check main out" fix.
   const handleFastForwardAndSwitch = async (branch: string) => {
-    if (!headCommit?.oid) return;
+    if (!headCommit?.oid || repoHookRunning) return;
     setCommitting(true);
     setError(null);
     try {
@@ -162,6 +169,7 @@ export function CommitForm({
   };
 
   const handleReset = async () => {
+    if (repoHookRunning) return;
     setConfirmReset(false);
     setError(null);
     try {
@@ -227,7 +235,7 @@ export function CommitForm({
             cursor: "pointer",
           }}
         >
-          <input type="checkbox" checked={amending} onChange={toggleAmend} />
+          <input type="checkbox" checked={amending} onChange={toggleAmend} disabled={repoHookRunning} />
           Amend last commit
         </label>
       )}
@@ -325,6 +333,7 @@ export function CommitForm({
           variant="danger"
           onClick={() => setConfirmReset(true)}
           title="Discard all working-tree changes"
+          disabled={repoHookRunning}
         >
           Reset
         </Button>
@@ -333,7 +342,7 @@ export function CommitForm({
             variant="primary"
             fullWidth
             onClick={() => void handleCreateBranchAndCommit()}
-            disabled={!branchName.trim() || !hasSubject || stagedCount === 0 || committing}
+            disabled={!branchName.trim() || !hasSubject || stagedCount === 0 || committing || repoHookRunning}
           >
             {committing ? "Creating…" : "Create branch & commit"}
           </Button>
@@ -345,7 +354,9 @@ export function CommitForm({
                 : "Amend"
               : committing
                 ? "Committing…"
-                : `Commit${stagedCount > 0 ? ` (${stagedCount})` : ""}`}
+                : repoHookRunning && runningHook
+                  ? `Running ${runningHook}…`
+                  : `Commit${stagedCount > 0 ? ` (${stagedCount})` : ""}`}
           </Button>
         )}
       </div>
@@ -360,7 +371,7 @@ export function CommitForm({
               key={b}
               variant="secondary"
               fullWidth
-              disabled={committing}
+              disabled={committing || repoHookRunning}
               onClick={() => void handleFastForwardAndSwitch(b)}
               style={{ fontFamily: "var(--font-family-mono)" }}
             >

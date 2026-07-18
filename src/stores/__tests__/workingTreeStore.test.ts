@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useWorkingTreeStore } from "../workingTreeStore";
 import { useGraphStore } from "../graphStore";
+import { useRepoStore } from "../repoStore";
 import type { StageFileContents, WorkingTreeStatus } from "../../types/workingTree";
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -28,9 +29,31 @@ beforeEach(() => {
     selectedPath: null,
     stageDiff: null,
   });
+  useRepoStore.setState({ currentRepo: null });
 });
 
 describe("workingTreeStore", () => {
+  it("createCommit captures the current repository path in the backend payload", async () => {
+    useRepoStore.setState({
+      currentRepo: { name: "repo", path: "/repo", headBranch: "main" },
+    });
+    mockInvoke.mockResolvedValue(emptyStatus);
+
+    await useWorkingTreeStore.getState().createCommit("message");
+
+    expect(mockInvoke).toHaveBeenCalledWith("create_commit", {
+      repoPath: "/repo",
+      message: "message",
+    });
+  });
+
+  it("createCommit rejects before invoking when no repository is open", async () => {
+    await expect(useWorkingTreeStore.getState().createCommit("message")).rejects.toThrow(
+      "No repository is open",
+    );
+    expect(mockInvoke).not.toHaveBeenCalledWith("create_commit", expect.anything());
+  });
+
   it("selectFile loads the unstaged (index→worktree) diff and records the mode", async () => {
     mockInvoke.mockResolvedValueOnce(stageDiff);
 

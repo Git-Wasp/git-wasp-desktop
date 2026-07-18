@@ -8,6 +8,7 @@ import { useRepoStore } from "../../stores/repoStore";
 import { useGithubStore } from "../../stores/githubStore";
 import { useMergeStore } from "../../stores/mergeStore";
 import { useToastStore } from "../../stores/toastStore";
+import { useHookStore } from "../../stores/hookStore";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -22,6 +23,7 @@ beforeEach(() => {
   });
   useGraphStore.setState({ refresh: vi.fn().mockResolvedValue(undefined) });
   useRepoStore.setState({
+    currentRepo: { name: "repo", path: "/repo", headBranch: "main" },
     createBranch: vi.fn().mockResolvedValue(undefined),
     checkoutBranch: vi.fn().mockResolvedValue(undefined),
   });
@@ -29,11 +31,30 @@ beforeEach(() => {
     remoteInfo: { host: "github.com", owner: "mike", repo: "gitclient", protocol: "https" },
   });
   useMergeStore.setState({ loadStatus: vi.fn().mockResolvedValue(undefined) });
+  useHookStore.setState({ runs: {} });
 });
 
 const openPullMenu = () => fireEvent.click(screen.getByRole("button", { name: /^pull/i }));
 
 describe("HistoryToolbar", () => {
+  it("locks only the repository whose pre-push hook is running", () => {
+    useHookStore.getState().started({
+      repoPath: "/repo",
+      runId: "run-1",
+      hook: "pre-push",
+      operation: "push",
+    });
+    const { rerender } = render(<HistoryToolbar />);
+
+    expect(screen.getByRole("button", { name: "Running pre-push…" })).toBeDisabled();
+
+    useRepoStore.setState({
+      currentRepo: { name: "other", path: "/other", headBranch: "main" },
+    });
+    rerender(<HistoryToolbar />);
+    expect(screen.getByRole("button", { name: /^push$/i })).toBeEnabled();
+  });
+
   it("pushes and refreshes the graph", async () => {
     render(<HistoryToolbar />);
     fireEvent.click(screen.getByRole("button", { name: /^push$/i }));

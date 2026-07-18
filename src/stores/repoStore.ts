@@ -7,6 +7,7 @@ import { useWorkingTreeStore } from "./workingTreeStore";
 import { useToastStore } from "./toastStore";
 import { withAutoStash } from "../lib/autoStash";
 import type { AutoStashPrompt } from "./autoStashStore";
+import { useHookStore } from "./hookStore";
 
 // The confirmation shown when a checkout is blocked by uncommitted changes.
 // "Park on switch": the changes are stashed and left in the stash panel.
@@ -137,6 +138,7 @@ export const useRepoStore = create<RepoStore>((set, get) => {
 
     closeRepo: async (path: string) => {
       const next = await invoke<RepoInfo | null>("close_repo", { path });
+      useHookStore.getState().clearRepo(path);
       await get().loadOpenRepos();
       if (next) {
         await reloadActiveRepo(next);

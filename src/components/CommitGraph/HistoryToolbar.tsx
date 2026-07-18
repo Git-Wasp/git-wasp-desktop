@@ -14,6 +14,7 @@ import { Tooltip } from "../ui/Tooltip";
 import { BranchFocusIcon, BranchIcon, ColumnsIcon, DensityIcon, PullIcon, PushIcon, RefreshIcon, SearchIcon, SplitViewIcon, TargetIcon } from "../ui/icons";
 import { GRAPH_DENSITY, nextDensity } from "../../lib/graphDensity";
 import { OPTIONAL_COLUMN_LABELS } from "./columnModel";
+import { useHookStore } from "../../stores/hookStore";
 
 const barStyle: React.CSSProperties = {
   display: "flex",
@@ -53,7 +54,13 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
   const setGraphDensity = useGraphStore((s) => s.setGraphDensity);
   const visibleColumns = useGraphStore((s) => s.visibleColumns);
   const toggleColumn = useGraphStore((s) => s.toggleColumn);
-  const { createBranch, checkoutBranch } = useRepoStore();
+  const { currentRepo, createBranch, checkoutBranch } = useRepoStore();
+  const repoHookRunning = useHookStore(
+    (s) => currentRepo ? s.runs[currentRepo.path]?.status === "running" : false,
+  );
+  const runningHook = useHookStore(
+    (s) => currentRepo ? s.runs[currentRepo.path]?.hook ?? null : null,
+  );
   const remoteInfo = useGithubStore((s) => s.remoteInfo);
   const loadMergeStatus = useMergeStore((s) => s.loadStatus);
   // Select the stable action methods so toolbar doesn't re-render on every toast.
@@ -70,6 +77,7 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleRefresh = async () => {
+    if (repoHookRunning) return;
     setIsRefreshing(true);
     try {
       await refreshAll();
@@ -84,6 +92,7 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
   const busy = isFetching || isPulling || isPushing;
 
   const handlePush = async () => {
+    if (repoHookRunning) return;
     try {
       await push();
       await refresh();
@@ -94,6 +103,7 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
   };
 
   const handleFetch = async () => {
+    if (repoHookRunning) return;
     setPullMenu(null);
     try {
       const result = await fetchRemote();
@@ -106,6 +116,7 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
   };
 
   const handlePull = async (mode: PullMode) => {
+    if (repoHookRunning) return;
     setPullMenu(null);
     try {
       const result = await pull(mode);
@@ -159,6 +170,7 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
   };
 
   const handleCreateBranch = async (name: string) => {
+    if (repoHookRunning) return;
     setShowNewBranch(false);
     try {
       await createBranch(name);
@@ -176,21 +188,21 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
 
   return (
     <div className="elevation-below" style={barStyle}>
-      <Button type="button" onClick={() => void handlePush()} loading={isPushing} disabled={!hasRemote || busy}>
+      <Button type="button" onClick={() => void handlePush()} loading={isPushing} disabled={!hasRemote || busy || repoHookRunning}>
         {!isPushing && <PushIcon />}
-        Push
+        {repoHookRunning && runningHook === "pre-push" ? "Running pre-push…" : "Push"}
       </Button>
       <Button
         type="button"
         ref={pullButtonRef}
         onClick={openPullMenu}
         loading={isPulling || isFetching}
-        disabled={!hasRemote || busy}
+        disabled={!hasRemote || busy || repoHookRunning}
       >
         {!(isPulling || isFetching) && <PullIcon />}
         Pull ▾
       </Button>
-      <Button type="button" onClick={() => setShowNewBranch(true)}>
+      <Button type="button" onClick={() => setShowNewBranch(true)} disabled={repoHookRunning}>
         <BranchIcon />
         New branch
       </Button>
@@ -262,7 +274,7 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
           <IconButton
             aria-label="Check for changes"
             onClick={() => void handleRefresh()}
-            disabled={isRefreshing}
+            disabled={isRefreshing || repoHookRunning}
           >
             <RefreshIcon />
           </IconButton>

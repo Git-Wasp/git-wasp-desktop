@@ -15,9 +15,18 @@ import { useToastStore } from "./stores/toastStore";
 import type { GraphNode } from "./types/graph";
 import type { StageFileContents } from "./types/workingTree";
 import type { ConflictedFile } from "./types/merge";
+import * as hookStore from "./stores/hookStore";
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(),
+}));
+vi.mock("./components/GitHooks/HookOutputPane", () => ({
+  HookOutputPane: ({ height }: { height: number }) => (
+    <section aria-label="Hook output" style={{ height }} />
+  ),
+}));
+vi.mock("./components/Settings/SettingsView", () => ({
+  SettingsView: () => <div>Settings view</div>,
 }));
 
 const mockListen = vi.mocked(listen);
@@ -93,10 +102,13 @@ beforeEach(() => {
   useWorkingTreeStore.setState({
     refreshAll: vi.fn().mockResolvedValue(undefined),
   });
+  hookStore.useHookStore.setState({ runs: {} });
 });
 
 afterEach(() => {
   localStorage.removeItem("sidebarCollapsed");
+  localStorage.removeItem("hookOutputPaneHeight");
+  vi.restoreAllMocks();
 });
 
 describe("App repo-scoped effect", () => {
@@ -245,6 +257,87 @@ describe("App boot sequence", () => {
     // Boot is best-effort: a rejected restore step must not leave the user
     // stuck behind the splash screen.
     await waitFor(() => expect(screen.queryByText(/starting/i)).not.toBeInTheDocument());
+  });
+});
+
+describe("App hook integration", () => {
+  it("initializes hook listeners once and cleans them up on unmount", async () => {
+    const cleanup = vi.fn();
+    const init = vi.spyOn(hookStore, "initHookListeners").mockResolvedValue(cleanup);
+
+    const { unmount } = render(<App />);
+    await waitFor(() => expect(init).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByText(/starting/i)).not.toBeInTheDocument());
+    unmount();
+
+    expect(cleanup).toHaveBeenCalledTimes(1);
+  });
+
+  it("cleans up listeners that finish initializing after App unmounts", async () => {
+    let resolve!: (cleanup: () => void) => void;
+    const cleanup = vi.fn();
+    vi.spyOn(hookStore, "initHookListeners").mockReturnValue(
+      new Promise((r) => {
+        resolve = r;
+      }),
+    );
+
+    const { unmount } = render(<App />);
+    unmount();
+    resolve(cleanup);
+
+    await waitFor(() => expect(cleanup).toHaveBeenCalledTimes(1));
+  });
+
+  it("mounts hook output and status only in the active history graph column", async () => {
+    localStorage.setItem("hookOutputPaneHeight", "999");
+    hookStore.useHookStore.getState().started({
+      repoPath: "/repo",
+      runId: "run-1",
+      hook: "pre-commit",
+      operation: "commit",
+    });
+    hookStore.useHookStore.getState().appendOutput({
+      repoPath: "/repo",
+      runId: "run-1",
+      stream: "stdout",
+      chunk: "checking files",
+    });
+
+    render(<App />);
+    await waitFor(() => expect(screen.queryByText(/starting/i)).not.toBeInTheDocument());
+    expect(screen.getByRole("region", { name: /hook output/i })).toHaveStyle({ height: "480px" });
+    expect(screen.getByRole("contentinfo", { name: /git hook status/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "PRs" }));
+    expect(screen.queryByRole("region", { name: /hook output/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("contentinfo", { name: /git hook status/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+    expect(screen.queryByRole("region", { name: /hook output/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("contentinfo", { name: /git hook status/i })).not.toBeInTheDocument();
+  });
+
+  it("does not mount hook UI on welcome or full-screen merge views", async () => {
+    useRepoStore.setState({ currentRepo: null, activeRepoPath: null });
+    const { rerender } = render(<App />);
+    await waitFor(() => expect(screen.queryByText(/starting/i)).not.toBeInTheDocument());
+    expect(screen.queryByRole("contentinfo", { name: /git hook status/i })).not.toBeInTheDocument();
+
+    useRepoStore.setState({ currentRepo: repo, activeRepoPath: repo.path });
+    hookStore.useHookStore.getState().started({
+      repoPath: "/repo",
+      runId: "run-1",
+      hook: "pre-commit",
+      operation: "commit",
+    });
+    useMergeStore.setState({
+      status: { kind: "merge", sourceBranch: "feature", conflicts: [oneConflict] },
+    });
+    rerender(<App />);
+    await waitFor(() =>
+      expect(screen.queryByRole("contentinfo", { name: /git hook status/i })).not.toBeInTheDocument(),
+    );
   });
 });
 

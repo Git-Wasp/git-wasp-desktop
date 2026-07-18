@@ -7,6 +7,7 @@ import { CommitForm } from "./CommitForm";
 import { useWorkingTreeStore } from "../../stores/workingTreeStore";
 import { useGraphStore } from "../../stores/graphStore";
 import { useRepoStore } from "../../stores/repoStore";
+import { useHookStore } from "../../stores/hookStore";
 
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 
@@ -47,9 +48,32 @@ beforeEach(() => {
     fastForwardBranch,
     listFastForwardableBranches,
   });
+  useHookStore.setState({ runs: {} });
 });
 
 describe("CommitForm", () => {
+  it("locks repository commit and amend actions while its hook-aware operation runs", () => {
+    useRepoStore.setState({
+      currentRepo: { name: "r", path: "/repo", headBranch: "main" },
+    });
+    useWorkingTreeStore.setState({
+      headCommit: { oid: "abc", message: "Old", pushed: false },
+    });
+    useHookStore.getState().started({
+      repoPath: "/repo",
+      runId: "run-1",
+      hook: "pre-commit",
+      operation: "commit",
+    });
+
+    render(<CommitForm stagedCount={1} />);
+    fireEvent.change(screen.getByPlaceholderText(/summary/i), { target: { value: "Change" } });
+
+    expect(screen.getByRole("button", { name: "Running pre-commit…" })).toBeDisabled();
+    fireEvent.click(screen.getByLabelText(/amend last commit/i));
+    expect(screen.getByRole("button", { name: "Amend" })).toBeDisabled();
+  });
+
   it("disables Commit until there is a staged file and a subject", () => {
     const { rerender } = render(<CommitForm stagedCount={0} />);
     expect(screen.getByRole("button", { name: /^commit/i })).toBeDisabled();

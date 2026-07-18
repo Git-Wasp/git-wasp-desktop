@@ -5,6 +5,7 @@ import { useGraphStore } from "../graphStore";
 import { useWorkingTreeStore } from "../workingTreeStore";
 import { useAutoStashStore } from "../autoStashStore";
 import { useToastStore } from "../toastStore";
+import { useHookStore } from "../hookStore";
 import { AUTO_STASH_SENTINEL } from "../../lib/autoStash";
 
 const mockInvoke = vi.mocked(invoke);
@@ -25,6 +26,7 @@ beforeEach(() => {
   // get_graph_viewport call.
   useGraphStore.setState({ viewport: null, lastOffset: null, lastLimit: null, nodesByRow: new Map() });
   useAutoStashStore.setState({ pending: null });
+  useHookStore.setState({ runs: {} });
 });
 
 const emptyGraphViewport = { nodes: [], totalCount: 0, offset: 0 };
@@ -272,6 +274,28 @@ describe("repoStore", () => {
     const s = useRepoStore.getState();
     expect(s.openRepos).toEqual([repoA]);
     expect(s.activeRepoPath).toBe("/a");
+  });
+
+  it("closeRepo clears hook state only for the closed repository", async () => {
+    const repoA = { name: "a", path: "/a", headBranch: "main" };
+    useHookStore.getState().started({
+      repoPath: "/a",
+      runId: "a",
+      hook: "pre-commit",
+      operation: "commit",
+    });
+    useHookStore.getState().started({
+      repoPath: "/b",
+      runId: "b",
+      hook: "pre-push",
+      operation: "push",
+    });
+    mockByCommand({ close_repo: repoA, list_open_repos: [repoA] });
+
+    await useRepoStore.getState().closeRepo("/b");
+
+    expect(useHookStore.getState().runs["/b"]).toBeUndefined();
+    expect(useHookStore.getState().runs["/a"]).toBeDefined();
   });
 
   it("closeRepo clears state when the last tab is closed", async () => {

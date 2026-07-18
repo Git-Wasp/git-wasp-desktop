@@ -16,7 +16,10 @@ import { SplashScreen } from "./components/Splash/SplashScreen";
 import { ToastContainer } from "./components/ui/Toast";
 import { AutoStashDialog } from "./components/common/AutoStashDialog";
 import { ResizeHandle } from "./components/common/ResizeHandle";
+import { HookOutputPane } from "./components/GitHooks/HookOutputPane";
+import { HookStatusBar } from "./components/GitHooks/HookStatusBar";
 import { usePersistedWidth } from "./lib/usePersistedWidth";
+import { usePersistedSize } from "./lib/usePersistedSize";
 import { usePersistedBoolean } from "./lib/usePersistedBoolean";
 import { applyDiagnosticsPref } from "./lib/diagnostics";
 import { shouldScanWorkingTree } from "./lib/workingTreeSync";
@@ -31,6 +34,7 @@ import { useTagStore } from "./stores/tagStore";
 import { useThemeStore } from "./stores/themeStore";
 import { useWorkingTreeStore } from "./stores/workingTreeStore";
 import { useToastStore } from "./stores/toastStore";
+import { initHookListeners, useHookStore } from "./stores/hookStore";
 import type { View, HistoryRightMode } from "./types/view";
 
 // How many history rows to warm during boot so the graph isn't blank on reveal.
@@ -65,8 +69,30 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = usePersistedWidth("sidebarWidth", 220, 160, 400);
   const [detailWidth, setDetailWidth] = usePersistedWidth("detailWidth", 380, 280, 720);
   const [sidebarCollapsed, setSidebarCollapsed] = usePersistedBoolean("sidebarCollapsed", false);
+  const [hookPaneHeight, setHookPaneHeight] = usePersistedSize(
+    "hookOutputPaneHeight",
+    180,
+    100,
+    480,
+  );
   const [booted, setBooted] = useState(false);
   const [bootTask, setBootTask] = useState("Starting…");
+  const currentHookRun = useHookStore(
+    (s) => currentRepo ? s.runs[currentRepo.path] : undefined,
+  );
+
+  useEffect(() => {
+    let cleanup: (() => void) | undefined;
+    let cancelled = false;
+    void initHookListeners().then((unlisten) => {
+      if (cancelled) unlisten();
+      else cleanup = unlisten;
+    });
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  }, []);
 
   // Latches whether the in-progress merge ever had conflicts, so the surface
   // (full-screen editor vs. floating commit dialog) is decided once at merge
@@ -389,6 +415,14 @@ export default function App() {
                   />
                 )}
               </div>
+              {currentRepo && currentHookRun?.paneVisible && (
+                <HookOutputPane
+                  repoPath={currentRepo.path}
+                  height={hookPaneHeight}
+                  onResize={setHookPaneHeight}
+                />
+              )}
+              {currentRepo && <HookStatusBar repoPath={currentRepo.path} />}
             </div>
             <ResizeHandle
               ariaLabel="Resize detail panel"
