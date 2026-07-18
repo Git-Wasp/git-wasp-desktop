@@ -330,6 +330,79 @@ pub fn push(
     Ok(())
 }
 
+pub trait PushTransport {
+    fn push(
+        &self,
+        repo: &Repository,
+        remote_name: &str,
+        branch: &str,
+        token: Option<&str>,
+    ) -> anyhow::Result<()>;
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct DefaultPushTransport;
+
+impl PushTransport for DefaultPushTransport {
+    fn push(
+        &self,
+        repo: &Repository,
+        remote_name: &str,
+        branch: &str,
+        token: Option<&str>,
+    ) -> anyhow::Result<()> {
+        push(repo, remote_name, branch, token)
+    }
+}
+
+pub fn remote_branch_oid(
+    repo: &Repository,
+    remote_name: &str,
+    branch: &str,
+    token: Option<&str>,
+) -> anyhow::Result<git2::Oid> {
+    let mut remote = repo
+        .find_remote(remote_name)
+        .with_context(|| format!("remote '{remote_name}' not found"))?;
+    let mut callbacks = git2::RemoteCallbacks::new();
+    if let Some(token) = token {
+        let token = token.to_string();
+        callbacks
+            .credentials(move |_, _, _| git2::Cred::userpass_plaintext("x-access-token", &token));
+    }
+    let connection = remote
+        .connect_auth(git2::Direction::Fetch, Some(callbacks), None)
+        .context("failed to connect to remote")?;
+    let refname = format!("refs/heads/{branch}");
+    Ok(connection
+        .list()
+        .context("failed to list remote refs")?
+        .iter()
+        .find(|head| head.name() == refname)
+        .map(|head| head.oid())
+        .unwrap_or_else(git2::Oid::zero))
+}
+
+pub fn ssh_push_command(
+    repo: &Repository,
+    remote_name: &str,
+    branch: &str,
+    pre_push_enabled: bool,
+) -> anyhow::Result<std::process::Command> {
+    let workdir = repo.workdir().context("bare repo not supported")?;
+    let mut command = std::process::Command::new("git");
+    command.arg("push");
+    if !pre_push_enabled {
+        command.arg("--no-verify");
+    }
+    command
+        .arg("--")
+        .arg(remote_name)
+        .arg(branch)
+        .current_dir(workdir);
+    Ok(command)
+}
+
 /// Push an arbitrary refspec, choosing the git CLI for SSH remotes and git2 with
 /// a token for HTTPS — mirroring [`push`]. Used by the tag push/delete ops.
 fn push_refspec(

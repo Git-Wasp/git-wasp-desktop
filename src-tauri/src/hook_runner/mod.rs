@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
@@ -39,6 +40,147 @@ pub struct HookRunMetadata {
     pub run_id: String,
     pub hook: HookName,
     pub operation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PushHookInput {
+    pub hook_path: PathBuf,
+    pub remote_name: String,
+    pub remote_url: String,
+    pub local_ref: String,
+    pub local_oid: String,
+    pub remote_ref: String,
+    pub remote_oid: String,
+}
+
+fn runnable_hook(path: &std::path::Path) -> anyhow::Result<bool> {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return Ok(false);
+    };
+    if !metadata.is_file() {
+        return Ok(false);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        Ok(metadata.permissions().mode() & 0o111 != 0)
+    }
+    #[cfg(windows)]
+    {
+        Ok(true)
+    }
+}
+
+pub fn prepare_pre_push(
+    repo: &git2::Repository,
+    remote_name: &str,
+    branch: &str,
+    advertised_remote_oid: git2::Oid,
+) -> anyhow::Result<Option<PushHookInput>> {
+    let hook_path = match repo.config()?.get_path("core.hooksPath") {
+        Ok(path) if path.is_absolute() => path.join("pre-push"),
+        Ok(path) => repo
+            .workdir()
+            .context("bare repository does not support hooksPath relative to a worktree")?
+            .join(path)
+            .join("pre-push"),
+        Err(error) if error.code() == git2::ErrorCode::NotFound => {
+            repo.path().join("hooks").join("pre-push")
+        }
+        Err(error) => return Err(error).context("could not read core.hooksPath"),
+    };
+    if !runnable_hook(&hook_path)? {
+        return Ok(None);
+    }
+    let remote = repo
+        .find_remote(remote_name)
+        .with_context(|| format!("remote '{remote_name}' not found"))?;
+    let remote_url = remote
+        .url()
+        .context("remote URL is not valid UTF-8")?
+        .to_string();
+    let local_ref = format!("refs/heads/{branch}");
+    let local_oid = repo
+        .refname_to_id(&local_ref)
+        .with_context(|| format!("local branch ref '{local_ref}' not found"))?;
+    Ok(Some(PushHookInput {
+        hook_path,
+        remote_name: remote_name.to_string(),
+        remote_url,
+        local_ref: local_ref.clone(),
+        local_oid: local_oid.to_string(),
+        remote_ref: local_ref,
+        remote_oid: advertised_remote_oid.to_string(),
+    }))
+}
+
+pub fn run_pre_push<R: Runtime>(
+    app: &AppHandle<R>,
+    metadata: &HookRunMetadata,
+    input: PushHookInput,
+) -> anyhow::Result<()> {
+    let workdir = std::path::PathBuf::from(&metadata.repo_path);
+    let stdin = format!(
+        "{} {} {} {}\n",
+        input.local_ref, input.local_oid, input.remote_ref, input.remote_oid
+    );
+    let mut command = Command::new(&input.hook_path);
+    command
+        .arg(&input.remote_name)
+        .arg(&input.remote_url)
+        .current_dir(workdir);
+    let output = stream_command_after_started(app, metadata, command, Some(stdin.into_bytes()))?;
+    if !output.status.success() {
+        anyhow::bail!("pre-push failed; review hook output");
+    }
+    Ok(())
+}
+
+pub fn emit_started<R: Runtime>(
+    app: &AppHandle<R>,
+    metadata: &HookRunMetadata,
+) -> anyhow::Result<()> {
+    app.emit(
+        STARTED_EVENT,
+        HookStarted {
+            repo_path: metadata.repo_path.clone(),
+            run_id: metadata.run_id.clone(),
+            hook: metadata.hook,
+            operation: metadata.operation,
+        },
+    )
+    .context("could not emit hook started event")
+}
+
+pub fn emit_finished<R: Runtime>(
+    app: &AppHandle<R>,
+    metadata: &HookRunMetadata,
+    result: &anyhow::Result<()>,
+    exit_code: Option<i32>,
+    success_summary: &str,
+    failure_summary: &str,
+) -> anyhow::Result<()> {
+    app.emit(
+        FINISHED_EVENT,
+        HookFinished {
+            repo_path: metadata.repo_path.clone(),
+            run_id: metadata.run_id.clone(),
+            hook: metadata.hook,
+            outcome: if result.is_ok() {
+                HookOutcome::Succeeded
+            } else {
+                HookOutcome::Failed
+            },
+            exit_code,
+            summary: if result.is_ok() {
+                success_summary
+            } else {
+                failure_summary
+            }
+            .to_string(),
+        },
+    )
+    .context("could not emit hook finished event")
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -226,20 +368,31 @@ fn read_stream(mut reader: impl Read, stream: HookStream, sender: mpsc::Sender<R
 pub fn stream_command<R: Runtime>(
     app: &AppHandle<R>,
     metadata: &HookRunMetadata,
-    mut command: Command,
+    command: Command,
     stdin: Option<Vec<u8>>,
 ) -> anyhow::Result<Output> {
-    app.emit(
-        STARTED_EVENT,
-        HookStarted {
-            repo_path: metadata.repo_path.clone(),
-            run_id: metadata.run_id.clone(),
-            hook: metadata.hook,
-            operation: metadata.operation,
-        },
-    )
-    .context("could not emit hook started event")?;
+    stream_command_inner(app, metadata, command, stdin, true)
+}
 
+pub fn stream_command_after_started<R: Runtime>(
+    app: &AppHandle<R>,
+    metadata: &HookRunMetadata,
+    command: Command,
+    stdin: Option<Vec<u8>>,
+) -> anyhow::Result<Output> {
+    stream_command_inner(app, metadata, command, stdin, false)
+}
+
+fn stream_command_inner<R: Runtime>(
+    app: &AppHandle<R>,
+    metadata: &HookRunMetadata,
+    mut command: Command,
+    stdin: Option<Vec<u8>>,
+    start_event: bool,
+) -> anyhow::Result<Output> {
+    if start_event {
+        emit_started(app, metadata)?;
+    }
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
     if stdin.is_some() {
         command.stdin(Stdio::piped());
@@ -386,6 +539,180 @@ mod tests {
     use std::path::Path;
     use std::sync::{Arc, Mutex};
     use tauri::Listener;
+
+    struct PushFixture {
+        directory: tempfile::TempDir,
+        remote_directory: tempfile::TempDir,
+        local_oid: git2::Oid,
+        remote_oid: git2::Oid,
+    }
+
+    impl PushFixture {
+        fn new() -> Self {
+            Self::build(true)
+        }
+
+        fn without_remote_branch() -> Self {
+            Self::build(false)
+        }
+
+        fn build(with_remote_branch: bool) -> Self {
+            let directory = tempfile::tempdir().unwrap();
+            let remote_directory = tempfile::tempdir().unwrap();
+            let git = |directory: &Path, args: &[&str]| {
+                let output = Command::new("git")
+                    .arg("-C")
+                    .arg(directory)
+                    .args(args)
+                    .output()
+                    .unwrap();
+                assert!(
+                    output.status.success(),
+                    "git {args:?} failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            };
+            git(directory.path(), &["init", "-b", "main"]);
+            git(directory.path(), &["config", "user.name", "Git Wasp Test"]);
+            git(
+                directory.path(),
+                &["config", "user.email", "git-wasp@example.test"],
+            );
+            std::fs::write(directory.path().join("file.txt"), "initial\n").unwrap();
+            git(directory.path(), &["add", "file.txt"]);
+            git(directory.path(), &["commit", "-m", "initial"]);
+            git(remote_directory.path(), &["init", "--bare"]);
+            let remote_url = remote_directory.path().to_str().unwrap();
+            git(directory.path(), &["remote", "add", "origin", remote_url]);
+            if with_remote_branch {
+                git(directory.path(), &["push", "origin", "main"]);
+            }
+            let repo = git2::Repository::open(directory.path()).unwrap();
+            let local_oid = repo.refname_to_id("refs/heads/main").unwrap();
+            let remote_oid = if with_remote_branch {
+                repo.refname_to_id("refs/remotes/origin/main").unwrap()
+            } else {
+                git2::Oid::zero()
+            };
+            drop(repo);
+            Self {
+                directory,
+                remote_directory,
+                local_oid,
+                remote_oid,
+            }
+        }
+
+        fn repo(&self) -> git2::Repository {
+            git2::Repository::open(self.directory.path()).unwrap()
+        }
+
+        fn remote_url(&self) -> String {
+            self.remote_directory.path().display().to_string()
+        }
+
+        fn local_oid(&self) -> String {
+            self.local_oid.to_string()
+        }
+
+        fn remote_oid(&self) -> git2::Oid {
+            self.remote_oid
+        }
+
+        fn configure_hooks_path(&self, path: &str) {
+            let mut config = self.repo().config().unwrap();
+            config.set_str("core.hooksPath", path).unwrap();
+        }
+
+        #[cfg(unix)]
+        fn install_hook(&self, path: &str, contents: &str) {
+            use std::os::unix::fs::PermissionsExt;
+            let path = self.directory.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, contents).unwrap();
+            let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(path, permissions).unwrap();
+        }
+
+        #[cfg(unix)]
+        fn install_non_executable_hook(&self, name: &str, contents: &str) {
+            use std::os::unix::fs::PermissionsExt;
+            let path = self.directory.path().join(".git/hooks").join(name);
+            std::fs::write(&path, contents).unwrap();
+            let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+            permissions.set_mode(0o644);
+            std::fs::set_permissions(path, permissions).unwrap();
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pre_push_honors_core_hooks_path_and_builds_git_input() {
+        let fixture = PushFixture::new();
+        fixture.configure_hooks_path(".custom-hooks");
+        fixture.install_hook(
+            ".custom-hooks/pre-push",
+            "#!/bin/sh\ncat > .git/pre-push-stdin\nprintf '%s\\n%s\\n' \"$1\" \"$2\" > .git/pre-push-args\n",
+        );
+        let input = prepare_pre_push(&fixture.repo(), "origin", "main", fixture.remote_oid())
+            .unwrap()
+            .unwrap();
+        assert_eq!(input.remote_name, "origin");
+        assert_eq!(input.remote_url, fixture.remote_url());
+        assert_eq!(input.local_ref, "refs/heads/main");
+        assert_eq!(input.local_oid, fixture.local_oid());
+        assert_eq!(input.remote_ref, "refs/heads/main");
+        let expected_stdin = format!(
+            "{} {} {} {}\n",
+            input.local_ref, input.local_oid, input.remote_ref, input.remote_oid
+        );
+        let app = tauri::test::mock_app();
+        let metadata = HookRunMetadata {
+            repo_path: fixture.directory.path().display().to_string(),
+            run_id: "pre-push-input".into(),
+            hook: HookName::PrePush,
+            operation: "push",
+        };
+        emit_started(app.handle(), &metadata).unwrap();
+        run_pre_push(app.handle(), &metadata, input).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(fixture.directory.path().join(".git/pre-push-stdin")).unwrap(),
+            expected_stdin
+        );
+        assert_eq!(
+            std::fs::read_to_string(fixture.directory.path().join(".git/pre-push-args")).unwrap(),
+            format!("origin\n{}\n", fixture.remote_url())
+        );
+    }
+
+    #[test]
+    fn first_push_uses_zero_remote_oid() {
+        let fixture = PushFixture::without_remote_branch();
+        #[cfg(unix)]
+        fixture.install_hook(".git/hooks/pre-push", "#!/bin/sh\nexit 0\n");
+        let input = prepare_pre_push(&fixture.repo(), "origin", "main", git2::Oid::zero())
+            .unwrap()
+            .unwrap();
+        assert_eq!(input.remote_oid, "0000000000000000000000000000000000000000");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn missing_or_non_executable_pre_push_is_skipped() {
+        let fixture = PushFixture::new();
+        assert!(
+            prepare_pre_push(&fixture.repo(), "origin", "main", fixture.remote_oid())
+                .unwrap()
+                .is_none()
+        );
+        fixture.install_non_executable_hook("pre-push", "#!/bin/sh\nexit 1\n");
+        assert!(
+            prepare_pre_push(&fixture.repo(), "origin", "main", fixture.remote_oid())
+                .unwrap()
+                .is_none()
+        );
+    }
 
     struct CommitFixture {
         directory: tempfile::TempDir,

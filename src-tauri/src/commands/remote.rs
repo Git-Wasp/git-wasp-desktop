@@ -1,7 +1,8 @@
 use crate::merge_ops::MergeOutcome;
-use crate::remote_ops::{self, FetchResult, PullFfOutcome, PullResult, RemoteInfo};
+use crate::remote_ops::{self, FetchResult, PullFfOutcome, PullResult, PushTransport, RemoteInfo};
 use crate::repo_manager::AppState;
-use tauri::State;
+use anyhow::Context;
+use tauri::{AppHandle, State};
 
 // Not `async`: every command body below is 100% synchronous git2/CLI-passthrough
 // work with no `.await` points — see commands/graph.rs for the full rationale.
@@ -220,27 +221,138 @@ pub fn pull_branch(
     Ok(result)
 }
 
+fn push_https_with_hook<R: tauri::Runtime, T: PushTransport>(
+    app: &AppHandle<R>,
+    repo_path: &std::path::Path,
+    metadata: &crate::hook_runner::HookRunMetadata,
+    remote_name: &str,
+    branch: &str,
+    token: Option<&str>,
+    pre_push_enabled: bool,
+    advertised_remote_oid: Option<git2::Oid>,
+    transport: &T,
+) -> anyhow::Result<()> {
+    crate::hook_runner::emit_started(app, metadata)?;
+    let prepared: anyhow::Result<git2::Repository> = (|| {
+        let repo = git2::Repository::open(repo_path).context("could not reopen repository")?;
+        let advertised_remote_oid = match advertised_remote_oid {
+            Some(oid) => oid,
+            None => remote_ops::remote_branch_oid(&repo, remote_name, branch, token)?,
+        };
+        let hook = if pre_push_enabled {
+            crate::hook_runner::prepare_pre_push(&repo, remote_name, branch, advertised_remote_oid)?
+        } else {
+            None
+        };
+        if let Some(input) = hook {
+            crate::hook_runner::run_pre_push(app, metadata, input)?;
+        }
+        Ok(repo)
+    })();
+    let (result, failure_summary) = match prepared {
+        Ok(repo) => (
+            transport
+                .push(&repo, remote_name, branch, token)
+                .context("push failed after pre-push completed"),
+            "push failed after pre-push completed",
+        ),
+        Err(error) => (
+            Err(error).context("pre-push failed; review hook output"),
+            "pre-push failed; review hook output",
+        ),
+    };
+    let emit_result = crate::hook_runner::emit_finished(
+        app,
+        metadata,
+        &result,
+        None,
+        "push completed",
+        failure_summary,
+    );
+    match result {
+        Err(error) => Err(error),
+        Ok(()) => {
+            emit_result?;
+            Ok(())
+        }
+    }
+}
+
+fn push_ssh<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    repo_path: &std::path::Path,
+    metadata: &crate::hook_runner::HookRunMetadata,
+    remote_name: &str,
+    branch: &str,
+    pre_push_enabled: bool,
+) -> anyhow::Result<()> {
+    crate::hook_runner::emit_started(app, metadata)?;
+    let command_result = (|| {
+        let repo = git2::Repository::open(repo_path).context("could not reopen repository")?;
+        let command = remote_ops::ssh_push_command(&repo, remote_name, branch, pre_push_enabled)?;
+        crate::hook_runner::stream_command_after_started(app, metadata, command, None)
+    })();
+    let exit_code = command_result
+        .as_ref()
+        .ok()
+        .and_then(|output| output.status.code());
+    let result = command_result.and_then(|output| {
+        if output.status.success() {
+            Ok(())
+        } else {
+            anyhow::bail!("push failed; review hook output")
+        }
+    });
+    let emit_result = crate::hook_runner::emit_finished(
+        app,
+        metadata,
+        &result,
+        exit_code,
+        "push completed",
+        "push failed; review hook output",
+    );
+    match result {
+        Err(error) => Err(error),
+        Ok(()) => {
+            emit_result?;
+            Ok(())
+        }
+    }
+}
+
 #[tauri::command]
-pub fn push_branch(
+pub async fn push_branch(
+    repo_path: String,
     remote_name: Option<String>,
     branch: Option<String>,
+    app_handle: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let remote = remote_name.as_deref().unwrap_or("origin");
-
-    let (host, head_branch) = state
-        .with_repo(|repo| {
-            let known = state.known_github_hosts().unwrap_or_default();
-            let host = remote_ops::detect_remote_info(repo, &known)
-                .map(|info| info.host)
-                .ok();
-            let head = repo
-                .head()
-                .ok()
-                .and_then(|h| h.shorthand().map(|s| s.to_string()));
-            (host, head)
-        })
-        .map_err(|e| e.to_string())?;
+    let remote = remote_name.unwrap_or_else(|| "origin".to_string());
+    let preferences = state
+        .hook_preferences(&repo_path)
+        .map_err(|error| error.to_string())?;
+    let (worktree, _) = state
+        .manager
+        .open_repo_worktree_and_graph_handle(&repo_path)
+        .map_err(|error| error.to_string())?;
+    let repo = git2::Repository::open(&worktree).map_err(|error| error.to_string())?;
+    let (host, head_branch, remote_url) = {
+        let known = state.known_github_hosts().unwrap_or_default();
+        let head = repo
+            .head()
+            .ok()
+            .and_then(|h| h.shorthand().map(|s| s.to_string()));
+        let remote_url = repo
+            .find_remote(&remote)
+            .ok()
+            .and_then(|remote| remote.url().map(str::to_string))
+            .ok_or_else(|| format!("remote '{remote}' has no URL"))?;
+        let host = remote_ops::parse_remote_url(&remote_url, &known)
+            .map(|info| info.host)
+            .ok();
+        (host, head, remote_url)
+    };
 
     let branch_name = branch
         .or(head_branch)
@@ -248,11 +360,43 @@ pub fn push_branch(
     let token = host
         .as_deref()
         .and_then(|h| state.credentials.load(h).ok().flatten());
-
-    state
-        .with_repo(|repo| remote_ops::push(repo, remote, &branch_name, token.as_deref()))
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())
+    let guard = state
+        .begin_hook_run(&repo_path)
+        .map_err(|error| error.to_string())?;
+    let metadata = crate::hook_runner::HookRunMetadata {
+        repo_path,
+        run_id: guard.run_id().to_string(),
+        hook: crate::hook_runner::HookName::PrePush,
+        operation: "push",
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = guard;
+        if remote_ops::is_ssh_remote(&remote_url) {
+            push_ssh(
+                &app_handle,
+                &worktree,
+                &metadata,
+                &remote,
+                &branch_name,
+                preferences.pre_push,
+            )
+        } else {
+            push_https_with_hook(
+                &app_handle,
+                &worktree,
+                &metadata,
+                &remote,
+                &branch_name,
+                token.as_deref(),
+                preferences.pre_push,
+                None,
+                &remote_ops::DefaultPushTransport,
+            )
+        }
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 // Joins `dest_dir`/`repo_name` into the clone destination, rejecting a
@@ -299,6 +443,126 @@ pub fn clone_repo(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::remote_ops::PushTransport;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Default)]
+    struct RecordingPushTransport(AtomicUsize);
+
+    impl PushTransport for RecordingPushTransport {
+        fn push(
+            &self,
+            _repo: &git2::Repository,
+            _remote_name: &str,
+            _branch: &str,
+            _token: Option<&str>,
+        ) -> anyhow::Result<()> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    impl RecordingPushTransport {
+        fn call_count(&self) -> usize {
+            self.0.load(Ordering::SeqCst)
+        }
+    }
+
+    #[cfg(unix)]
+    fn push_fixture(hook: &str) -> tempfile::TempDir {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .arg("-C")
+                .arg(directory.path())
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        git(&["init", "-b", "main"]);
+        git(&["config", "user.name", "Git Wasp Test"]);
+        git(&["config", "user.email", "git-wasp@example.test"]);
+        std::fs::write(directory.path().join("file.txt"), "initial\n").unwrap();
+        git(&["add", "file.txt"]);
+        git(&["commit", "-m", "initial"]);
+        git(&["remote", "add", "origin", "https://example.test/repo.git"]);
+        let hook_path = directory.path().join(".git/hooks/pre-push");
+        std::fs::write(&hook_path, hook).unwrap();
+        let mut permissions = std::fs::metadata(&hook_path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(hook_path, permissions).unwrap();
+        directory
+    }
+
+    #[cfg(unix)]
+    fn push_with_hook_for_test(
+        app: &tauri::App<tauri::test::MockRuntime>,
+        fixture: &tempfile::TempDir,
+        enabled: bool,
+        transport: &RecordingPushTransport,
+    ) -> anyhow::Result<()> {
+        let metadata = crate::hook_runner::HookRunMetadata {
+            repo_path: fixture.path().display().to_string(),
+            run_id: "push-test".into(),
+            hook: crate::hook_runner::HookName::PrePush,
+            operation: "push",
+        };
+        push_https_with_hook(
+            app.handle(),
+            fixture.path(),
+            &metadata,
+            "origin",
+            "main",
+            None,
+            enabled,
+            Some(git2::Oid::zero()),
+            transport,
+        )
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_pre_push_never_calls_transport() {
+        let fixture = push_fixture("#!/bin/sh\nexit 7\n");
+        let transport = RecordingPushTransport::default();
+        let app = tauri::test::mock_app();
+        let finished = std::sync::Arc::new(std::sync::Mutex::new(0));
+        let finished_events = std::sync::Arc::clone(&finished);
+        use tauri::Listener;
+        app.listen(crate::hook_runner::FINISHED_EVENT, move |_| {
+            *finished_events.lock().unwrap() += 1;
+        });
+        let result = push_with_hook_for_test(&app, &fixture, true, &transport);
+        assert!(result.is_err());
+        assert_eq!(transport.call_count(), 0);
+        assert_eq!(*finished.lock().unwrap(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn successful_pre_push_calls_transport_once() {
+        let fixture = push_fixture("#!/bin/sh\nexit 0\n");
+        let transport = RecordingPushTransport::default();
+        let app = tauri::test::mock_app();
+        push_with_hook_for_test(&app, &fixture, true, &transport).unwrap();
+        assert_eq!(transport.call_count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn disabled_pre_push_calls_transport_once() {
+        let fixture = push_fixture("#!/bin/sh\nexit 7\n");
+        let transport = RecordingPushTransport::default();
+        let app = tauri::test::mock_app();
+        push_with_hook_for_test(&app, &fixture, false, &transport).unwrap();
+        assert_eq!(transport.call_count(), 1);
+    }
 
     #[test]
     fn resolve_clone_dest_joins_dir_and_name() {
