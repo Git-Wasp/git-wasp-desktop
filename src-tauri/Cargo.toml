@@ -38,5 +38,6 @@ notify-debouncer-full = "0.7.0"
 ci = []
 
 [dev-dependencies]
+tauri = { version = "2", features = ["test"] }
 tempfile = "3"
 httpmock = "0.8"

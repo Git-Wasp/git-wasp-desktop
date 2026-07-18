@@ -6,7 +6,7 @@ use std::sync::{mpsc, Arc, Mutex, OnceLock};
 
 use anyhow::Context;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Runtime};
 
 pub const STARTED_EVENT: &str = "git-hook://started";
 pub const OUTPUT_EVENT: &str = "git-hook://output";
@@ -133,20 +133,85 @@ fn decode_output(bytes: &[u8]) -> String {
 }
 
 enum ReaderMessage {
-    Chunk(HookStream, Vec<u8>),
+    Chunk(HookStream, String),
     Error(std::io::Error),
+}
+
+fn send_decoded(
+    pending: &mut Vec<u8>,
+    stream: HookStream,
+    sender: &mpsc::Sender<ReaderMessage>,
+    eof: bool,
+) -> bool {
+    loop {
+        match std::str::from_utf8(pending) {
+            Ok(text) => {
+                if !text.is_empty()
+                    && sender
+                        .send(ReaderMessage::Chunk(stream, text.to_string()))
+                        .is_err()
+                {
+                    return false;
+                }
+                pending.clear();
+                return true;
+            }
+            Err(error) => {
+                let valid_up_to = error.valid_up_to();
+                if valid_up_to > 0 {
+                    let valid = std::str::from_utf8(&pending[..valid_up_to])
+                        .expect("UTF-8 error's valid prefix must be valid");
+                    if sender
+                        .send(ReaderMessage::Chunk(stream, valid.to_string()))
+                        .is_err()
+                    {
+                        return false;
+                    }
+                    pending.drain(..valid_up_to);
+                    continue;
+                }
+                match error.error_len() {
+                    Some(invalid_length) => {
+                        if sender
+                            .send(ReaderMessage::Chunk(stream, "\u{fffd}".to_string()))
+                            .is_err()
+                        {
+                            return false;
+                        }
+                        pending.drain(..invalid_length);
+                    }
+                    None if eof => {
+                        if sender
+                            .send(ReaderMessage::Chunk(
+                                stream,
+                                String::from_utf8_lossy(pending).into_owned(),
+                            ))
+                            .is_err()
+                        {
+                            return false;
+                        }
+                        pending.clear();
+                        return true;
+                    }
+                    None => return true,
+                }
+            }
+        }
+    }
 }
 
 fn read_stream(mut reader: impl Read, stream: HookStream, sender: mpsc::Sender<ReaderMessage>) {
     let mut buffer = [0_u8; 4096];
+    let mut pending = Vec::new();
     loop {
         match reader.read(&mut buffer) {
-            Ok(0) => break,
+            Ok(0) => {
+                send_decoded(&mut pending, stream, &sender, true);
+                break;
+            }
             Ok(length) => {
-                if sender
-                    .send(ReaderMessage::Chunk(stream, buffer[..length].to_vec()))
-                    .is_err()
-                {
+                pending.extend_from_slice(&buffer[..length]);
+                if !send_decoded(&mut pending, stream, &sender, false) {
                     break;
                 }
             }
@@ -158,8 +223,8 @@ fn read_stream(mut reader: impl Read, stream: HookStream, sender: mpsc::Sender<R
     }
 }
 
-pub fn stream_command(
-    app: &AppHandle,
+pub fn stream_command<R: Runtime>(
+    app: &AppHandle<R>,
     metadata: &HookRunMetadata,
     mut command: Command,
     stdin: Option<Vec<u8>>,
@@ -191,7 +256,7 @@ pub fn stream_command(
     let child_stdin = child.stdin.take();
     let (sender, receiver) = mpsc::channel();
 
-    std::thread::scope(|scope| -> anyhow::Result<()> {
+    let stream_result = std::thread::scope(|scope| -> anyhow::Result<()> {
         let stdout_sender = sender.clone();
         scope.spawn(move || read_stream(stdout, HookStream::Stdout, stdout_sender));
         let stderr_sender = sender.clone();
@@ -208,26 +273,35 @@ pub fn stream_command(
 
         for message in receiver {
             match message {
-                ReaderMessage::Chunk(stream, bytes) => app
-                    .emit(
-                        OUTPUT_EVENT,
-                        HookOutput {
-                            repo_path: metadata.repo_path.clone(),
-                            run_id: metadata.run_id.clone(),
-                            stream,
-                            chunk: decode_output(&bytes),
-                        },
-                    )
-                    .context("could not emit hook output event")?,
+                ReaderMessage::Chunk(stream, chunk) => {
+                    if let Err(error) = app
+                        .emit(
+                            OUTPUT_EVENT,
+                            HookOutput {
+                                repo_path: metadata.repo_path.clone(),
+                                run_id: metadata.run_id.clone(),
+                                stream,
+                                chunk,
+                            },
+                        )
+                        .context("could not emit hook output event")
+                    {
+                        let _ = child.kill();
+                        return Err(error);
+                    }
+                }
                 ReaderMessage::Error(error) => {
-                    return Err(error).context("could not stream hook command output")
+                    let _ = child.kill();
+                    return Err(error).context("could not stream hook command output");
                 }
             }
         }
         Ok(())
-    })?;
+    });
 
-    let status = child.wait().context("could not wait for hook command")?;
+    let wait_result = child.wait().context("could not wait for hook command");
+    stream_result?;
+    let status = wait_result?;
     Ok(Output {
         status,
         stdout: Vec::new(),
@@ -238,10 +312,49 @@ pub fn stream_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
+    use tauri::Listener;
 
     #[test]
     fn invalid_utf8_is_decoded_lossily() {
         assert_eq!(decode_output(&[b'o', b'k', 0xff]), "ok\u{fffd}");
+    }
+
+    struct OneByteAtATime {
+        bytes: std::vec::IntoIter<u8>,
+    }
+
+    impl Read for OneByteAtATime {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            match self.bytes.next() {
+                Some(byte) => {
+                    buffer[0] = byte;
+                    Ok(1)
+                }
+                None => Ok(0),
+            }
+        }
+    }
+
+    #[test]
+    fn stream_decoder_preserves_split_utf8_and_replaces_invalid_and_incomplete_bytes() {
+        let (sender, receiver) = mpsc::channel();
+        read_stream(
+            OneByteAtATime {
+                bytes: vec![b'a', 0xe2, 0x82, 0xac, 0xff, 0xe2, 0x82].into_iter(),
+            },
+            HookStream::Stdout,
+            sender,
+        );
+
+        let text = receiver
+            .into_iter()
+            .map(|message| match message {
+                ReaderMessage::Chunk(_, chunk) => chunk,
+                ReaderMessage::Error(error) => panic!("{error}"),
+            })
+            .collect::<String>();
+        assert_eq!(text, "a€\u{fffd}\u{fffd}");
     }
 
     #[test]
@@ -318,5 +431,84 @@ mod tests {
                 "summary": "pre-push failed"
             })
         );
+    }
+
+    #[test]
+    fn stream_command_child() {
+        if std::env::var_os("GIT_WASP_STREAM_COMMAND_CHILD").is_none() {
+            return;
+        }
+        let mut stdin = String::new();
+        std::io::stdin().read_to_string(&mut stdin).unwrap();
+        println!(
+            "cwd={};stdin={stdin};unicode=€",
+            std::env::current_dir().unwrap().display()
+        );
+        eprintln!("stderr=problem");
+        std::process::exit(7);
+    }
+
+    #[test]
+    fn stream_command_runs_in_caller_directory_and_streams_process_io() {
+        let app = tauri::test::mock_app();
+        let events = Arc::new(Mutex::new(Vec::<(String, String)>::new()));
+        for event_name in [STARTED_EVENT, OUTPUT_EVENT] {
+            let events = Arc::clone(&events);
+            app.listen(event_name, move |event| {
+                events
+                    .lock()
+                    .unwrap()
+                    .push((event_name.to_string(), event.payload().to_string()));
+            });
+        }
+
+        let directory = tempfile::tempdir().unwrap();
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
+            .current_dir(directory.path())
+            .env("GIT_WASP_STREAM_COMMAND_CHILD", "1")
+            .arg("--exact")
+            .arg("hook_runner::tests::stream_command_child")
+            .arg("--nocapture");
+        let metadata = HookRunMetadata {
+            repo_path: directory.path().display().to_string(),
+            run_id: "integration-run".into(),
+            hook: HookName::PreCommit,
+            operation: "commit",
+        };
+
+        let output = stream_command(
+            app.handle(),
+            &metadata,
+            command,
+            Some(b"from-parent".to_vec()),
+        )
+        .unwrap();
+
+        assert_eq!(output.status.code(), Some(7));
+        assert!(output.stdout.is_empty());
+        assert!(output.stderr.is_empty());
+        let events = events.lock().unwrap();
+        assert_eq!(events[0].0, STARTED_EVENT);
+        let output_events = events
+            .iter()
+            .filter(|(name, _)| name == OUTPUT_EVENT)
+            .map(|(_, payload)| serde_json::from_str::<serde_json::Value>(payload).unwrap())
+            .collect::<Vec<_>>();
+        let stream_text = |stream| {
+            output_events
+                .iter()
+                .filter(|event| event["stream"] == stream)
+                .map(|event| event["chunk"].as_str().unwrap())
+                .collect::<String>()
+        };
+        let stdout = stream_text("stdout");
+        assert!(stdout.contains(&format!(
+            "cwd={}",
+            std::fs::canonicalize(directory.path()).unwrap().display()
+        )));
+        assert!(stdout.contains("stdin=from-parent"));
+        assert!(stdout.contains("unicode=€"));
+        assert!(stream_text("stderr").contains("stderr=problem"));
     }
 }

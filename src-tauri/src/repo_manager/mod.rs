@@ -736,7 +736,11 @@ impl AppState {
         &self,
         repo_path: &str,
     ) -> anyhow::Result<crate::hook_runner::HookRunGuard> {
-        self.hook_runs.begin(repo_path)
+        let repo_key = self.manager.require_open_repo_key(repo_path)?;
+        let repo_key = repo_key
+            .to_str()
+            .context("open repository path is not valid UTF-8")?;
+        self.hook_runs.begin(repo_key)
     }
 
     pub fn known_github_hosts(&self) -> anyhow::Result<Vec<String>> {
@@ -1230,6 +1234,27 @@ mod tests {
             .set_hook_preferences("/tmp/not-open", HookPreferences::default())
             .unwrap_err();
         assert!(error.to_string().contains("repository not open"));
+    }
+
+    #[test]
+    fn hook_runs_require_and_share_the_open_normalized_repository_key() {
+        let (dir, _) = make_git_repo_with_commit();
+        let state = AppState::new();
+        let info = state.manager.open(dir.path().to_str().unwrap()).unwrap();
+        let first = state.begin_hook_run(&info.path).unwrap();
+
+        let alias = dir.path().join(".").to_string_lossy().into_owned();
+        assert!(state
+            .begin_hook_run(&alias)
+            .unwrap_err()
+            .to_string()
+            .contains("repository not open"));
+        assert_eq!(
+            state.begin_hook_run(&info.path).unwrap_err().to_string(),
+            "a hook-aware operation is already running for this repository"
+        );
+        drop(first);
+        assert!(state.begin_hook_run(&info.path).is_ok());
     }
 
     /// Task B2: `with_repo_mut` must flag the graph cache dirty after any
