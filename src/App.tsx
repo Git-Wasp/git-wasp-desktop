@@ -34,7 +34,7 @@ import { useTagStore } from "./stores/tagStore";
 import { useThemeStore } from "./stores/themeStore";
 import { useWorkingTreeStore } from "./stores/workingTreeStore";
 import { useToastStore } from "./stores/toastStore";
-import { initHookListeners, useHookStore } from "./stores/hookStore";
+import { initHookListeners, selectHookRun, useHookStore } from "./stores/hookStore";
 import type { View, HistoryRightMode } from "./types/view";
 
 // How many history rows to warm during boot so the graph isn't blank on reveal.
@@ -78,7 +78,7 @@ export default function App() {
   const [booted, setBooted] = useState(false);
   const [bootTask, setBootTask] = useState("Starting…");
   const currentHookRun = useHookStore(
-    (s) => currentRepo ? s.runs[currentRepo.path] : undefined,
+    (s) => selectHookRun(currentRepo?.path ?? null)(s),
   );
 
   useEffect(() => {

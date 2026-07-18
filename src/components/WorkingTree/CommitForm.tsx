@@ -8,7 +8,7 @@ import { Input } from "../ui/Input";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { useGraphStore, GRAPH_INITIAL_LIMIT } from "../../stores/graphStore";
 import { renderMarkdown, MARKDOWN_TAB_OPTIONS, type MarkdownTab } from "../../lib/markdown";
-import { useHookStore } from "../../stores/hookStore";
+import { selectHookRun, useHookStore } from "../../stores/hookStore";
 
 /** Split a commit message into its subject line and (blank-line-separated) body. */
 function splitMessage(message: string): { subject: string; body: string } {
@@ -33,10 +33,10 @@ export function CommitForm({
   const { fetchViewport } = useGraphStore();
   const currentRepo = useRepoStore((s) => s.currentRepo);
   const repoHookRunning = useHookStore(
-    (s) => currentRepo ? s.runs[currentRepo.path]?.status === "running" : false,
+    (s) => selectHookRun(currentRepo?.path ?? null)(s)?.status === "running",
   );
   const runningHook = useHookStore(
-    (s) => currentRepo ? s.runs[currentRepo.path]?.hook ?? null : null,
+    (s) => selectHookRun(currentRepo?.path ?? null)(s)?.hook ?? null,
   );
   const createBranch = useRepoStore((s) => s.createBranch);
   const checkoutBranch = useRepoStore((s) => s.checkoutBranch);

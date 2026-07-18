@@ -14,7 +14,7 @@ import { Tooltip } from "../ui/Tooltip";
 import { BranchFocusIcon, BranchIcon, ColumnsIcon, DensityIcon, PullIcon, PushIcon, RefreshIcon, SearchIcon, SplitViewIcon, TargetIcon } from "../ui/icons";
 import { GRAPH_DENSITY, nextDensity } from "../../lib/graphDensity";
 import { OPTIONAL_COLUMN_LABELS } from "./columnModel";
-import { useHookStore } from "../../stores/hookStore";
+import { selectHookRun, useHookStore } from "../../stores/hookStore";
 
 const barStyle: React.CSSProperties = {
   display: "flex",
@@ -56,10 +56,10 @@ export function HistoryToolbar({ onJumpToHead }: { onJumpToHead?: () => void } =
   const toggleColumn = useGraphStore((s) => s.toggleColumn);
   const { currentRepo, createBranch, checkoutBranch } = useRepoStore();
   const repoHookRunning = useHookStore(
-    (s) => currentRepo ? s.runs[currentRepo.path]?.status === "running" : false,
+    (s) => selectHookRun(currentRepo?.path ?? null)(s)?.status === "running",
   );
   const runningHook = useHookStore(
-    (s) => currentRepo ? s.runs[currentRepo.path]?.hook ?? null : null,
+    (s) => selectHookRun(currentRepo?.path ?? null)(s)?.hook ?? null,
   );
   const remoteInfo = useGithubStore((s) => s.remoteInfo);
   const loadMergeStatus = useMergeStore((s) => s.loadStatus);

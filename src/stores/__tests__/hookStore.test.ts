@@ -36,6 +36,12 @@ beforeEach(() => {
 });
 
 describe("hookStore", () => {
+  it("selects Windows repository paths using the normalized event key", () => {
+    useHookStore.getState().started(started("C:\\work\\repo\\", "run-win"));
+
+    expect(selectHookRun("C:\\work\\repo")(useHookStore.getState())?.status).toBe("running");
+  });
+
   it("isolates repositories and rejects stale events", () => {
     const store = useHookStore.getState();
     store.started(started("/a", "run-2"));

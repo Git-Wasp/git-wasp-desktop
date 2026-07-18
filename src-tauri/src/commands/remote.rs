@@ -221,53 +221,91 @@ pub fn pull_branch(
     Ok(result)
 }
 
-fn push_https_with_hook<R: tauri::Runtime, T: PushTransport>(
-    app: &AppHandle<R>,
-    repo_path: &std::path::Path,
-    metadata: &crate::hook_runner::HookRunMetadata,
-    remote_name: &str,
-    branch: &str,
-    token: Option<&str>,
+struct HttpsPushRequest<'a> {
+    repo_path: &'a std::path::Path,
+    metadata: &'a crate::hook_runner::HookRunMetadata,
+    remote_name: &'a str,
+    branch: &'a str,
+    token: Option<&'a str>,
     pre_push_enabled: bool,
     advertised_remote_oid: Option<git2::Oid>,
+}
+
+fn push_https_with_hook<R: tauri::Runtime, T: PushTransport>(
+    app: &AppHandle<R>,
+    request: HttpsPushRequest<'_>,
     transport: &T,
 ) -> anyhow::Result<()> {
-    crate::hook_runner::emit_started(app, metadata)?;
-    let prepared: anyhow::Result<git2::Repository> = (|| {
-        let repo = git2::Repository::open(repo_path).context("could not reopen repository")?;
-        let advertised_remote_oid = match advertised_remote_oid {
-            Some(oid) => oid,
-            None => remote_ops::remote_branch_oid(&repo, remote_name, branch, token)?,
-        };
-        let hook = if pre_push_enabled {
-            crate::hook_runner::prepare_pre_push(&repo, remote_name, branch, advertised_remote_oid)?
-        } else {
-            None
-        };
-        if let Some(input) = hook {
-            crate::hook_runner::run_pre_push(app, metadata, input)?;
+    crate::hook_runner::emit_started(app, request.metadata)?;
+    let prepared: anyhow::Result<(git2::Repository, Option<crate::hook_runner::PushHookInput>)> =
+        (|| {
+            let repo =
+                git2::Repository::open(request.repo_path).context("could not reopen repository")?;
+            let advertised_remote_oid = match request.advertised_remote_oid {
+                Some(oid) => oid,
+                None => remote_ops::remote_branch_oid(
+                    &repo,
+                    request.remote_name,
+                    request.branch,
+                    request.token,
+                )?,
+            };
+            let hook = if request.pre_push_enabled {
+                crate::hook_runner::prepare_pre_push(
+                    &repo,
+                    request.remote_name,
+                    request.branch,
+                    advertised_remote_oid,
+                )?
+            } else {
+                None
+            };
+            Ok((repo, hook))
+        })();
+    let (repo, hook) = match prepared {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            let result = Err(error).context("push preparation failed");
+            crate::hook_runner::emit_finished(
+                app,
+                request.metadata,
+                &result,
+                None,
+                "push completed",
+                "push preparation failed",
+            )?;
+            return result;
         }
-        Ok(repo)
-    })();
-    let (result, failure_summary) = match prepared {
-        Ok(repo) => (
-            transport
-                .push(&repo, remote_name, branch, token)
-                .context("push failed after pre-push completed"),
-            "push failed after pre-push completed",
-        ),
-        Err(error) => (
-            Err(error).context("pre-push failed; review hook output"),
-            "pre-push failed; review hook output",
-        ),
     };
+    if let Some(input) = hook {
+        if let Err(error) = crate::hook_runner::run_pre_push(app, request.metadata, input) {
+            let summary = if error.to_string() == "pre-push failed; review hook output" {
+                "pre-push failed; review hook output"
+            } else {
+                "could not launch pre-push hook"
+            };
+            let result = Err(error).context(summary);
+            crate::hook_runner::emit_finished(
+                app,
+                request.metadata,
+                &result,
+                None,
+                "push completed",
+                summary,
+            )?;
+            return result;
+        }
+    }
+    let result = transport
+        .push(&repo, request.remote_name, request.branch, request.token)
+        .context("push transport failed");
     let emit_result = crate::hook_runner::emit_finished(
         app,
-        metadata,
+        request.metadata,
         &result,
         None,
         "push completed",
-        failure_summary,
+        "push transport failed",
     );
     match result {
         Err(error) => Err(error),
@@ -383,13 +421,15 @@ pub async fn push_branch(
         } else {
             push_https_with_hook(
                 &app_handle,
-                &worktree,
-                &metadata,
-                &remote,
-                &branch_name,
-                token.as_deref(),
-                preferences.pre_push,
-                None,
+                HttpsPushRequest {
+                    repo_path: &worktree,
+                    metadata: &metadata,
+                    remote_name: &remote,
+                    branch: &branch_name,
+                    token: token.as_deref(),
+                    pre_push_enabled: preferences.pre_push,
+                    advertised_remote_oid: None,
+                },
                 &remote_ops::DefaultPushTransport,
             )
         }
@@ -468,6 +508,20 @@ mod tests {
         }
     }
 
+    struct FailingPushTransport;
+
+    impl PushTransport for FailingPushTransport {
+        fn push(
+            &self,
+            _repo: &git2::Repository,
+            _remote_name: &str,
+            _branch: &str,
+            _token: Option<&str>,
+        ) -> anyhow::Result<()> {
+            anyhow::bail!("network unavailable")
+        }
+    }
+
     #[cfg(unix)]
     fn push_fixture(hook: &str) -> tempfile::TempDir {
         use std::os::unix::fs::PermissionsExt;
@@ -515,13 +569,15 @@ mod tests {
         };
         push_https_with_hook(
             app.handle(),
-            fixture.path(),
-            &metadata,
-            "origin",
-            "main",
-            None,
-            enabled,
-            Some(git2::Oid::zero()),
+            HttpsPushRequest {
+                repo_path: fixture.path(),
+                metadata: &metadata,
+                remote_name: "origin",
+                branch: "main",
+                token: None,
+                pre_push_enabled: enabled,
+                advertised_remote_oid: Some(git2::Oid::zero()),
+            },
             transport,
         )
     }
@@ -546,12 +602,72 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn discovery_failure_is_classified_as_push_preparation() {
+        let fixture = push_fixture("#!/bin/sh\nexit 0\n");
+        let transport = RecordingPushTransport::default();
+        let app = tauri::test::mock_app();
+        let metadata = crate::hook_runner::HookRunMetadata {
+            repo_path: fixture.path().display().to_string(),
+            run_id: "preparation-test".into(),
+            hook: crate::hook_runner::HookName::PrePush,
+            operation: "push",
+        };
+        let error = push_https_with_hook(
+            app.handle(),
+            HttpsPushRequest {
+                repo_path: fixture.path(),
+                metadata: &metadata,
+                remote_name: "missing",
+                branch: "main",
+                token: None,
+                pre_push_enabled: true,
+                advertised_remote_oid: Some(git2::Oid::zero()),
+            },
+            &transport,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("push preparation failed"));
+        assert!(!error.to_string().contains("pre-push failed"));
+        assert_eq!(transport.call_count(), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn successful_pre_push_calls_transport_once() {
         let fixture = push_fixture("#!/bin/sh\nexit 0\n");
         let transport = RecordingPushTransport::default();
         let app = tauri::test::mock_app();
         push_with_hook_for_test(&app, &fixture, true, &transport).unwrap();
         assert_eq!(transport.call_count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn transport_failure_is_not_reported_as_a_hook_failure() {
+        let fixture = push_fixture("#!/bin/sh\nexit 0\n");
+        let app = tauri::test::mock_app();
+        let metadata = crate::hook_runner::HookRunMetadata {
+            repo_path: fixture.path().display().to_string(),
+            run_id: "transport-test".into(),
+            hook: crate::hook_runner::HookName::PrePush,
+            operation: "push",
+        };
+        let error = push_https_with_hook(
+            app.handle(),
+            HttpsPushRequest {
+                repo_path: fixture.path(),
+                metadata: &metadata,
+                remote_name: "origin",
+                branch: "main",
+                token: None,
+                pre_push_enabled: true,
+                advertised_remote_oid: Some(git2::Oid::zero()),
+            },
+            &FailingPushTransport,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("push transport failed"));
+        assert!(!error.to_string().contains("pre-push failed"));
     }
 
     #[cfg(unix)]

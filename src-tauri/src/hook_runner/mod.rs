@@ -124,11 +124,8 @@ pub fn run_pre_push<R: Runtime>(
         "{} {} {} {}\n",
         input.local_ref, input.local_oid, input.remote_ref, input.remote_oid
     );
-    let mut command = Command::new(&input.hook_path);
-    command
-        .arg(&input.remote_name)
-        .arg(&input.remote_url)
-        .current_dir(workdir);
+    let mut command = pre_push_command(&input.hook_path, &input.remote_name, &input.remote_url)?;
+    command.current_dir(workdir);
     let output = stream_command_after_started(app, metadata, command, Some(stdin.into_bytes()))?;
     if !output.status.success() {
         anyhow::bail!("pre-push failed; review hook output");
@@ -270,6 +267,39 @@ impl Drop for HookRunGuard {
     }
 }
 
+fn pre_push_command(
+    hook_path: &std::path::Path,
+    remote_name: &str,
+    remote_url: &str,
+) -> anyhow::Result<Command> {
+    let bytes = std::fs::read(hook_path).context("could not read pre-push hook")?;
+    let first_line = bytes
+        .split(|byte| *byte == b'\n')
+        .next()
+        .unwrap_or_default();
+    let mut command = if let Some(shebang) = first_line.strip_prefix(b"#!") {
+        let shebang = std::str::from_utf8(shebang)
+            .context("pre-push hook shebang is not valid UTF-8")?
+            .trim();
+        let mut parts = shebang.splitn(2, char::is_whitespace);
+        let interpreter = parts
+            .next()
+            .filter(|part| !part.is_empty())
+            .context("pre-push hook has an empty shebang")?;
+        let mut command = Command::new(interpreter);
+        if let Some(argument) = parts.next().map(str::trim).filter(|arg| !arg.is_empty()) {
+            command.arg(argument);
+        }
+        command.arg(hook_path);
+        command
+    } else {
+        Command::new(hook_path)
+    };
+    command.arg(remote_name).arg(remote_url);
+    Ok(command)
+}
+
+#[cfg(test)]
 fn decode_output(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
 }
@@ -497,7 +527,7 @@ pub fn run_commit<R: Runtime>(
         .and_then(|output| output.status.code());
     let commit_result = command_result.and_then(|output| {
         if !output.status.success() {
-            anyhow::bail!("pre-commit failed; review hook output");
+            anyhow::bail!("commit failed; review hook output");
         }
         let repo = git2::Repository::open(repo_path).context("could not reopen repository")?;
         let oid = repo
@@ -511,7 +541,7 @@ pub fn run_commit<R: Runtime>(
     let (outcome, summary) = if commit_result.is_ok() {
         (HookOutcome::Succeeded, "commit completed")
     } else {
-        (HookOutcome::Failed, "pre-commit failed; review hook output")
+        (HookOutcome::Failed, "commit failed; review hook output")
     };
     let emit_result = app.emit(
         FINISHED_EVENT,
@@ -920,7 +950,7 @@ mod tests {
         )
         .unwrap_err();
 
-        assert_eq!(error.to_string(), "pre-commit failed; review hook output");
+        assert_eq!(error.to_string(), "commit failed; review hook output");
         let events = events.lock().unwrap();
         assert_eq!(events.first().unwrap().0, STARTED_EVENT);
         assert!(events.iter().any(|(name, payload)| {
@@ -993,6 +1023,33 @@ mod tests {
     #[test]
     fn invalid_utf8_is_decoded_lossily() {
         assert_eq!(decode_output(&[b'o', b'k', 0xff]), "ok\u{fffd}");
+    }
+
+    #[test]
+    fn shebang_hook_command_passes_arguments_without_a_shell_string() {
+        let directory = tempfile::tempdir().unwrap();
+        let hook = directory.path().join("pre-push");
+        std::fs::write(&hook, "#!/usr/bin/env python3\n").unwrap();
+        let command = pre_push_command(&hook, "origin", "https://example.test/a b.git").unwrap();
+        assert_eq!(command.get_program(), "/usr/bin/env");
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            vec![
+                std::ffi::OsStr::new("python3"),
+                hook.as_os_str(),
+                std::ffi::OsStr::new("origin"),
+                std::ffi::OsStr::new("https://example.test/a b.git")
+            ]
+        );
+    }
+
+    #[test]
+    fn hook_without_shebang_is_launched_directly() {
+        let directory = tempfile::tempdir().unwrap();
+        let hook = directory.path().join("pre-push.exe");
+        std::fs::write(&hook, b"native").unwrap();
+        let command = pre_push_command(&hook, "origin", "url").unwrap();
+        assert_eq!(command.get_program(), hook.as_os_str());
     }
 
     struct OneByteAtATime {
