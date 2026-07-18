@@ -12,6 +12,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "lint": "eslint src --ext .ts,.tsx --max-warnings 0",
+    "prepare": "husky",
+    "hooks:pre-commit": "lint-staged --concurrent false",
+    "hooks:pre-push": "npm run test:unit -- --dir src --testTimeout=15000 && cargo test --manifest-path src-tauri/Cargo.toml --all-targets --all-features",
     "test:unit": "vitest run",
     "ladle": "ladle serve",
     "ladle:build": "ladle build",
@@ -49,11 +52,19 @@
     "eslint": "^9",
     "eslint-plugin-react-hooks": "^5",
     "eslint-plugin-react-refresh": "^0.4",
+    "husky": "^9.1.7",
     "jsdom": "^26",
+    "lint-staged": "^17.1.0",
+    "prettier": "^3.9.5",
     "tailwindcss": "^4",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.60.1",
     "vite": "^7.0.4",
     "vitest": "^4.1.8"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,json,css,md}": "prettier --write",
+    "src/**/*.{ts,tsx}": "eslint --max-warnings 0",
+    "src-tauri/**/*.rs": "rustfmt --edition 2021"
   }
 }
