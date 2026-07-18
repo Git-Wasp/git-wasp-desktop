@@ -46,7 +46,7 @@ export function HookOutputPane({
   useEffect(() => {
     if (!run?.paneVisible || !hostRef.current) return;
     const terminal = new Terminal({
-      convertEol: false,
+      convertEol: true,
       cursorBlink: false,
       disableStdin: true,
       scrollback: 10_000,

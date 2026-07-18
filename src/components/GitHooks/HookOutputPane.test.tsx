@@ -1,4 +1,5 @@
 import { act, render, screen } from "@testing-library/react";
+import { Terminal } from "@xterm/xterm";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RepoHookRun } from "../../stores/hookStore";
@@ -127,6 +128,17 @@ beforeEach(() => {
 });
 
 describe("HookOutputPane", () => {
+  it("returns to column zero when output contains a newline", () => {
+    seedRun();
+    render(<HookOutputPane repoPath="/repo" height={180} onResize={vi.fn()} />);
+
+    expect(Terminal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        convertEol: true,
+      }),
+    );
+  });
+
   it("fits the terminal to the output host and refits when the host resizes", () => {
     seedRun();
     render(<HookOutputPane repoPath="/repo" height={180} onResize={vi.fn()} />);
