@@ -11,10 +11,7 @@ use tauri::State;
 // single global repos mutex, serialising unrelated commands (e.g. a slow
 // discard blocking a concurrent status poll).
 #[tauri::command]
-pub fn discard_file(
-    path: String,
-    state: State<'_, AppState>,
-) -> Result<WorkingTreeStatus, String> {
+pub fn discard_file(path: String, state: State<'_, AppState>) -> Result<WorkingTreeStatus, String> {
     state
         .with_repo(|repo| wt_discard_file(repo, &path))
         .map_err(|e| e.to_string())?
@@ -22,10 +19,7 @@ pub fn discard_file(
 }
 
 #[tauri::command]
-pub fn delete_file(
-    path: String,
-    state: State<'_, AppState>,
-) -> Result<WorkingTreeStatus, String> {
+pub fn delete_file(path: String, state: State<'_, AppState>) -> Result<WorkingTreeStatus, String> {
     state
         .with_repo(|repo| wt_delete_file(repo, &path))
         .map_err(|e| e.to_string())?

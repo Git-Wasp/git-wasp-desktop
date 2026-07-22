@@ -58,10 +58,7 @@ pub fn stash_pop_cmd(
 }
 
 #[tauri::command]
-pub fn stash_drop_cmd(
-    index: usize,
-    state: State<'_, AppState>,
-) -> Result<Vec<StashEntry>, String> {
+pub fn stash_drop_cmd(index: usize, state: State<'_, AppState>) -> Result<Vec<StashEntry>, String> {
     state
         .with_repo_mut(|repo| {
             stash_drop(repo, index)?;

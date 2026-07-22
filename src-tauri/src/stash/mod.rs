@@ -298,8 +298,9 @@ mod tests {
         let entries = stash_list(&mut repo).unwrap();
         assert_eq!(entries.len(), 2, "no stash should be lost or duplicated");
         assert!(
-            entries.iter().any(|e| e.oid == older_oid
-                && e.message.contains("renamed older stash")),
+            entries
+                .iter()
+                .any(|e| e.oid == older_oid && e.message.contains("renamed older stash")),
             "the renamed entry must keep its original commit and carry the new message"
         );
         assert!(

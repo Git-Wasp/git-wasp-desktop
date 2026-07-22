@@ -10,10 +10,7 @@ use tauri::State;
 // Not `async`: every command body below is 100% synchronous git2/fs work with
 // no `.await` points — see commands/graph.rs for the full rationale.
 #[tauri::command]
-pub fn stage_file(
-    path: String,
-    state: State<'_, AppState>,
-) -> Result<WorkingTreeStatus, String> {
+pub fn stage_file(path: String, state: State<'_, AppState>) -> Result<WorkingTreeStatus, String> {
     state
         .with_repo(|repo| wt_stage_file(repo, &path))
         .map_err(|e| e.to_string())?
@@ -21,10 +18,7 @@ pub fn stage_file(
 }
 
 #[tauri::command]
-pub fn unstage_file(
-    path: String,
-    state: State<'_, AppState>,
-) -> Result<WorkingTreeStatus, String> {
+pub fn unstage_file(path: String, state: State<'_, AppState>) -> Result<WorkingTreeStatus, String> {
     state
         .with_repo(|repo| wt_unstage_file(repo, &path))
         .map_err(|e| e.to_string())?

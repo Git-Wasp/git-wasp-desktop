@@ -123,10 +123,7 @@ pub fn fast_forward_branch(
 /// Fast-forward local `branch` to its upstream tracking branch, using the
 /// already-fetched remote state (no network access).
 #[tauri::command]
-pub fn fast_forward_to_upstream(
-    branch: String,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub fn fast_forward_to_upstream(branch: String, state: State<'_, AppState>) -> Result<(), String> {
     use crate::branch_ops::FastForwardOutcome;
     match state
         .fast_forward_to_upstream(&branch)

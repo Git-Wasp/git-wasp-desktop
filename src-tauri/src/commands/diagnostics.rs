@@ -64,7 +64,10 @@ const MAX_FRONTEND_LOG_LEN: usize = 2048;
 /// diagnostics file users share for support) and caps length, so a single
 /// runaway frontend log call can't blow up the log file.
 fn sanitize_log_message(message: &str) -> String {
-    let mut s: String = message.chars().filter(|c| *c != '\n' && *c != '\r').collect();
+    let mut s: String = message
+        .chars()
+        .filter(|c| *c != '\n' && *c != '\r')
+        .collect();
     if s.len() > MAX_FRONTEND_LOG_LEN {
         s.truncate(MAX_FRONTEND_LOG_LEN);
         s.push_str("…[truncated]");

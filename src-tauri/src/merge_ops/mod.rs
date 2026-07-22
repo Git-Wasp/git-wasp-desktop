@@ -447,7 +447,10 @@ pub fn abort_merge(repo: &mut Repository) -> anyhow::Result<()> {
         let index = repo.index().context("failed to get index")?;
         let head_tree = head_commit.tree().context("HEAD commit has no tree")?;
         let mut paths = std::collections::HashSet::new();
-        for conflict in index.conflicts().context("failed to read index conflicts")? {
+        for conflict in index
+            .conflicts()
+            .context("failed to read index conflicts")?
+        {
             let conflict = conflict.context("invalid conflict entry")?;
             for entry in [conflict.our, conflict.their, conflict.ancestor]
                 .into_iter()
@@ -1000,7 +1003,10 @@ mod tests {
         let result = write_resolution(&repo, evil.to_str().unwrap(), "pwned");
 
         assert!(result.is_err());
-        assert!(!evil.exists(), "no file should have been written outside the repo");
+        assert!(
+            !evil.exists(),
+            "no file should have been written outside the repo"
+        );
     }
 
     // ---- resolve_with_side / resolve_with_deletion ----
@@ -1150,7 +1156,14 @@ mod tests {
         // that actually conflicts.
         {
             let head_before = repo.head().unwrap().peel_to_commit().unwrap();
-            commit_file(&repo, &dir, "other.txt", "untouched\n", "add other", &[&head_before]);
+            commit_file(
+                &repo,
+                &dir,
+                "other.txt",
+                "untouched\n",
+                "add other",
+                &[&head_before],
+            );
         }
 
         start_merge(&mut repo, &branch).unwrap();
