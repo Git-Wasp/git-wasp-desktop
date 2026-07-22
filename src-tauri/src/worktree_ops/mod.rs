@@ -33,6 +33,14 @@ pub struct WorktreeEntry {
     pub parent_repo_path: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoveWorktreeResult {
+    pub removed_path: String,
+    pub closed_tab: bool,
+    pub active_repo: Option<RepoInfo>,
+}
+
 fn normalize_path(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
@@ -256,6 +264,79 @@ pub(crate) fn create_worktree(
     Ok(())
 }
 
+pub(crate) fn lock_worktree(path: &Path) -> anyhow::Result<()> {
+    let repo = Repository::open(path)
+        .with_context(|| format!("not a git repository: {}", path.display()))?;
+    let output = std::process::Command::new("git")
+        .args(["worktree", "lock", path.to_string_lossy().as_ref()])
+        .current_dir(
+            repo.workdir()
+                .context("repository has no working directory")?,
+        )
+        .output()
+        .context("failed to run git worktree lock")?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "git worktree lock failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn unlock_worktree(path: &Path) -> anyhow::Result<()> {
+    let repo = Repository::open(path)
+        .with_context(|| format!("not a git repository: {}", path.display()))?;
+    let output = std::process::Command::new("git")
+        .args(["worktree", "unlock", path.to_string_lossy().as_ref()])
+        .current_dir(
+            repo.workdir()
+                .context("repository has no working directory")?,
+        )
+        .output()
+        .context("failed to run git worktree unlock")?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "git worktree unlock failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn remove_worktree(path: &Path) -> anyhow::Result<()> {
+    let repo = Repository::open(path)
+        .with_context(|| format!("not a git repository: {}", path.display()))?;
+    let info = resolve_repo_info(&repo)?;
+    if info.repo_kind == RepoKind::Main {
+        anyhow::bail!("cannot remove the main working tree");
+    }
+    if info.worktree_locked {
+        anyhow::bail!("cannot remove a locked worktree");
+    }
+
+    let status = crate::working_tree::get_working_tree_status(&repo)?;
+    if !status.staged.is_empty() || !status.unstaged.is_empty() || !status.untracked.is_empty() {
+        anyhow::bail!("cannot remove a worktree with uncommitted changes");
+    }
+
+    let output = std::process::Command::new("git")
+        .args(["worktree", "remove", path.to_string_lossy().as_ref()])
+        .current_dir(
+            repo.workdir()
+                .context("repository has no working directory")?,
+        )
+        .output()
+        .context("failed to run git worktree remove")?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "git worktree remove failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
 pub(crate) fn resolve_repo_info(repo: &Repository) -> anyhow::Result<RepoInfo> {
     let mut info = basic_repo_info(repo);
     let entries = worktree_list(repo)?;
@@ -296,6 +377,34 @@ pub(crate) fn degraded_repo_info(repo: &Repository) -> RepoInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use git2::{Repository, Signature};
+    use tempfile::TempDir;
+
+    fn init_repo_with_commit() -> (TempDir, Repository) {
+        let dir = TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        {
+            let mut config = repo.config().unwrap();
+            config.set_str("user.name", "Test").unwrap();
+            config.set_str("user.email", "test@test.com").unwrap();
+        }
+        {
+            let sig = Signature::now("Test", "test@test.com").unwrap();
+            let tree_id = {
+                let mut index = repo.index().unwrap();
+                index.write_tree().unwrap()
+            };
+            let tree = repo.find_tree(tree_id).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[])
+                .unwrap();
+        }
+        (dir, repo)
+    }
+
+    fn create_branch(repo: &Repository, name: &str) {
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch(name, &head, false).unwrap();
+    }
 
     #[test]
     fn parse_worktree_list_marks_main_and_linked_entries() {
@@ -347,5 +456,30 @@ detached
         let entries = parse_worktree_list(text).unwrap();
 
         assert_eq!(entries[0].branch, None);
+    }
+
+    #[test]
+    fn remove_worktree_rejects_dirty_entries() {
+        let (main_dir, repo) = init_repo_with_commit();
+        create_branch(&repo, "feature/worktree");
+        let worktree_dir = tempfile::tempdir().unwrap();
+        let output = std::process::Command::new("git")
+            .args([
+                "worktree",
+                "add",
+                worktree_dir.path().to_str().unwrap(),
+                "feature/worktree",
+            ])
+            .current_dir(main_dir.path())
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        std::fs::write(worktree_dir.path().join("dirty.txt"), "dirty\n").unwrap();
+
+        let err = remove_worktree(worktree_dir.path()).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("cannot remove a worktree with uncommitted changes"));
     }
 }

@@ -4,6 +4,7 @@ import type {
   BranchInfo,
   CreateWorktreeRequest,
   PrunableBranch,
+  RemoveWorktreeResult,
   RepoEntry,
   RepoInfo,
   WorktreeEntry,
@@ -89,6 +90,9 @@ interface RepoStore {
   listWorktrees: () => Promise<WorktreeEntry[]>;
   createWorktree: (request: CreateWorktreeRequest) => Promise<void>;
   openParentRepo: (repoPath: string) => Promise<void>;
+  lockWorktree: (repoPath: string) => Promise<void>;
+  unlockWorktree: (repoPath: string) => Promise<void>;
+  removeWorktree: (repoPath: string) => Promise<void>;
   openCreateWorktreeDialog: () => void;
   closeCreateWorktreeDialog: () => void;
 }
@@ -357,6 +361,47 @@ export const useRepoStore = create<RepoStore>((set, get) => {
       });
       await get().loadOpenRepos();
       await reloadActiveRepo(repo);
+      await get().listWorktrees();
+    },
+
+    lockWorktree: async (repoPath: string) => {
+      const repo = await invoke<RepoInfo>("lock_worktree", { repoPath });
+      if (get().currentRepo?.path === repo.path) {
+        set({ currentRepo: repo });
+      }
+      await get().loadOpenRepos();
+      await get().listWorktrees();
+    },
+
+    unlockWorktree: async (repoPath: string) => {
+      const repo = await invoke<RepoInfo>("unlock_worktree", { repoPath });
+      if (get().currentRepo?.path === repo.path) {
+        set({ currentRepo: repo });
+      }
+      await get().loadOpenRepos();
+      await get().listWorktrees();
+    },
+
+    removeWorktree: async (repoPath: string) => {
+      const result = await invoke<RemoveWorktreeResult>("remove_worktree", {
+        repoPath,
+      });
+      await get().loadOpenRepos();
+      if (result.activeRepo) {
+        await reloadActiveRepo(result.activeRepo);
+      } else {
+        set({
+          currentRepo: null,
+          activeRepoPath: null,
+          branches: [],
+          worktrees: [],
+          worktreesLoadedFor: null,
+          showCreateWorktreeDialog: false,
+          activationEpoch: get().activationEpoch + 1,
+        });
+        useGraphStore.getState().reset();
+        useWorkingTreeStore.getState().reset();
+      }
       await get().listWorktrees();
     },
 

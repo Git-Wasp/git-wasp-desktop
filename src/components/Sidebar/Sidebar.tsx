@@ -188,6 +188,9 @@ export function Sidebar({ width = 220 }: { width?: number }) {
     openParentRepo,
     listWorktrees,
     createWorktree,
+    lockWorktree,
+    unlockWorktree,
+    removeWorktree,
     showCreateWorktreeDialog,
     openCreateWorktreeDialog,
     closeCreateWorktreeDialog,
@@ -220,6 +223,9 @@ export function Sidebar({ width = 220 }: { width?: number }) {
   const [pendingDeleteBranch, setPendingDeleteBranch] = useState<string | null>(
     null,
   );
+  const [pendingRemoveWorktree, setPendingRemoveWorktree] = useState<
+    string | null
+  >(null);
 
   // GitHub connection is managed in Settings now; the host is still needed for
   // the "Clone from GitHub…" dialog.
@@ -268,6 +274,30 @@ export function Sidebar({ width = 220 }: { width?: number }) {
       setShowNewBranch(false);
     } catch (e) {
       toastError(String(e), { title: "Couldn't create branch" });
+    }
+  };
+
+  const handleLockWorktree = async (path: string) => {
+    try {
+      await lockWorktree(path);
+    } catch (e) {
+      toastError(String(e), { title: "Couldn't lock worktree" });
+    }
+  };
+
+  const handleUnlockWorktree = async (path: string) => {
+    try {
+      await unlockWorktree(path);
+    } catch (e) {
+      toastError(String(e), { title: "Couldn't unlock worktree" });
+    }
+  };
+
+  const handleRemoveWorktree = async (path: string) => {
+    try {
+      await removeWorktree(path);
+    } catch (e) {
+      toastError(String(e), { title: "Couldn't remove worktree" });
     }
   };
 
@@ -505,6 +535,20 @@ export function Sidebar({ width = 220 }: { width?: number }) {
           />
         )}
 
+        {pendingRemoveWorktree && (
+          <ConfirmDialog
+            title="Remove worktree"
+            message={`Remove worktree at "${pendingRemoveWorktree}"?`}
+            confirmLabel="Remove"
+            onConfirm={() => {
+              const path = pendingRemoveWorktree;
+              setPendingRemoveWorktree(null);
+              void handleRemoveWorktree(path);
+            }}
+            onCancel={() => setPendingRemoveWorktree(null)}
+          />
+        )}
+
         {showCreateWorktreeDialog && (
           <CreateWorktreeDialog
             defaultStartPoint={
@@ -526,6 +570,9 @@ export function Sidebar({ width = 220 }: { width?: number }) {
             onRefresh={() => void listWorktrees()}
             onCreate={openCreateWorktreeDialog}
             onOpenParent={(path) => void openParentRepo(path)}
+            onLock={(path) => void handleLockWorktree(path)}
+            onUnlock={(path) => void handleUnlockWorktree(path)}
+            onRemove={setPendingRemoveWorktree}
           />
         )}
 

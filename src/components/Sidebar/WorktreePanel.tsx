@@ -3,6 +3,7 @@ import type { WorktreeEntry } from "../../types/repo";
 import { Button } from "../ui/Button";
 import { TreeIcon } from "../ui/icons";
 import { CollapsibleSection } from "./CollapsibleSection";
+import { RowMenu } from "./RowMenu";
 
 const rowStyle: CSSProperties = {
   display: "flex",
@@ -32,6 +33,9 @@ export function WorktreePanel({
   onRefresh,
   onCreate,
   onOpenParent,
+  onLock,
+  onUnlock,
+  onRemove,
 }: {
   currentRepoPath: string;
   worktrees: WorktreeEntry[];
@@ -39,9 +43,10 @@ export function WorktreePanel({
   onRefresh: () => void;
   onCreate: () => void;
   onOpenParent: (path: string) => void;
+  onLock: (path: string) => void;
+  onUnlock: (path: string) => void;
+  onRemove: (path: string) => void;
 }) {
-  void onOpenParent;
-
   return (
     <CollapsibleSection
       id="worktrees"
@@ -132,6 +137,50 @@ export function WorktreePanel({
                 <span style={badgeStyle}>Dirty</span>
               )}
               {isCurrent && <span style={badgeStyle}>Current</span>}
+              <RowMenu
+                label={`${entry.name} actions`}
+                items={[
+                  {
+                    label: entry.isOpen ? "Activate tab" : "Open worktree",
+                    onSelect: () => onOpenOrActivate(entry.path),
+                  },
+                  ...(entry.repoKind === "worktree"
+                    ? [
+                        {
+                          label: "Open parent repo",
+                          onSelect: () => onOpenParent(entry.path),
+                        },
+                      ]
+                    : []),
+                  ...(entry.repoKind === "worktree" && !entry.isLocked
+                    ? [
+                        {
+                          label: "Lock worktree",
+                          onSelect: () => onLock(entry.path),
+                        },
+                      ]
+                    : []),
+                  ...(entry.repoKind === "worktree" && entry.isLocked
+                    ? [
+                        {
+                          label: "Unlock worktree",
+                          onSelect: () => onUnlock(entry.path),
+                        },
+                      ]
+                    : []),
+                  ...(entry.repoKind === "worktree" &&
+                  !entry.isLocked &&
+                  !entry.hasUncommittedChanges
+                    ? [
+                        {
+                          label: "Remove worktree",
+                          destructive: true,
+                          onSelect: () => onRemove(entry.path),
+                        },
+                      ]
+                    : []),
+                ]}
+              />
             </div>
           </div>
         );

@@ -236,6 +236,57 @@ describe("repoStore", () => {
     expect(useRepoStore.getState().worktrees).toHaveLength(2);
   });
 
+  it("removeWorktree closes the removed active tab and switches to the returned active repo", async () => {
+    useRepoStore.setState({
+      currentRepo: {
+        name: "main-feature",
+        path: "/repos/main-feature",
+        headBranch: "feature/worktree",
+        repoKind: "worktree",
+        parentRepoPath: "/repos/main",
+        commonDirPath: "/repos/main/.git",
+        worktreeBranch: "feature/worktree",
+        worktreeLocked: false,
+        worktreePrunable: false,
+      },
+    });
+    mockByCommand({
+      remove_worktree: {
+        removedPath: "/repos/main-feature",
+        closedTab: true,
+        activeRepo: {
+          name: "main",
+          path: "/repos/main",
+          headBranch: "main",
+          repoKind: "main",
+          parentRepoPath: null,
+          commonDirPath: "/repos/main/.git",
+          worktreeBranch: "main",
+          worktreeLocked: false,
+          worktreePrunable: false,
+        },
+      },
+      list_open_repos: [
+        {
+          name: "main",
+          path: "/repos/main",
+          headBranch: "main",
+          repoKind: "main",
+          parentRepoPath: null,
+          commonDirPath: "/repos/main/.git",
+          worktreeBranch: "main",
+          worktreeLocked: false,
+          worktreePrunable: false,
+        },
+      ],
+      list_worktrees: [],
+    });
+
+    await useRepoStore.getState().removeWorktree("/repos/main-feature");
+
+    expect(useRepoStore.getState().currentRepo?.path).toBe("/repos/main");
+  });
+
   it("checkoutBranch calls checkout_branch and updates currentRepo", async () => {
     const updatedRepo = { name: "r", path: "/p", headBranch: "feature" };
     mockInvoke.mockResolvedValueOnce(updatedRepo); // checkout_branch

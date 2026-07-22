@@ -58,6 +58,9 @@ pub fn run() {
             commands::worktree::list_worktrees,
             commands::worktree::create_worktree,
             commands::worktree::open_parent_repo,
+            commands::worktree::lock_worktree,
+            commands::worktree::unlock_worktree,
+            commands::worktree::remove_worktree,
             commands::hooks::get_hook_preferences,
             commands::hooks::set_hook_preferences,
             // Graph

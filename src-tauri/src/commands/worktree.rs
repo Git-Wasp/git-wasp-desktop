@@ -1,6 +1,6 @@
 use crate::commands::repo::RepoInfo;
 use crate::repo_manager::AppState;
-use crate::worktree_ops::{CreateWorktreeMode, WorktreeEntry};
+use crate::worktree_ops::{CreateWorktreeMode, RemoveWorktreeResult, WorktreeEntry};
 use tauri::{AppHandle, State};
 
 #[tauri::command]
@@ -41,5 +41,26 @@ pub fn open_parent_repo(
 ) -> Result<RepoInfo, String> {
     state
         .open_parent_repo(&repo_path, Some(app_handle))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn lock_worktree(repo_path: String, state: State<'_, AppState>) -> Result<RepoInfo, String> {
+    state.lock_worktree(&repo_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn unlock_worktree(repo_path: String, state: State<'_, AppState>) -> Result<RepoInfo, String> {
+    state.unlock_worktree(&repo_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn remove_worktree(
+    repo_path: String,
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<RemoveWorktreeResult, String> {
+    state
+        .remove_worktree(&repo_path, Some(app_handle))
         .map_err(|e| e.to_string())
 }
