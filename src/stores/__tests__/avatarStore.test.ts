@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { AVATAR_CACHE_CAP, useAvatarStore } from "../avatarStore";
-import { AVATAR_STORAGE_KEY, type PersistedAvatar } from "../../lib/avatarPersistence";
+import {
+  AVATAR_STORAGE_KEY,
+  type PersistedAvatar,
+} from "../../lib/avatarPersistence";
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -34,10 +37,14 @@ describe("avatarStore", () => {
     mockInvoke.mockResolvedValueOnce(["data:image/png;base64,AAAA"]);
 
     useAvatarStore.getState().request(["a@b.com"]);
-    expect(mockInvoke).toHaveBeenCalledWith("get_avatars", { emails: ["a@b.com"] });
+    expect(mockInvoke).toHaveBeenCalledWith("get_avatars", {
+      emails: ["a@b.com"],
+    });
 
     await flush();
-    expect(useAvatarStore.getState().getImage("a@b.com")).toBeInstanceOf(FakeImage);
+    expect(useAvatarStore.getState().getImage("a@b.com")).toBeInstanceOf(
+      FakeImage,
+    );
     expect(useAvatarStore.getState().version).toBeGreaterThan(0);
   });
 
@@ -48,7 +55,9 @@ describe("avatarStore", () => {
     await flush();
 
     expect(useAvatarStore.getState().getImage("nobody@nowhere.com")).toBeNull();
-    expect(useAvatarStore.getState().avatars.get("nobody@nowhere.com")?.status).toBe("none");
+    expect(
+      useAvatarStore.getState().avatars.get("nobody@nowhere.com")?.status,
+    ).toBe("none");
   });
 
   it("resolves a batch of distinct emails in a single invoke, in order", async () => {
@@ -61,8 +70,12 @@ describe("avatarStore", () => {
     });
 
     await flush();
-    expect(useAvatarStore.getState().getImage("a@b.com")).toBeInstanceOf(FakeImage);
-    expect(useAvatarStore.getState().avatars.get("nobody@nowhere.com")?.status).toBe("none");
+    expect(useAvatarStore.getState().getImage("a@b.com")).toBeInstanceOf(
+      FakeImage,
+    );
+    expect(
+      useAvatarStore.getState().avatars.get("nobody@nowhere.com")?.status,
+    ).toBe("none");
   });
 
   it("requests each email only once, even across calls and casing/whitespace", async () => {
@@ -86,14 +99,25 @@ describe("avatarStore", () => {
     useAvatarStore.getState().request(["x@y.com", "z@y.com"]);
     await flush();
 
-    expect(useAvatarStore.getState().avatars.get("x@y.com")?.status).toBe("none");
-    expect(useAvatarStore.getState().avatars.get("z@y.com")?.status).toBe("none");
+    expect(useAvatarStore.getState().avatars.get("x@y.com")?.status).toBe(
+      "none",
+    );
+    expect(useAvatarStore.getState().avatars.get("z@y.com")?.status).toBe(
+      "none",
+    );
   });
 
   it("caps the avatar map so it doesn't grow unbounded across a long session", () => {
-    mockInvoke.mockResolvedValue([null]);
-    for (let i = 0; i < 5000; i++) useAvatarStore.getState().request([`author${i}@example.com`]);
-    expect(useAvatarStore.getState().avatars.size).toBeLessThanOrEqual(AVATAR_CACHE_CAP);
+    mockInvoke.mockResolvedValue(Array(5000).fill(null));
+    useAvatarStore
+      .getState()
+      .request(
+        Array.from({ length: 5000 }, (_, i) => `author${i}@example.com`),
+      );
+
+    expect(useAvatarStore.getState().avatars.size).toBeLessThanOrEqual(
+      AVATAR_CACHE_CAP,
+    );
   });
 });
 
@@ -107,7 +131,10 @@ describe("avatarStore cross-session persistence", () => {
     const raw = localStorage.getItem(AVATAR_STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!) as Record<string, PersistedAvatar>;
-    expect(parsed["a@b.com"]).toMatchObject({ status: "loaded", url: "data:image/png;base64,AAAA" });
+    expect(parsed["a@b.com"]).toMatchObject({
+      status: "loaded",
+      url: "data:image/png;base64,AAAA",
+    });
   });
 
   it("persists a miss too, so a known no-avatar author isn't re-requested next reload", async () => {
@@ -127,8 +154,15 @@ describe("avatarStore cross-session persistence", () => {
   // this test grabs its own fresh `invoke` reference rather than reusing the
   // top-level `mockInvoke` (which would point at the now-stale instance).
   it("hydrates a previously-persisted avatar, painting it before any invoke resolves", async () => {
-    const entry: PersistedAvatar = { status: "loaded", url: "data:image/png;base64,BBBB", savedAt: Date.now() };
-    localStorage.setItem(AVATAR_STORAGE_KEY, JSON.stringify({ "a@b.com": entry }));
+    const entry: PersistedAvatar = {
+      status: "loaded",
+      url: "data:image/png;base64,BBBB",
+      savedAt: Date.now(),
+    };
+    localStorage.setItem(
+      AVATAR_STORAGE_KEY,
+      JSON.stringify({ "a@b.com": entry }),
+    );
 
     vi.resetModules();
     const core = await import("@tauri-apps/api/core");
@@ -150,7 +184,10 @@ describe("avatarStore cross-session persistence", () => {
       url: "data:image/png;base64,BBBB",
       savedAt: Date.now() - dayMs - 1,
     };
-    localStorage.setItem(AVATAR_STORAGE_KEY, JSON.stringify({ "old@b.com": stale }));
+    localStorage.setItem(
+      AVATAR_STORAGE_KEY,
+      JSON.stringify({ "old@b.com": stale }),
+    );
 
     vi.resetModules();
     const core = await import("@tauri-apps/api/core");
@@ -160,6 +197,8 @@ describe("avatarStore cross-session persistence", () => {
 
     freshStore.getState().request(["old@b.com"]);
 
-    expect(freshMockInvoke).toHaveBeenCalledWith("get_avatars", { emails: ["old@b.com"] });
+    expect(freshMockInvoke).toHaveBeenCalledWith("get_avatars", {
+      emails: ["old@b.com"],
+    });
   });
 });
