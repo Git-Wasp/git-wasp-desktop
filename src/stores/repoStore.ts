@@ -1,6 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
-import type { BranchInfo, PrunableBranch, RepoEntry, RepoInfo } from "../types/repo";
+import type {
+  BranchInfo,
+  CreateWorktreeRequest,
+  PrunableBranch,
+  RepoEntry,
+  RepoInfo,
+  WorktreeEntry,
+} from "../types/repo";
 import { useGraphStore, GRAPH_INITIAL_LIMIT } from "./graphStore";
 import { useMergeStore } from "./mergeStore";
 import { useWorkingTreeStore } from "./workingTreeStore";
@@ -22,7 +29,9 @@ function stashPrompt(action: string): AutoStashPrompt {
 function notifyParked(target: string): void {
   useToastStore
     .getState()
-    .info(`Stashed your changes before switching to ${target} — find them in the stash panel.`);
+    .info(
+      `Stashed your changes before switching to ${target} — find them in the stash panel.`,
+    );
 }
 
 interface RepoStore {
@@ -30,6 +39,8 @@ interface RepoStore {
   recentRepos: RepoEntry[];
   branches: BranchInfo[];
   openRepos: RepoInfo[];
+  worktrees: WorktreeEntry[];
+  worktreesLoadedFor: string | null;
   activeRepoPath: string | null;
   /** Monotonic counter bumped once per repo-switch (reloadActiveRepo,
    *  closeRepo's no-repos-left branch, newTab). Repo-scoped stores capture
@@ -74,13 +85,20 @@ interface RepoStore {
   renameBranch: (oldName: string, newName: string) => Promise<void>;
   deleteBranch: (name: string) => Promise<void>;
   listPrunableBranches: () => Promise<PrunableBranch[]>;
+  listWorktrees: () => Promise<WorktreeEntry[]>;
+  createWorktree: (request: CreateWorktreeRequest) => Promise<void>;
+  openParentRepo: (repoPath: string) => Promise<void>;
 }
 
 export const useRepoStore = create<RepoStore>((set, get) => {
   // Reload everything that's scoped to the active repo: graph, branches, and
   // the working-tree / merge status. Called whenever the active tab changes.
   const reloadActiveRepo = async (repo: RepoInfo) => {
-    set({ currentRepo: repo, activeRepoPath: repo.path, activationEpoch: get().activationEpoch + 1 });
+    set({
+      currentRepo: repo,
+      activeRepoPath: repo.path,
+      activationEpoch: get().activationEpoch + 1,
+    });
     // Clear the previous repo's graph (rows, cache, selection) so it doesn't
     // linger — the graph shows its loading skeleton until the new fetch lands.
     useGraphStore.getState().reset();
@@ -101,6 +119,8 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     recentRepos: [],
     branches: [],
     openRepos: [],
+    worktrees: [],
+    worktreesLoadedFor: null,
     activeRepoPath: null,
     activationEpoch: 0,
 
@@ -112,7 +132,10 @@ export const useRepoStore = create<RepoStore>((set, get) => {
 
     loadCurrentRepo: async () => {
       const repo = await invoke<RepoInfo | null>("get_current_repo");
-      set({ currentRepo: repo, activeRepoPath: repo?.path ?? null });
+      set({
+        currentRepo: repo,
+        activeRepoPath: repo?.path ?? null,
+      });
     },
 
     syncHead: async () => {
@@ -121,7 +144,8 @@ export const useRepoStore = create<RepoStore>((set, get) => {
       const cur = get().currentRepo;
       // HEAD unchanged (same repo + same checked-out branch): nothing to do, so
       // we don't churn `currentRepo`'s identity or re-fetch the branch list.
-      if (cur && cur.path === repo.path && cur.headBranch === repo.headBranch) return;
+      if (cur && cur.path === repo.path && cur.headBranch === repo.headBranch)
+        return;
       set({ currentRepo: repo });
       await get().loadBranches();
     },
@@ -147,6 +171,8 @@ export const useRepoStore = create<RepoStore>((set, get) => {
           currentRepo: null,
           activeRepoPath: null,
           branches: [],
+          worktrees: [],
+          worktreesLoadedFor: null,
           activationEpoch: get().activationEpoch + 1,
         });
         useGraphStore.getState().reset();
@@ -177,7 +203,9 @@ export const useRepoStore = create<RepoStore>((set, get) => {
         const repos = await invoke<RepoEntry[]>("get_recent_repos");
         set({ recentRepos: repos });
       } catch (e) {
-        useToastStore.getState().error(String(e), { title: "Couldn't load recent repositories" });
+        useToastStore
+          .getState()
+          .error(String(e), { title: "Couldn't load recent repositories" });
       }
     },
 
@@ -193,7 +221,8 @@ export const useRepoStore = create<RepoStore>((set, get) => {
 
     checkoutBranch: async (name: string) => {
       const repo = await withAutoStash(
-        (autoStash) => invoke<RepoInfo>("checkout_branch", { branchName: name, autoStash }),
+        (autoStash) =>
+          invoke<RepoInfo>("checkout_branch", { branchName: name, autoStash }),
         stashPrompt(`switching to "${name}"`),
         () => notifyParked(name),
       );
@@ -208,7 +237,8 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     // creates a local tracking branch of the same short name and switches to it.
     checkoutRemoteBranch: async (remoteRef: string) => {
       const repo = await withAutoStash(
-        (autoStash) => invoke<RepoInfo>("checkout_remote_branch", { remoteRef, autoStash }),
+        (autoStash) =>
+          invoke<RepoInfo>("checkout_remote_branch", { remoteRef, autoStash }),
         stashPrompt(`switching to "${remoteRef}"`),
         () => notifyParked(remoteRef),
       );
@@ -235,7 +265,10 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     },
 
     revertCommit: async (oid: string, autoCommit: boolean) => {
-      const result = await invoke<string | null>("revert_commit", { oid, autoCommit });
+      const result = await invoke<string | null>("revert_commit", {
+        oid,
+        autoCommit,
+      });
       // A revert either adds a commit or leaves unstaged changes — one combined
       // refresh updates the working-tree status, the graph's dirty count, and the
       // viewport (a single status scan rather than two).
@@ -283,6 +316,41 @@ export const useRepoStore = create<RepoStore>((set, get) => {
 
     listPrunableBranches: async () => {
       return invoke<PrunableBranch[]>("list_prunable_branches");
+    },
+
+    listWorktrees: async () => {
+      const repoPath = get().currentRepo?.path;
+      if (!repoPath) {
+        set({ worktrees: [], worktreesLoadedFor: null });
+        return [];
+      }
+      const worktrees = await invoke<WorktreeEntry[]>("list_worktrees", {
+        repoPath,
+      });
+      set({ worktrees, worktreesLoadedFor: repoPath });
+      return worktrees;
+    },
+
+    createWorktree: async (request: CreateWorktreeRequest) => {
+      const repo = await invoke<RepoInfo>("create_worktree", {
+        repoPath: get().currentRepo?.path ?? null,
+        targetPath: request.targetPath,
+        mode: request.mode,
+        branchName: request.branchName ?? null,
+        startPoint: request.startPoint ?? null,
+      });
+      await get().loadOpenRepos();
+      await reloadActiveRepo(repo);
+      await get().listWorktrees();
+    },
+
+    openParentRepo: async (repoPath: string) => {
+      const repo = await invoke<RepoInfo>("open_parent_repo", {
+        repoPath,
+      });
+      await get().loadOpenRepos();
+      await reloadActiveRepo(repo);
+      await get().listWorktrees();
     },
   };
 });

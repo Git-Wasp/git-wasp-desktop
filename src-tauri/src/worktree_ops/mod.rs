@@ -1,6 +1,7 @@
 use crate::commands::repo::{RepoInfo, RepoKind};
 use anyhow::{anyhow, Context};
 use git2::Repository;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -11,8 +12,33 @@ pub(crate) struct WorktreeListEntry {
     pub prunable: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CreateWorktreeMode {
+    ExistingBranch,
+    NewBranchFromBase,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeEntry {
+    pub path: String,
+    pub name: String,
+    pub repo_kind: RepoKind,
+    pub branch: Option<String>,
+    pub is_current: bool,
+    pub is_open: bool,
+    pub is_locked: bool,
+    pub has_uncommitted_changes: bool,
+    pub parent_repo_path: Option<String>,
+}
+
 fn normalize_path(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn path_to_string(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
 }
 
 pub(crate) fn parse_worktree_list(text: &str) -> anyhow::Result<Vec<WorktreeListEntry>> {
@@ -128,6 +154,106 @@ fn main_worktree_path(
         }
     }
     Ok(None)
+}
+
+pub(crate) fn list_worktrees(
+    repo: &Repository,
+    current_repo_path: &Path,
+    open_paths: &HashSet<String>,
+) -> anyhow::Result<Vec<WorktreeEntry>> {
+    let entries = worktree_list(repo)?;
+    let current_path = normalize_path(current_repo_path);
+    let main_path = main_worktree_path(&entries, repo.commondir())?
+        .or_else(|| entries.first().map(|entry| normalize_path(&entry.path)))
+        .unwrap_or_else(|| current_path.clone());
+    let main_path_str = path_to_string(&main_path);
+
+    let mut out = Vec::new();
+    for entry in entries {
+        let path = normalize_path(&entry.path);
+        let path_str = path_to_string(&path);
+        let repo_kind = if path == main_path {
+            RepoKind::Main
+        } else {
+            RepoKind::Worktree
+        };
+        let parent_repo_path = match repo_kind {
+            RepoKind::Main => None,
+            RepoKind::Worktree => Some(main_path_str.clone()),
+        };
+        let has_uncommitted_changes = Repository::open(&path)
+            .ok()
+            .and_then(|repo| crate::working_tree::get_working_tree_status(&repo).ok())
+            .map(|status| {
+                !status.staged.is_empty()
+                    || !status.unstaged.is_empty()
+                    || !status.untracked.is_empty()
+            })
+            .unwrap_or(false);
+
+        out.push(WorktreeEntry {
+            name: path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or(path_str.as_str())
+                .to_string(),
+            path: path_str.clone(),
+            repo_kind,
+            branch: entry.branch,
+            is_current: path == current_path,
+            is_open: open_paths.contains(&path_str),
+            is_locked: entry.locked,
+            has_uncommitted_changes,
+            parent_repo_path,
+        });
+    }
+
+    Ok(out)
+}
+
+pub(crate) fn create_worktree(
+    repo: &Repository,
+    target_path: &Path,
+    mode: CreateWorktreeMode,
+    branch_name: Option<&str>,
+    start_point: Option<&str>,
+) -> anyhow::Result<()> {
+    if target_path.exists() {
+        let mut contents = std::fs::read_dir(target_path)
+            .with_context(|| format!("failed to read {}", target_path.display()))?;
+        if contents.next().is_some() {
+            anyhow::bail!("Target folder must not already contain files");
+        }
+    }
+
+    let mut command = std::process::Command::new("git");
+    command.arg("worktree").arg("add").arg(target_path);
+    match mode {
+        CreateWorktreeMode::ExistingBranch => {
+            let branch = branch_name.context("existing branch mode requires a branch name")?;
+            command.arg(branch);
+        }
+        CreateWorktreeMode::NewBranchFromBase => {
+            let branch = branch_name.context("new branch mode requires a branch name")?;
+            let start = start_point.context("new branch mode requires a start point")?;
+            command.arg("-b").arg(branch).arg(start);
+        }
+    }
+    let output = command
+        .current_dir(
+            repo.workdir()
+                .context("repository has no working directory")?,
+        )
+        .output()
+        .context("failed to run git worktree add")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.contains("already checked out") || stderr.contains("already used by worktree") {
+            anyhow::bail!("{stderr}");
+        }
+        anyhow::bail!("git worktree add failed: {stderr}");
+    }
+    Ok(())
 }
 
 pub(crate) fn resolve_repo_info(repo: &Repository) -> anyhow::Result<RepoInfo> {

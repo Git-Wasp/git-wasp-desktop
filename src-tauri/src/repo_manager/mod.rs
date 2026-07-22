@@ -6,8 +6,10 @@ use crate::commands::branch::BranchInfo;
 use crate::commands::repo::RepoInfo;
 use crate::merge_ops::{ConflictSide, ConflictedFile, MergeOutcome};
 use crate::operation_runner::{OperationKind, OperationState, OperationStatus};
+use crate::worktree_ops::{CreateWorktreeMode, WorktreeEntry};
 use anyhow::Context;
 use git2::{BranchType, ObjectType, Repository};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use tauri::Manager;
@@ -650,6 +652,71 @@ impl RepoManager {
         })?
     }
 
+    pub fn list_worktrees(&self, repo_path: &str) -> anyhow::Result<Vec<WorktreeEntry>> {
+        let current_key = self.require_open_repo_key(repo_path)?;
+        let state = {
+            let repos = self.repos_lock()?;
+            repos
+                .iter()
+                .find(|repo| repo.key == current_key.to_string_lossy())
+                .map(|repo| Arc::clone(&repo.state))
+                .ok_or_else(|| anyhow::anyhow!("repository not open: {repo_path}"))?
+        };
+        let open_paths: HashSet<String> = self
+            .repos_lock()?
+            .iter()
+            .map(|repo| repo.key.clone())
+            .collect();
+        let guard = state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("repo state lock poisoned"))?;
+        crate::worktree_ops::list_worktrees(&guard.repo, &current_key, &open_paths)
+    }
+
+    pub fn create_worktree(
+        &self,
+        repo_path: Option<&str>,
+        target_path: &str,
+        mode: CreateWorktreeMode,
+        branch_name: Option<&str>,
+        start_point: Option<&str>,
+        _app_handle: Option<tauri::AppHandle>,
+    ) -> anyhow::Result<RepoInfo> {
+        let state = match repo_path {
+            Some(path) => {
+                let key = self.require_open_repo_key(path)?;
+                let repos = self.repos_lock()?;
+                repos
+                    .iter()
+                    .find(|repo| repo.key == key.to_string_lossy())
+                    .map(|repo| Arc::clone(&repo.state))
+                    .ok_or_else(|| anyhow::anyhow!("repository not open: {path}"))?
+            }
+            None => self.active_state()?,
+        };
+        {
+            let guard = state
+                .lock()
+                .map_err(|_| anyhow::anyhow!("repo state lock poisoned"))?;
+            crate::worktree_ops::create_worktree(
+                &guard.repo,
+                Path::new(target_path),
+                mode,
+                branch_name,
+                start_point,
+            )?;
+        }
+        self.open(target_path)
+    }
+
+    pub fn open_parent_repo(&self, repo_path: &str) -> anyhow::Result<RepoInfo> {
+        let repo = Repository::open(repo_path)
+            .with_context(|| format!("not a git repository: {repo_path}"))?;
+        let info = repo_info(&repo);
+        let target = info.parent_repo_path.unwrap_or(info.path);
+        self.open(&target)
+    }
+
     pub fn operation_status(&self) -> anyhow::Result<OperationStatus> {
         self.with_repo_and_operation_mut(|repo, op| {
             crate::operation_runner::derive_status(repo, op)
@@ -842,6 +909,10 @@ impl AppState {
         self.manager.remove_recent(path)
     }
 
+    pub fn list_worktrees(&self, repo_path: &str) -> anyhow::Result<Vec<WorktreeEntry>> {
+        self.manager.list_worktrees(repo_path)
+    }
+
     pub fn hook_preferences(&self, repo_path: &str) -> anyhow::Result<HookPreferences> {
         self.manager.hook_preferences(repo_path)
     }
@@ -905,6 +976,41 @@ impl AppState {
 
     pub fn create_branch(&self, name: &str, start_oid: Option<&str>) -> anyhow::Result<BranchInfo> {
         self.manager.create_branch(name, start_oid)
+    }
+
+    pub fn create_worktree(
+        &self,
+        repo_path: Option<&str>,
+        target_path: &str,
+        mode: CreateWorktreeMode,
+        branch_name: Option<&str>,
+        start_point: Option<&str>,
+        app_handle: Option<tauri::AppHandle>,
+    ) -> anyhow::Result<RepoInfo> {
+        let info = self.manager.create_worktree(
+            repo_path,
+            target_path,
+            mode,
+            branch_name,
+            start_point,
+            app_handle.clone(),
+        )?;
+        if let Some(handle) = app_handle {
+            self.restart_watcher(handle, Some(Path::new(&info.path)));
+        }
+        Ok(info)
+    }
+
+    pub fn open_parent_repo(
+        &self,
+        repo_path: &str,
+        app_handle: Option<tauri::AppHandle>,
+    ) -> anyhow::Result<RepoInfo> {
+        let info = self.manager.open_parent_repo(repo_path)?;
+        if let Some(handle) = app_handle {
+            self.restart_watcher(handle, Some(Path::new(&info.path)));
+        }
+        Ok(info)
     }
 
     pub fn fast_forward_branch(
@@ -1560,6 +1666,101 @@ mod tests {
             std::fs::canonicalize(&open[0].path).unwrap(),
             std::fs::canonicalize(dir.path()).unwrap()
         );
+    }
+
+    #[test]
+    fn create_worktree_creates_and_returns_a_linked_worktree_repo() {
+        let (_main_dir, repo) = make_git_repo_with_commit();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("feature/worktree", &head, false).unwrap();
+        let worktree_dir = tempfile::tempdir().unwrap();
+
+        let manager = RepoManager::new();
+        manager
+            .open(repo.workdir().unwrap().to_str().unwrap())
+            .unwrap();
+
+        let info = manager
+            .create_worktree(
+                Some(repo.workdir().unwrap().to_str().unwrap()),
+                worktree_dir.path().to_str().unwrap(),
+                crate::worktree_ops::CreateWorktreeMode::ExistingBranch,
+                Some("feature/worktree"),
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(info.repo_kind, crate::commands::repo::RepoKind::Worktree);
+        assert_eq!(
+            std::fs::canonicalize(&info.path).unwrap(),
+            std::fs::canonicalize(worktree_dir.path()).unwrap()
+        );
+    }
+
+    #[test]
+    fn create_worktree_rejects_a_branch_checked_out_in_another_worktree() {
+        let (main_dir, repo) = make_git_repo_with_commit();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("feature/worktree", &head, false).unwrap();
+        let first = tempfile::tempdir().unwrap();
+        let output = std::process::Command::new("git")
+            .args([
+                "worktree",
+                "add",
+                first.path().to_str().unwrap(),
+                "feature/worktree",
+            ])
+            .current_dir(main_dir.path())
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+
+        let second = tempfile::tempdir().unwrap();
+        let manager = RepoManager::new();
+        manager
+            .open(repo.workdir().unwrap().to_str().unwrap())
+            .unwrap();
+
+        let err = manager
+            .create_worktree(
+                Some(repo.workdir().unwrap().to_str().unwrap()),
+                second.path().to_str().unwrap(),
+                crate::worktree_ops::CreateWorktreeMode::ExistingBranch,
+                Some("feature/worktree"),
+                None,
+                None,
+            )
+            .unwrap_err();
+
+        assert!(err.to_string().contains("already used by worktree"));
+    }
+
+    #[test]
+    fn create_worktree_rejects_a_non_empty_target_directory() {
+        let (_main_dir, repo) = make_git_repo_with_commit();
+        let target = tempfile::tempdir().unwrap();
+        std::fs::write(target.path().join("existing.txt"), "x\n").unwrap();
+
+        let manager = RepoManager::new();
+        manager
+            .open(repo.workdir().unwrap().to_str().unwrap())
+            .unwrap();
+
+        let err = manager
+            .create_worktree(
+                Some(repo.workdir().unwrap().to_str().unwrap()),
+                target.path().to_str().unwrap(),
+                crate::worktree_ops::CreateWorktreeMode::NewBranchFromBase,
+                Some("feature/new"),
+                Some("main"),
+                None,
+            )
+            .unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("Target folder must not already contain files"));
     }
 
     #[test]
