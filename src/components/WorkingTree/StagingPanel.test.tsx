@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import userEvent from "@testing-library/user-event";
@@ -35,6 +41,8 @@ beforeEach(() => {
     status,
     selectedPath: null,
     stageDiff: null,
+    identity: null,
+    headCommit: null,
     loadStatus: vi.fn().mockResolvedValue(undefined),
     startWatching: vi.fn().mockResolvedValue(() => {}),
     selectFile: vi.fn().mockResolvedValue(undefined),
@@ -42,6 +50,11 @@ beforeEach(() => {
     unstageFile: vi.fn().mockResolvedValue(undefined),
     discardFile: vi.fn().mockResolvedValue(undefined),
     deleteFile: vi.fn().mockResolvedValue(undefined),
+    loadIdentity: vi.fn().mockResolvedValue(undefined),
+    loadHeadCommit: vi.fn().mockResolvedValue(undefined),
+    createCommit: vi.fn().mockResolvedValue(undefined),
+    amendCommitMessage: vi.fn().mockResolvedValue(undefined),
+    discardAll: vi.fn().mockResolvedValue(undefined),
   });
 });
 
@@ -81,7 +94,9 @@ describe("StagingPanel row menu", () => {
     expect(within(dialog).getByText(/changed\.ts/)).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByText("Discard"));
-    expect(useWorkingTreeStore.getState().discardFile).toHaveBeenCalledWith("changed.ts");
+    expect(useWorkingTreeStore.getState().discardFile).toHaveBeenCalledWith(
+      "changed.ts",
+    );
   });
 
   it("does not discard when the confirmation is cancelled", () => {
@@ -104,7 +119,9 @@ describe("StagingPanel row menu", () => {
     expect(within(dialog).getByText(/changed\.ts/)).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByText("Delete"));
-    expect(useWorkingTreeStore.getState().deleteFile).toHaveBeenCalledWith("changed.ts");
+    expect(useWorkingTreeStore.getState().deleteFile).toHaveBeenCalledWith(
+      "changed.ts",
+    );
   });
 
   it("does not delete when the confirmation is cancelled", () => {
@@ -119,7 +136,9 @@ describe("StagingPanel row menu", () => {
 
 describe("StagingPanel toasts on failed mutations", () => {
   it("shows a toast instead of throwing when staging a file fails", async () => {
-    useWorkingTreeStore.setState({ stageFile: vi.fn().mockRejectedValue(new Error("boom")) });
+    useWorkingTreeStore.setState({
+      stageFile: vi.fn().mockRejectedValue(new Error("boom")),
+    });
     const error = vi.fn();
     useToastStore.setState({ error });
 
@@ -127,22 +146,34 @@ describe("StagingPanel toasts on failed mutations", () => {
     // getAllByText throws if it finds nothing, so index 0 always exists.
     fireEvent.click(screen.getAllByText("Stage")[0]!);
 
-    await waitFor(() => expect(error).toHaveBeenCalledWith("Error: boom", { title: "Stage failed" }));
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: boom", {
+        title: "Stage failed",
+      }),
+    );
   });
 
   it("shows a toast instead of throwing when unstaging a file fails", async () => {
-    useWorkingTreeStore.setState({ unstageFile: vi.fn().mockRejectedValue(new Error("boom")) });
+    useWorkingTreeStore.setState({
+      unstageFile: vi.fn().mockRejectedValue(new Error("boom")),
+    });
     const error = vi.fn();
     useToastStore.setState({ error });
 
     render(<StagingPanel />);
     fireEvent.click(screen.getByText("Unstage"));
 
-    await waitFor(() => expect(error).toHaveBeenCalledWith("Error: boom", { title: "Unstage failed" }));
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: boom", {
+        title: "Unstage failed",
+      }),
+    );
   });
 
   it("shows a toast instead of throwing when discarding a file fails", async () => {
-    useWorkingTreeStore.setState({ discardFile: vi.fn().mockRejectedValue(new Error("boom")) });
+    useWorkingTreeStore.setState({
+      discardFile: vi.fn().mockRejectedValue(new Error("boom")),
+    });
     const error = vi.fn();
     useToastStore.setState({ error });
 
@@ -152,11 +183,17 @@ describe("StagingPanel toasts on failed mutations", () => {
     const dialog = screen.getByRole("dialog", { name: "Discard changes" });
     fireEvent.click(within(dialog).getByText("Discard"));
 
-    await waitFor(() => expect(error).toHaveBeenCalledWith("Error: boom", { title: "Discard failed" }));
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: boom", {
+        title: "Discard failed",
+      }),
+    );
   });
 
   it("shows a toast instead of throwing when deleting a file fails", async () => {
-    useWorkingTreeStore.setState({ deleteFile: vi.fn().mockRejectedValue(new Error("boom")) });
+    useWorkingTreeStore.setState({
+      deleteFile: vi.fn().mockRejectedValue(new Error("boom")),
+    });
     const error = vi.fn();
     useToastStore.setState({ error });
 
@@ -166,11 +203,17 @@ describe("StagingPanel toasts on failed mutations", () => {
     const dialog = screen.getByRole("dialog", { name: "Delete file" });
     fireEvent.click(within(dialog).getByText("Delete"));
 
-    await waitFor(() => expect(error).toHaveBeenCalledWith("Error: boom", { title: "Delete failed" }));
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: boom", {
+        title: "Delete failed",
+      }),
+    );
   });
 
   it("shows a toast instead of throwing when loading a file's diff fails", async () => {
-    useWorkingTreeStore.setState({ selectFile: vi.fn().mockRejectedValue(new Error("boom")) });
+    useWorkingTreeStore.setState({
+      selectFile: vi.fn().mockRejectedValue(new Error("boom")),
+    });
     const error = vi.fn();
     useToastStore.setState({ error });
 
@@ -178,19 +221,25 @@ describe("StagingPanel toasts on failed mutations", () => {
     fireEvent.click(screen.getByText("changed.ts"));
 
     await waitFor(() =>
-      expect(error).toHaveBeenCalledWith("Error: boom", { title: "Couldn't load diff" }),
+      expect(error).toHaveBeenCalledWith("Error: boom", {
+        title: "Couldn't load diff",
+      }),
     );
   });
 
   it("shows a toast instead of throwing when the initial status load fails", async () => {
-    useWorkingTreeStore.setState({ loadStatus: vi.fn().mockRejectedValue(new Error("boom")) });
+    useWorkingTreeStore.setState({
+      loadStatus: vi.fn().mockRejectedValue(new Error("boom")),
+    });
     const error = vi.fn();
     useToastStore.setState({ error });
 
     render(<StagingPanel />);
 
     await waitFor(() =>
-      expect(error).toHaveBeenCalledWith("Error: boom", { title: "Couldn't load working tree status" }),
+      expect(error).toHaveBeenCalledWith("Error: boom", {
+        title: "Couldn't load working tree status",
+      }),
     );
   });
 });
@@ -207,11 +256,15 @@ describe("StagingPanel stash changes", () => {
     fireEvent.click(screen.getByText("Stash changes"));
 
     expect(stashCreate).toHaveBeenCalledWith();
-    await vi.waitFor(() => expect(success).toHaveBeenCalledWith("Stashed changes"));
+    await vi.waitFor(() =>
+      expect(success).toHaveBeenCalledWith("Stashed changes"),
+    );
   });
 
   it("surfaces a stash failure as an error toast", async () => {
-    useStashStore.setState({ create: vi.fn().mockRejectedValue("nothing to stash") });
+    useStashStore.setState({
+      create: vi.fn().mockRejectedValue("nothing to stash"),
+    });
     const error = vi.fn();
     useToastStore.setState({ error });
 
@@ -267,7 +320,11 @@ describe("StagingPanel stageAll/unstageAll", () => {
     mockInvoke.mockImplementation((cmd: string) => Promise.resolve(impl(cmd)));
 
   it("stages every changed file in a single stage_all call", async () => {
-    withStageAll((cmd) => (cmd === "stage_all" ? { staged: [], unstaged: [], untracked: [] } : undefined));
+    withStageAll((cmd) =>
+      cmd === "stage_all"
+        ? { staged: [], unstaged: [], untracked: [] }
+        : undefined,
+    );
     useWorkingTreeStore.setState({
       status: {
         staged: [],
@@ -282,12 +339,20 @@ describe("StagingPanel stageAll/unstageAll", () => {
 
     await userEvent.click(screen.getByText("Stage all"));
 
-    const stageAllCalls = mockInvoke.mock.calls.filter(([cmd]) => cmd === "stage_all");
-    expect(stageAllCalls).toEqual([["stage_all", { paths: ["a.txt", "b.txt"] }]]);
+    const stageAllCalls = mockInvoke.mock.calls.filter(
+      ([cmd]) => cmd === "stage_all",
+    );
+    expect(stageAllCalls).toEqual([
+      ["stage_all", { paths: ["a.txt", "b.txt"] }],
+    ]);
   });
 
   it("unstages every staged file in a single unstage_all call", async () => {
-    withStageAll((cmd) => (cmd === "unstage_all" ? { staged: [], unstaged: [], untracked: [] } : undefined));
+    withStageAll((cmd) =>
+      cmd === "unstage_all"
+        ? { staged: [], unstaged: [], untracked: [] }
+        : undefined,
+    );
     useWorkingTreeStore.setState({
       status: {
         staged: [
@@ -302,13 +367,19 @@ describe("StagingPanel stageAll/unstageAll", () => {
 
     await userEvent.click(screen.getByText("Unstage all"));
 
-    const unstageAllCalls = mockInvoke.mock.calls.filter(([cmd]) => cmd === "unstage_all");
-    expect(unstageAllCalls).toEqual([["unstage_all", { paths: ["a.txt", "b.txt"] }]]);
+    const unstageAllCalls = mockInvoke.mock.calls.filter(
+      ([cmd]) => cmd === "unstage_all",
+    );
+    expect(unstageAllCalls).toEqual([
+      ["unstage_all", { paths: ["a.txt", "b.txt"] }],
+    ]);
   });
 
   it("toasts once, for the whole batch, when stage_all fails", async () => {
     mockInvoke.mockImplementation((cmd: string) =>
-      cmd === "stage_all" ? Promise.reject(new Error("boom")) : Promise.resolve(undefined),
+      cmd === "stage_all"
+        ? Promise.reject(new Error("boom"))
+        : Promise.resolve(undefined),
     );
     const error = vi.fn();
     useToastStore.setState({ error });
@@ -323,7 +394,11 @@ describe("StagingPanel stageAll/unstageAll", () => {
 
     await userEvent.click(screen.getByText("Stage all"));
 
-    await waitFor(() => expect(error).toHaveBeenCalledWith("Error: boom", { title: "Stage failed" }));
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Error: boom", {
+        title: "Stage failed",
+      }),
+    );
     expect(error).toHaveBeenCalledTimes(1);
   });
 });
