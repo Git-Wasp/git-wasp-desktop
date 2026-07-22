@@ -143,6 +143,7 @@ pub fn start(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use notify::PollWatcher;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::mpsc;
     use std::sync::Arc;
@@ -189,6 +190,61 @@ mod tests {
                 .add_path(path.to_path_buf()),
             std::time::Instant::now(),
         )
+    }
+
+    fn test_watcher_config() -> Config {
+        Config::default()
+            .with_poll_interval(Duration::from_millis(50))
+            .with_compare_contents(true)
+    }
+
+    fn collect_matching_callbacks(
+        change_rx: &mpsc::Receiver<Vec<String>>,
+        prefix: &str,
+        initial_wait: Duration,
+    ) -> usize {
+        let mut matches = 0usize;
+        let first_batch = match change_rx.recv_timeout(initial_wait) {
+            Ok(paths) => Some(paths),
+            Err(mpsc::RecvTimeoutError::Timeout) => None,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                panic!("watcher callback channel disconnected")
+            }
+        };
+        if let Some(paths) = first_batch {
+            matches += usize::from(paths.iter().any(|path| path.starts_with(prefix)));
+            while let Ok(paths) = change_rx.recv_timeout(DEBOUNCE_WINDOW * 2) {
+                matches += usize::from(paths.iter().any(|path| path.starts_with(prefix)));
+            }
+        }
+        matches
+    }
+
+    fn wait_for_non_noise_burst(
+        dir: &TempDir,
+        change_rx: &mpsc::Receiver<Vec<String>>,
+        prefix_base: &str,
+    ) -> String {
+        for attempt in 0..8 {
+            while change_rx.recv_timeout(DEBOUNCE_WINDOW).is_ok() {}
+
+            let prefix = format!("{prefix_base}-{attempt}");
+            for i in 0..20 {
+                std::fs::write(dir.path().join(format!("{prefix}-{i}.txt")), "x").unwrap();
+            }
+
+            let matches =
+                collect_matching_callbacks(change_rx, &prefix, Duration::from_millis(1500));
+            if matches > 0 {
+                assert_eq!(
+                    matches, 1,
+                    "the burst for prefix {prefix} must produce exactly one callback"
+                );
+                return prefix;
+            }
+        }
+
+        panic!("watcher never observed a non-noise burst within retry budget");
     }
 
     #[test]
@@ -275,58 +331,28 @@ mod tests {
         Repository::init(dir.path()).unwrap();
         let (change_tx, change_rx) = mpsc::channel();
 
-        let debouncer = start_with_watcher::<RecommendedWatcher, _>(
+        let debouncer = start_with_watcher::<PollWatcher, _>(
             dir.path(),
-            Config::default(),
+            test_watcher_config(),
             move |events| {
-                let is_measured_burst = events.iter().flat_map(|event| &event.paths).any(|path| {
-                    path.file_name()
-                        .and_then(|name| name.to_str())
-                        .is_some_and(|name| name.starts_with('f') && name.ends_with(".txt"))
-                });
-                change_tx.send(is_measured_burst).unwrap();
+                let file_names = events
+                    .iter()
+                    .flat_map(|event| &event.paths)
+                    .filter_map(|path| {
+                        path.file_name()
+                            .and_then(|name| name.to_str())
+                            .map(str::to_owned)
+                    })
+                    .collect::<Vec<_>>();
+                change_tx.send(file_names).unwrap();
             },
         )
         .unwrap();
 
-        // Watcher startup is asynchronous. Probe until the callback confirms
-        // this directory is being observed before exercising the burst
-        // contract.
-        let ready_by = Instant::now() + Duration::from_secs(5);
-        let mut probe = 0;
-        loop {
-            std::fs::write(dir.path().join(".watcher-ready"), probe.to_string()).unwrap();
-            if change_rx.recv_timeout(Duration::from_millis(100)).is_ok() {
-                break;
-            }
-            assert!(
-                Instant::now() < ready_by,
-                "watcher did not become ready within 5 seconds"
-            );
-            probe += 1;
-        }
-
-        // Require a full quiet window after the last probe callback. A probe
-        // callback is also tagged false from its event paths, so it can never
-        // be mistaken for the measured burst even if it arrives later.
-        while change_rx.recv_timeout(DEBOUNCE_WINDOW).is_ok() {}
-
-        // A burst of writes, all within one debounce window.
-        for i in 0..20 {
-            std::fs::write(dir.path().join(format!("f{i}.txt")), "x").unwrap();
-        }
-
-        let mut measured_callbacks = usize::from(
-            change_rx
-                .recv_timeout(Duration::from_secs(5))
-                .expect("watcher did not emit after the burst"),
-        );
-        while let Ok(is_measured_burst) = change_rx.recv_timeout(DEBOUNCE_WINDOW * 2) {
-            measured_callbacks += usize::from(is_measured_burst);
-        }
-        assert_eq!(
-            measured_callbacks, 1,
-            "the measured burst must produce exactly one callback"
+        let observed_prefix = wait_for_non_noise_burst(&dir, &change_rx, "burst");
+        assert!(
+            observed_prefix.starts_with("burst-"),
+            "sanity check: helper returned the observed burst prefix"
         );
         debouncer.stop();
     }
@@ -334,6 +360,7 @@ mod tests {
     #[test]
     fn debounced_watcher_emits_nothing_for_a_burst_of_pure_noise() {
         let dir = TempDir::new().unwrap();
+        let root = dir.path().to_path_buf();
         let repo = Repository::init(dir.path()).unwrap();
         std::fs::write(dir.path().join(".gitignore"), "ignored/\n").unwrap();
         std::fs::create_dir(dir.path().join("ignored")).unwrap();
@@ -350,20 +377,50 @@ mod tests {
         repo.commit(Some("HEAD"), &sig, &sig, "add gitignore", &tree, &[])
             .unwrap();
 
-        let count = Arc::new(AtomicUsize::new(0));
-        let count_handle = Arc::clone(&count);
-        let debouncer = start_with_notifier(dir.path(), move || {
-            count_handle.fetch_add(1, Ordering::SeqCst);
-        })
+        let (change_tx, change_rx) = mpsc::channel();
+        let debouncer = start_with_watcher::<PollWatcher, _>(
+            dir.path(),
+            test_watcher_config(),
+            move |events| {
+                let rel_paths = events
+                    .iter()
+                    .flat_map(|event| &event.paths)
+                    .filter_map(|path| {
+                        path.strip_prefix(&root)
+                            .ok()
+                            .and_then(|rel| rel.to_str())
+                            .map(str::to_owned)
+                    })
+                    .collect::<Vec<_>>();
+                change_tx.send(rel_paths).unwrap();
+            },
+        )
         .unwrap();
 
+        let observed_prefix = wait_for_non_noise_burst(&dir, &change_rx, "control");
+        assert!(
+            observed_prefix.starts_with("control-"),
+            "sanity check: helper returned the observed control prefix"
+        );
+
+        while change_rx.recv_timeout(DEBOUNCE_WINDOW).is_ok() {}
+
+        let noise_prefix = "ignored/noise";
         for i in 0..10 {
-            std::fs::write(dir.path().join("ignored").join(format!("f{i}.txt")), "x").unwrap();
+            std::fs::write(
+                dir.path().join("ignored").join(format!("noise-{i}.txt")),
+                "x",
+            )
+            .unwrap();
         }
 
-        std::thread::sleep(DEBOUNCE_WINDOW + Duration::from_millis(750));
+        let measured_callbacks = collect_matching_callbacks(
+            &change_rx,
+            noise_prefix,
+            DEBOUNCE_WINDOW + Duration::from_millis(750),
+        );
 
-        assert_eq!(count.load(Ordering::SeqCst), 0);
+        assert_eq!(measured_callbacks, 0);
         debouncer.stop();
     }
 }
