@@ -18,6 +18,7 @@ import { PruneBranchesDialog } from "./PruneBranchesDialog";
 import { PromptDialog } from "../common/PromptDialog";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { VirtualList } from "../ui/VirtualList";
+import { WorktreePanel } from "./WorktreePanel";
 import type { BranchInfo } from "../../types/repo";
 
 // Fixed row height for the virtualised branch lists — sized to fit the ⋮ menu
@@ -178,7 +179,13 @@ export function Sidebar({ width = 220 }: { width?: number }) {
     currentRepo,
     recentRepos,
     branches,
+    worktrees,
+    openRepos,
+    activeRepoPath,
     openRepo,
+    activateRepo,
+    openParentRepo,
+    listWorktrees,
     loadRecentRepos,
     removeRecent,
     checkoutBranch,
@@ -217,6 +224,11 @@ export function Sidebar({ width = 220 }: { width?: number }) {
     void loadRecentRepos();
   }, [loadRecentRepos]);
 
+  useEffect(() => {
+    if (!currentRepo?.path) return;
+    void listWorktrees();
+  }, [currentRepo?.path, listWorktrees]);
+
   // Branch list, ahead/behind, and remote detection are loaded at the app root
   // (App) on repo change, so they stay correct even when this sidebar is
   // collapsed (and thus unmounted).
@@ -226,6 +238,20 @@ export function Sidebar({ width = 220 }: { width?: number }) {
       await openRepo(path);
     } catch (e) {
       toastError(String(e), { title: "Couldn't open repository" });
+    }
+  };
+
+  const handleOpenOrActivateWorktree = async (path: string) => {
+    try {
+      if (path === activeRepoPath) return;
+      const isOpen = openRepos.some((repo) => repo.path === path);
+      if (isOpen) {
+        await activateRepo(path);
+      } else {
+        await openRepo(path);
+      }
+    } catch (e) {
+      toastError(String(e), { title: "Couldn't open worktree" });
     }
   };
 
@@ -475,6 +501,16 @@ export function Sidebar({ width = 220 }: { width?: number }) {
         )}
 
         {/* Branch list */}
+        {currentRepo && (
+          <WorktreePanel
+            currentRepoPath={currentRepo.path}
+            worktrees={worktrees}
+            onOpenOrActivate={(path) => void handleOpenOrActivateWorktree(path)}
+            onRefresh={() => void listWorktrees()}
+            onOpenParent={(path) => void openParentRepo(path)}
+          />
+        )}
+
         {currentRepo && (
           <CollapsibleSection
             id="branches"

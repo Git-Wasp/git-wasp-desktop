@@ -28,10 +28,14 @@ beforeEach(() => {
     currentRepo: { name: "gitclient", path: "/repo", headBranch: "main" },
     recentRepos: [],
     branches: [],
+    worktrees: [],
+    worktreesLoadedFor: null,
     openRepo: vi.fn().mockResolvedValue(undefined),
     loadCurrentRepo: vi.fn().mockResolvedValue(undefined),
     loadRecentRepos: vi.fn().mockResolvedValue(undefined),
     loadBranches: vi.fn().mockResolvedValue(undefined),
+    listWorktrees: vi.fn().mockResolvedValue([]),
+    openParentRepo: vi.fn().mockResolvedValue(undefined),
     checkoutBranch: vi.fn().mockResolvedValue(undefined),
     createBranch: vi.fn().mockResolvedValue(undefined),
     renameBranch: vi.fn().mockResolvedValue(undefined),
@@ -435,5 +439,44 @@ describe("Sidebar", () => {
     expect(screen.getByText("feature/worktree")).toBeInTheDocument();
     expect(screen.getByText(/Linked to \/repos\/main/)).toBeInTheDocument();
     expect(screen.getByText("Locked")).toBeInTheDocument();
+  });
+
+  it("shows the Worktrees panel and refreshes worktrees for the active repo family", async () => {
+    const listWorktrees = vi.fn().mockResolvedValue([]);
+    useRepoStore.setState({
+      currentRepo: {
+        name: "main-feature",
+        path: "/repos/main-feature",
+        headBranch: "feature/worktree",
+        repoKind: "worktree",
+        parentRepoPath: "/repos/main",
+        commonDirPath: "/repos/main/.git",
+        worktreeBranch: "feature/worktree",
+        worktreeLocked: false,
+        worktreePrunable: false,
+      },
+      worktrees: [
+        {
+          path: "/repos/main",
+          name: "main",
+          repoKind: "main",
+          branch: "main",
+          isCurrent: false,
+          isOpen: false,
+          isLocked: false,
+          hasUncommittedChanges: false,
+          parentRepoPath: null,
+        },
+      ],
+      listWorktrees,
+    });
+
+    render(<Sidebar width={240} />);
+
+    expect(
+      screen.getByRole("button", { name: "Worktrees" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTitle("/repos/main")).toBeInTheDocument();
+    await waitFor(() => expect(listWorktrees).toHaveBeenCalled());
   });
 });
