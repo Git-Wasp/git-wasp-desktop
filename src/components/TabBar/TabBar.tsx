@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { useRepoStore } from "../../stores/repoStore";
 import { useToastStore } from "../../stores/toastStore";
 import { IconButton } from "../ui/IconButton";
+import { TreeIcon } from "../ui/icons";
 
 const barStyle: CSSProperties = {
   display: "flex",
@@ -26,7 +27,8 @@ const tabBaseStyle: CSSProperties = {
 };
 
 export function TabBar() {
-  const { openRepos, activeRepoPath, activateRepo, closeRepo, newTab } = useRepoStore();
+  const { openRepos, activeRepoPath, activateRepo, closeRepo, newTab } =
+    useRepoStore();
 
   // Always render — even with no repos open — so the "New tab" button is always
   // reachable (the bar then shows just that button, with the welcome view below).
@@ -43,11 +45,14 @@ export function TabBar() {
             title={repo.path}
             onClick={() =>
               void activateRepo(repo.path).catch((e: unknown) =>
-                useToastStore.getState().error(String(e), { title: "Couldn't switch repository" }),
+                useToastStore
+                  .getState()
+                  .error(String(e), { title: "Couldn't switch repository" }),
               )
             }
             onMouseEnter={(e) => {
-              if (!active) e.currentTarget.style.background = "var(--color-bg-hover)";
+              if (!active)
+                e.currentTarget.style.background = "var(--color-bg-hover)";
             }}
             onMouseLeave={(e) => {
               if (!active) e.currentTarget.style.background = "transparent";
@@ -55,11 +60,30 @@ export function TabBar() {
             style={{
               ...tabBaseStyle,
               background: active ? "var(--color-bg-elevated)" : "transparent",
-              color: active ? "var(--color-text-primary)" : "var(--color-text-muted)",
-              fontWeight: active ? "var(--font-weight-semibold)" : "var(--font-weight-normal)",
+              color: active
+                ? "var(--color-text-primary)"
+                : "var(--color-text-muted)",
+              fontWeight: active
+                ? "var(--font-weight-semibold)"
+                : "var(--font-weight-normal)",
               transition: "background var(--duration-fast) var(--ease-default)",
             }}
           >
+            {repo.repoKind === "worktree" && (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  color: active
+                    ? "var(--color-text-primary)"
+                    : "var(--color-text-muted)",
+                  flexShrink: 0,
+                }}
+                title="Linked worktree"
+              >
+                <TreeIcon size={12} />
+              </span>
+            )}
             <span
               style={{
                 overflow: "hidden",
@@ -74,7 +98,9 @@ export function TabBar() {
               onClick={(e) => {
                 e.stopPropagation();
                 closeRepo(repo.path).catch((err: unknown) =>
-                  useToastStore.getState().error(String(err), { title: "Couldn't close repository" }),
+                  useToastStore
+                    .getState()
+                    .error(String(err), { title: "Couldn't close repository" }),
                 );
               }}
             >
@@ -88,7 +114,11 @@ export function TabBar() {
         title="New tab"
         size="md"
         onClick={newTab}
-        style={{ alignSelf: "center", marginLeft: "var(--space-1)", flexShrink: 0 }}
+        style={{
+          alignSelf: "center",
+          marginLeft: "var(--space-1)",
+          flexShrink: 0,
+        }}
       >
         +
       </IconButton>

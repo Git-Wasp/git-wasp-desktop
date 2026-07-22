@@ -175,6 +175,35 @@ export function BranchIcon({ size = 14, title }: IconProps) {
   );
 }
 
+/** A simple tree / branch structure glyph — marks linked worktree repos. */
+export function TreeIcon({ size = 14, title }: IconProps) {
+  return (
+    <svg
+      data-icon="tree"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
+      style={{ flexShrink: 0 }}
+    >
+      {title && <title>{title}</title>}
+      <path d="M12 4v13" />
+      <path d="M12 9h6" />
+      <path d="M12 13H6" />
+      <circle cx="12" cy="4" r="2" />
+      <circle cx="18" cy="9" r="2" />
+      <circle cx="6" cy="13" r="2" />
+      <circle cx="12" cy="19" r="2" />
+    </svg>
+  );
+}
+
 /** A luggage-style tag — marks tag pills. */
 export function TagIcon({ size = 12, title }: IconProps) {
   return (
