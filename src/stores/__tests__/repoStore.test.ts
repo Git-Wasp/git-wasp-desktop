@@ -7,6 +7,7 @@ import { useAutoStashStore } from "../autoStashStore";
 import { useToastStore } from "../toastStore";
 import { useHookStore } from "../hookStore";
 import { AUTO_STASH_SENTINEL } from "../../lib/autoStash";
+import type { RepoInfo } from "../../types/repo";
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -17,6 +18,9 @@ beforeEach(() => {
     recentRepos: [],
     branches: [],
     openRepos: [],
+    worktrees: [],
+    worktreesLoadedFor: null,
+    showCreateWorktreeDialog: false,
     activeRepoPath: null,
     activationEpoch: 0,
   });
@@ -24,7 +28,12 @@ beforeEach(() => {
   // graphStore's fetchViewport, which now caches fetched rows — reset it too
   // so one test's cached (possibly empty) viewport can't mask another's
   // get_graph_viewport call.
-  useGraphStore.setState({ viewport: null, lastOffset: null, lastLimit: null, nodesByRow: new Map() });
+  useGraphStore.setState({
+    viewport: null,
+    lastOffset: null,
+    lastLimit: null,
+    nodesByRow: new Map(),
+  });
   useAutoStashStore.setState({ pending: null });
   useHookStore.setState({ runs: {} });
 });
@@ -36,20 +45,39 @@ const emptyGraphViewport = { nodes: [], totalCount: 0, offset: 0 };
 // get_graph_viewport defaults to an empty viewport unless overridden, since
 // reloadActiveRepo always fetches it and graphStore expects a real shape.
 function mockByCommand(map: Record<string, unknown>) {
-  const withDefaults: Record<string, unknown> = { get_graph_viewport: emptyGraphViewport, ...map };
+  const withDefaults: Record<string, unknown> = {
+    get_graph_viewport: emptyGraphViewport,
+    ...map,
+  };
   mockInvoke.mockImplementation((cmd: string) =>
     Promise.resolve(cmd in withDefaults ? withDefaults[cmd] : undefined),
   );
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("repoStore", () => {
   it("openRepo calls open_repo and updates currentRepo", async () => {
-    const fakeRepo = { name: "myrepo", path: "/tmp/myrepo", headBranch: "main" };
+    const fakeRepo = {
+      name: "myrepo",
+      path: "/tmp/myrepo",
+      headBranch: "main",
+    };
     mockByCommand({ open_repo: fakeRepo });
 
     await useRepoStore.getState().openRepo("/tmp/myrepo");
 
-    expect(mockInvoke).toHaveBeenCalledWith("open_repo", { path: "/tmp/myrepo" });
+    expect(mockInvoke).toHaveBeenCalledWith("open_repo", {
+      path: "/tmp/myrepo",
+    });
     expect(useRepoStore.getState().currentRepo).toEqual(fakeRepo);
   });
 
@@ -60,7 +88,9 @@ describe("repoStore", () => {
   });
 
   it("syncHead updates currentRepo and reloads branches when HEAD changed externally", async () => {
-    useRepoStore.setState({ currentRepo: { name: "r", path: "/p", headBranch: "develop" } });
+    useRepoStore.setState({
+      currentRepo: { name: "r", path: "/p", headBranch: "develop" },
+    });
     const branches = [{ name: "feature", isHead: true }];
     mockByCommand({
       get_current_repo: { name: "r", path: "/p", headBranch: "feature" },
@@ -99,7 +129,9 @@ describe("repoStore", () => {
 
     await useRepoStore.getState().loadRecentRepos();
 
-    expect(error).toHaveBeenCalledWith("Error: boom", { title: "Couldn't load recent repositories" });
+    expect(error).toHaveBeenCalledWith("Error: boom", {
+      title: "Couldn't load recent repositories",
+    });
   });
 
   it("removeRecent drops the entry and stores the returned list", async () => {
@@ -108,14 +140,241 @@ describe("repoStore", () => {
 
     await useRepoStore.getState().removeRecent("/a");
 
-    expect(mockInvoke).toHaveBeenCalledWith("remove_recent_repo", { path: "/a" });
+    expect(mockInvoke).toHaveBeenCalledWith("remove_recent_repo", {
+      path: "/a",
+    });
     expect(useRepoStore.getState().recentRepos).toEqual(remaining);
+  });
+
+  it("listWorktrees stores the returned family for the active repo", async () => {
+    const repo = {
+      name: "main",
+      path: "/repos/main",
+      headBranch: "main",
+      repoKind: "main",
+      parentRepoPath: null,
+      commonDirPath: "/repos/main/.git",
+      worktreeBranch: "main",
+      worktreeLocked: false,
+      worktreePrunable: false,
+    } satisfies RepoInfo;
+    const family = [
+      {
+        path: "/repos/main",
+        name: "main",
+        repoKind: "main",
+        branch: "main",
+        isCurrent: true,
+        isOpen: true,
+        isLocked: false,
+        hasUncommittedChanges: false,
+        parentRepoPath: null,
+      },
+    ];
+    useRepoStore.setState({ currentRepo: repo });
+    mockByCommand({ list_worktrees: family });
+
+    await useRepoStore.getState().listWorktrees();
+
+    expect(mockInvoke).toHaveBeenCalledWith("list_worktrees", {
+      repoPath: "/repos/main",
+    });
+    expect(useRepoStore.getState().worktrees).toEqual(family);
+  });
+
+  it("listWorktrees ignores a late response after the active repo changes", async () => {
+    const mainRepo = {
+      name: "main",
+      path: "/repos/main",
+      headBranch: "main",
+      repoKind: "main",
+      parentRepoPath: null,
+      commonDirPath: "/repos/main/.git",
+      worktreeBranch: "main",
+      worktreeLocked: false,
+      worktreePrunable: false,
+    } satisfies RepoInfo;
+    const otherRepo = {
+      name: "other",
+      path: "/repos/other",
+      headBranch: "main",
+      repoKind: "main",
+      parentRepoPath: null,
+      commonDirPath: "/repos/other/.git",
+      worktreeBranch: "main",
+      worktreeLocked: false,
+      worktreePrunable: false,
+    } satisfies RepoInfo;
+    const lateResponse = deferred<
+      Array<{
+        path: string;
+        name: string;
+        repoKind: "main";
+        branch: string;
+        isCurrent: boolean;
+        isOpen: boolean;
+        isLocked: boolean;
+        isPrunable: boolean;
+        hasUncommittedChanges: boolean;
+        parentRepoPath: null;
+      }>
+    >();
+
+    useRepoStore.setState({ currentRepo: mainRepo });
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "list_worktrees") return lateResponse.promise;
+      if (cmd === "get_graph_viewport")
+        return Promise.resolve(emptyGraphViewport);
+      return Promise.resolve(undefined);
+    });
+
+    const pending = useRepoStore.getState().listWorktrees();
+    useRepoStore.setState({ currentRepo: otherRepo });
+    lateResponse.resolve([
+      {
+        path: "/repos/main",
+        name: "main",
+        repoKind: "main",
+        branch: "main",
+        isCurrent: true,
+        isOpen: true,
+        isLocked: false,
+        isPrunable: false,
+        hasUncommittedChanges: false,
+        parentRepoPath: null,
+      },
+    ]);
+
+    await pending;
+
+    expect(useRepoStore.getState().currentRepo?.path).toBe("/repos/other");
+    expect(useRepoStore.getState().worktrees).toEqual([]);
+    expect(useRepoStore.getState().worktreesLoadedFor).toBeNull();
+  });
+
+  it("openParentRepo activates the returned parent tab for the selected row path", async () => {
+    const parent = {
+      name: "main",
+      path: "/repos/main",
+      headBranch: "main",
+      repoKind: "main",
+      parentRepoPath: null,
+      commonDirPath: "/repos/main/.git",
+      worktreeBranch: "main",
+      worktreeLocked: false,
+      worktreePrunable: false,
+    } satisfies RepoInfo;
+    mockByCommand({ open_parent_repo: parent, list_branches: [] });
+
+    await useRepoStore.getState().openParentRepo("/repos/main-feature");
+
+    expect(mockInvoke).toHaveBeenCalledWith("open_parent_repo", {
+      repoPath: "/repos/main-feature",
+    });
+    expect(useRepoStore.getState().currentRepo?.path).toBe("/repos/main");
+  });
+
+  it("loadCurrentRepo followed by listWorktrees stores the family for a linked worktree tab", async () => {
+    const repo = {
+      name: "main-feature",
+      path: "/repos/main-feature",
+      headBranch: "feature/worktree",
+      repoKind: "worktree",
+      parentRepoPath: "/repos/main",
+      commonDirPath: "/repos/main/.git",
+      worktreeBranch: "feature/worktree",
+      worktreeLocked: false,
+      worktreePrunable: false,
+    } satisfies RepoInfo;
+    mockByCommand({
+      get_current_repo: repo,
+      list_worktrees: [
+        {
+          path: "/repos/main",
+          name: "main",
+          repoKind: "main",
+          branch: "main",
+          isCurrent: false,
+          isOpen: false,
+          isLocked: false,
+          hasUncommittedChanges: false,
+          parentRepoPath: null,
+        },
+        {
+          path: "/repos/main-feature",
+          name: "main-feature",
+          repoKind: "worktree",
+          branch: "feature/worktree",
+          isCurrent: true,
+          isOpen: true,
+          isLocked: false,
+          hasUncommittedChanges: false,
+          parentRepoPath: "/repos/main",
+        },
+      ],
+    });
+
+    await useRepoStore.getState().loadCurrentRepo();
+    await useRepoStore.getState().listWorktrees();
+
+    expect(useRepoStore.getState().worktrees).toHaveLength(2);
+  });
+
+  it("removeWorktree closes the removed active tab and switches to the returned active repo", async () => {
+    useRepoStore.setState({
+      currentRepo: {
+        name: "main-feature",
+        path: "/repos/main-feature",
+        headBranch: "feature/worktree",
+        repoKind: "worktree",
+        parentRepoPath: "/repos/main",
+        commonDirPath: "/repos/main/.git",
+        worktreeBranch: "feature/worktree",
+        worktreeLocked: false,
+        worktreePrunable: false,
+      },
+    });
+    mockByCommand({
+      remove_worktree: {
+        removedPath: "/repos/main-feature",
+        closedTab: true,
+        activeRepo: {
+          name: "main",
+          path: "/repos/main",
+          headBranch: "main",
+          repoKind: "main",
+          parentRepoPath: null,
+          commonDirPath: "/repos/main/.git",
+          worktreeBranch: "main",
+          worktreeLocked: false,
+          worktreePrunable: false,
+        },
+      },
+      list_open_repos: [
+        {
+          name: "main",
+          path: "/repos/main",
+          headBranch: "main",
+          repoKind: "main",
+          parentRepoPath: null,
+          commonDirPath: "/repos/main/.git",
+          worktreeBranch: "main",
+          worktreeLocked: false,
+          worktreePrunable: false,
+        },
+      ],
+      list_worktrees: [],
+    });
+
+    await useRepoStore.getState().removeWorktree("/repos/main-feature");
+
+    expect(useRepoStore.getState().currentRepo?.path).toBe("/repos/main");
   });
 
   it("checkoutBranch calls checkout_branch and updates currentRepo", async () => {
     const updatedRepo = { name: "r", path: "/p", headBranch: "feature" };
-    mockInvoke.mockResolvedValueOnce(updatedRepo);  // checkout_branch
-    mockInvoke.mockResolvedValueOnce([]);            // list_branches (loadBranches)
+    mockInvoke.mockResolvedValueOnce(updatedRepo); // checkout_branch
+    mockInvoke.mockResolvedValueOnce([]); // list_branches (loadBranches)
 
     await useRepoStore.getState().checkoutBranch("feature");
 
@@ -128,7 +387,9 @@ describe("repoStore", () => {
 
   it("checkoutBranch refreshes the graph so the new HEAD's rows aren't served from a stale cache", async () => {
     const updatedRepo = { name: "r", path: "/p", headBranch: "feature" };
-    const refreshSpy = vi.spyOn(useGraphStore.getState(), "refresh").mockResolvedValue();
+    const refreshSpy = vi
+      .spyOn(useGraphStore.getState(), "refresh")
+      .mockResolvedValue();
     mockInvoke.mockResolvedValueOnce(updatedRepo).mockResolvedValueOnce([]); // checkout_branch, list_branches
 
     await useRepoStore.getState().checkoutBranch("feature");
@@ -137,7 +398,9 @@ describe("repoStore", () => {
   });
 
   it("createBranch refreshes the graph so the new branch's rows aren't served from a stale cache", async () => {
-    const refreshSpy = vi.spyOn(useGraphStore.getState(), "refresh").mockResolvedValue();
+    const refreshSpy = vi
+      .spyOn(useGraphStore.getState(), "refresh")
+      .mockResolvedValue();
     mockInvoke.mockResolvedValueOnce(undefined).mockResolvedValueOnce([]); // create_branch, list_branches
 
     await useRepoStore.getState().createBranch("feature");
@@ -146,7 +409,9 @@ describe("repoStore", () => {
   });
 
   it("deleteBranch refreshes the graph so the deleted branch's rows aren't served from a stale cache", async () => {
-    const refreshSpy = vi.spyOn(useGraphStore.getState(), "refresh").mockResolvedValue();
+    const refreshSpy = vi
+      .spyOn(useGraphStore.getState(), "refresh")
+      .mockResolvedValue();
     mockInvoke.mockResolvedValueOnce(undefined).mockResolvedValueOnce([]); // delete_branch, list_branches
 
     await useRepoStore.getState().deleteBranch("feature");
@@ -177,9 +442,14 @@ describe("repoStore", () => {
     });
 
     const oids = ["a".repeat(40), "b".repeat(40)];
-    const result = await useRepoStore.getState().squashCommits(oids, "combined");
+    const result = await useRepoStore
+      .getState()
+      .squashCommits(oids, "combined");
 
-    expect(mockInvoke).toHaveBeenCalledWith("squash_commits", { oids, message: "combined" });
+    expect(mockInvoke).toHaveBeenCalledWith("squash_commits", {
+      oids,
+      message: "combined",
+    });
     expect(mockInvoke).toHaveBeenCalledWith("refresh_working_tree");
     expect(mockInvoke).toHaveBeenCalledWith("list_branches");
     expect(result).toBe(newOid);
@@ -193,7 +463,9 @@ describe("repoStore", () => {
 
     const promise = useRepoStore.getState().checkoutBranch("feature");
     // The prompt opens; approve it.
-    await vi.waitFor(() => expect(useAutoStashStore.getState().pending).not.toBeNull());
+    await vi.waitFor(() =>
+      expect(useAutoStashStore.getState().pending).not.toBeNull(),
+    );
     useAutoStashStore.getState().respond(true);
     await promise;
 
@@ -212,7 +484,9 @@ describe("repoStore", () => {
     mockInvoke.mockRejectedValueOnce(AUTO_STASH_SENTINEL);
 
     const promise = useRepoStore.getState().checkoutBranch("feature");
-    await vi.waitFor(() => expect(useAutoStashStore.getState().pending).not.toBeNull());
+    await vi.waitFor(() =>
+      expect(useAutoStashStore.getState().pending).not.toBeNull(),
+    );
     useAutoStashStore.getState().respond(false);
     await expect(promise).resolves.toBe(false);
 
@@ -223,9 +497,9 @@ describe("repoStore", () => {
   it("checkoutBranch rethrows a non-sentinel error without prompting", async () => {
     mockInvoke.mockRejectedValueOnce("some other git failure");
 
-    await expect(useRepoStore.getState().checkoutBranch("feature")).rejects.toBe(
-      "some other git failure",
-    );
+    await expect(
+      useRepoStore.getState().checkoutBranch("feature"),
+    ).rejects.toBe("some other git failure");
     expect(useAutoStashStore.getState().pending).toBeNull();
   });
 
@@ -235,7 +509,9 @@ describe("repoStore", () => {
 
     await useRepoStore.getState().openRepo("/tmp/myrepo");
 
-    expect(mockInvoke).toHaveBeenCalledWith("open_repo", { path: "/tmp/myrepo" });
+    expect(mockInvoke).toHaveBeenCalledWith("open_repo", {
+      path: "/tmp/myrepo",
+    });
     const s = useRepoStore.getState();
     expect(s.openRepos).toEqual([repo]);
     expect(s.activeRepoPath).toBe("/tmp/myrepo");
@@ -248,7 +524,10 @@ describe("repoStore", () => {
     await useRepoStore.getState().activateRepo("/b");
 
     expect(mockInvoke).toHaveBeenCalledWith("activate_repo", { path: "/b" });
-    expect(mockInvoke).toHaveBeenCalledWith("get_graph_viewport", { offset: 0, limit: 150 });
+    expect(mockInvoke).toHaveBeenCalledWith("get_graph_viewport", {
+      offset: 0,
+      limit: 150,
+    });
     const s = useRepoStore.getState();
     expect(s.currentRepo).toEqual(repoB);
     expect(s.activeRepoPath).toBe("/b");

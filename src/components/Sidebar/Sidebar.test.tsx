@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import "@testing-library/jest-dom";
@@ -22,10 +28,14 @@ beforeEach(() => {
     currentRepo: { name: "gitclient", path: "/repo", headBranch: "main" },
     recentRepos: [],
     branches: [],
+    worktrees: [],
+    worktreesLoadedFor: null,
     openRepo: vi.fn().mockResolvedValue(undefined),
     loadCurrentRepo: vi.fn().mockResolvedValue(undefined),
     loadRecentRepos: vi.fn().mockResolvedValue(undefined),
     loadBranches: vi.fn().mockResolvedValue(undefined),
+    listWorktrees: vi.fn().mockResolvedValue([]),
+    openParentRepo: vi.fn().mockResolvedValue(undefined),
     checkoutBranch: vi.fn().mockResolvedValue(undefined),
     createBranch: vi.fn().mockResolvedValue(undefined),
     renameBranch: vi.fn().mockResolvedValue(undefined),
@@ -84,14 +94,28 @@ describe("Sidebar", () => {
     expect(screen.queryByRole("button", { name: "History" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Changes" })).toBeNull();
     expect(screen.queryByRole("button", { name: "PRs" })).toBeNull();
-    expect(screen.queryByRole("button", { name: /open repository/i })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /open repository/i }),
+    ).toBeNull();
   });
 
   it("groups branches into Local and Remote sections with provenance icons", () => {
     useRepoStore.setState({
       branches: [
-        { name: "main", isRemote: false, isHead: true, upstream: null, oid: "a" },
-        { name: "origin/main", isRemote: true, isHead: false, upstream: null, oid: "b" },
+        {
+          name: "main",
+          isRemote: false,
+          isHead: true,
+          upstream: null,
+          oid: "a",
+        },
+        {
+          name: "origin/main",
+          isRemote: true,
+          isHead: false,
+          upstream: null,
+          oid: "b",
+        },
       ],
     });
 
@@ -108,9 +132,27 @@ describe("Sidebar", () => {
   it("floats the checked-out branch to the top of the local list", () => {
     useRepoStore.setState({
       branches: [
-        { name: "alpha", isRemote: false, isHead: false, upstream: null, oid: "1" },
-        { name: "beta", isRemote: false, isHead: false, upstream: null, oid: "2" },
-        { name: "current", isRemote: false, isHead: true, upstream: null, oid: "3" },
+        {
+          name: "alpha",
+          isRemote: false,
+          isHead: false,
+          upstream: null,
+          oid: "1",
+        },
+        {
+          name: "beta",
+          isRemote: false,
+          isHead: false,
+          upstream: null,
+          oid: "2",
+        },
+        {
+          name: "current",
+          isRemote: false,
+          isHead: true,
+          upstream: null,
+          oid: "3",
+        },
       ],
     });
 
@@ -142,7 +184,13 @@ describe("Sidebar", () => {
     useRemoteStore.setState({ push });
     useRepoStore.setState({
       branches: [
-        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "a" },
+        {
+          name: "feature",
+          isRemote: false,
+          isHead: false,
+          upstream: null,
+          oid: "a",
+        },
       ],
     });
 
@@ -150,7 +198,9 @@ describe("Sidebar", () => {
     fireEvent.click(screen.getByRole("button", { name: "feature actions" }));
     fireEvent.click(screen.getByText("Push branch"));
 
-    await waitFor(() => expect(push).toHaveBeenCalledWith(undefined, "feature"));
+    await waitFor(() =>
+      expect(push).toHaveBeenCalledWith(undefined, "feature"),
+    );
   });
 
   it("offers fast-forward-to-upstream only when behind with nothing ahead", async () => {
@@ -160,14 +210,24 @@ describe("Sidebar", () => {
       aheadBehind: new Map([["feature", { ahead: 0, behind: 2 }]]),
     });
     useRepoStore.setState({
-      branches: [{ name: "feature", isRemote: false, isHead: false, upstream: "origin/feature", oid: "a" }],
+      branches: [
+        {
+          name: "feature",
+          isRemote: false,
+          isHead: false,
+          upstream: "origin/feature",
+          oid: "a",
+        },
+      ],
     });
 
     render(<Sidebar />);
     fireEvent.click(screen.getByRole("button", { name: "feature actions" }));
     fireEvent.click(screen.getByText("Fast-forward to origin/feature"));
 
-    await waitFor(() => expect(fastForwardToUpstream).toHaveBeenCalledWith("feature"));
+    await waitFor(() =>
+      expect(fastForwardToUpstream).toHaveBeenCalledWith("feature"),
+    );
   });
 
   it("hides fast-forward-to-upstream when the branch is also ahead (diverged)", () => {
@@ -175,7 +235,15 @@ describe("Sidebar", () => {
       aheadBehind: new Map([["feature", { ahead: 1, behind: 2 }]]),
     });
     useRepoStore.setState({
-      branches: [{ name: "feature", isRemote: false, isHead: false, upstream: "origin/feature", oid: "a" }],
+      branches: [
+        {
+          name: "feature",
+          isRemote: false,
+          isHead: false,
+          upstream: "origin/feature",
+          oid: "a",
+        },
+      ],
     });
 
     render(<Sidebar />);
@@ -191,7 +259,13 @@ describe("Sidebar", () => {
     useRepoStore.setState({
       deleteBranch,
       branches: [
-        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "a" },
+        {
+          name: "feature",
+          isRemote: false,
+          isHead: false,
+          upstream: null,
+          oid: "a",
+        },
       ],
     });
 
@@ -215,7 +289,13 @@ describe("Sidebar", () => {
     useRepoStore.setState({
       deleteBranch,
       branches: [
-        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "a" },
+        {
+          name: "feature",
+          isRemote: false,
+          isHead: false,
+          upstream: null,
+          oid: "a",
+        },
       ],
     });
 
@@ -229,13 +309,21 @@ describe("Sidebar", () => {
   });
 
   it("shows a toast instead of throwing when checking out a branch fails", async () => {
-    const checkoutBranch = vi.fn().mockRejectedValue(new Error("uncommitted changes"));
+    const checkoutBranch = vi
+      .fn()
+      .mockRejectedValue(new Error("uncommitted changes"));
     const error = vi.fn();
     useToastStore.setState({ error });
     useRepoStore.setState({
       checkoutBranch,
       branches: [
-        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "a" },
+        {
+          name: "feature",
+          isRemote: false,
+          isHead: false,
+          upstream: null,
+          oid: "a",
+        },
       ],
     });
 
@@ -244,7 +332,9 @@ describe("Sidebar", () => {
     fireEvent.click(screen.getByText("Checkout branch"));
 
     await waitFor(() =>
-      expect(error).toHaveBeenCalledWith("Error: uncommitted changes", { title: "Couldn't checkout branch" }),
+      expect(error).toHaveBeenCalledWith("Error: uncommitted changes", {
+        title: "Couldn't checkout branch",
+      }),
     );
   });
 
@@ -255,7 +345,13 @@ describe("Sidebar", () => {
     useRepoStore.setState({
       deleteBranch,
       branches: [
-        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "a" },
+        {
+          name: "feature",
+          isRemote: false,
+          isHead: false,
+          upstream: null,
+          oid: "a",
+        },
       ],
     });
 
@@ -266,7 +362,9 @@ describe("Sidebar", () => {
     fireEvent.click(within(dialog).getByText("Delete"));
 
     await waitFor(() =>
-      expect(error).toHaveBeenCalledWith("Error: locked", { title: "Couldn't delete branch" }),
+      expect(error).toHaveBeenCalledWith("Error: locked", {
+        title: "Couldn't delete branch",
+      }),
     );
   });
 
@@ -278,29 +376,107 @@ describe("Sidebar", () => {
 
     render(<Sidebar />);
     fireEvent.click(screen.getByRole("button", { name: "New" }));
-    fireEvent.change(screen.getByPlaceholderText("branch-name"), { target: { value: "feature" } });
+    fireEvent.change(screen.getByPlaceholderText("branch-name"), {
+      target: { value: "feature" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     await waitFor(() =>
-      expect(error).toHaveBeenCalledWith("Error: already exists", { title: "Couldn't create branch" }),
+      expect(error).toHaveBeenCalledWith("Error: already exists", {
+        title: "Couldn't create branch",
+      }),
     );
   });
 
   it("creates a tag at a branch tip from its row menu", async () => {
     useRepoStore.setState({
       branches: [
-        { name: "feature", isRemote: false, isHead: false, upstream: null, oid: "abc123" },
+        {
+          name: "feature",
+          isRemote: false,
+          isHead: false,
+          upstream: null,
+          oid: "abc123",
+        },
       ],
     });
 
     render(<Sidebar />);
     fireEvent.click(screen.getByRole("button", { name: "feature actions" }));
     fireEvent.click(screen.getByText("Create tag…"));
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "v1.0" } });
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "v1.0" },
+    });
     fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
 
     await waitFor(() =>
-      expect(useRepoStore.getState().createTag).toHaveBeenCalledWith("v1.0", "abc123"),
+      expect(useRepoStore.getState().createTag).toHaveBeenCalledWith(
+        "v1.0",
+        "abc123",
+      ),
     );
+  });
+
+  it("shows parent metadata when the active repo is a linked worktree", () => {
+    useRepoStore.setState({
+      currentRepo: {
+        name: "main-feature",
+        path: "/repos/main-feature",
+        headBranch: "feature/worktree",
+        repoKind: "worktree",
+        parentRepoPath: "/repos/main",
+        commonDirPath: "/repos/main/.git",
+        worktreeBranch: "feature/worktree",
+        worktreeLocked: true,
+        worktreePrunable: false,
+      },
+      branches: [],
+      recentRepos: [],
+    });
+
+    render(<Sidebar width={240} />);
+
+    expect(screen.getByText("feature/worktree")).toBeInTheDocument();
+    expect(screen.getByText(/Linked to \/repos\/main/)).toBeInTheDocument();
+    expect(screen.getByText("Locked")).toBeInTheDocument();
+  });
+
+  it("shows the Worktrees panel and refreshes worktrees for the active repo family", async () => {
+    const listWorktrees = vi.fn().mockResolvedValue([]);
+    useRepoStore.setState({
+      currentRepo: {
+        name: "main-feature",
+        path: "/repos/main-feature",
+        headBranch: "feature/worktree",
+        repoKind: "worktree",
+        parentRepoPath: "/repos/main",
+        commonDirPath: "/repos/main/.git",
+        worktreeBranch: "feature/worktree",
+        worktreeLocked: false,
+        worktreePrunable: false,
+      },
+      worktrees: [
+        {
+          path: "/repos/main",
+          name: "main",
+          repoKind: "main",
+          branch: "main",
+          isCurrent: false,
+          isOpen: false,
+          isLocked: false,
+          hasUncommittedChanges: false,
+          parentRepoPath: null,
+        },
+      ],
+      listWorktrees,
+    });
+
+    render(<Sidebar width={240} />);
+
+    expect(
+      screen.getByRole("button", { name: "Worktrees" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTitle("/repos/main")).toBeInTheDocument();
+    await waitFor(() => expect(listWorktrees).toHaveBeenCalled());
   });
 });

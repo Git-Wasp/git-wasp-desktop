@@ -13,3 +13,4 @@ pub mod staging;
 pub mod stash;
 pub mod status;
 pub mod theme;
+pub mod worktree;

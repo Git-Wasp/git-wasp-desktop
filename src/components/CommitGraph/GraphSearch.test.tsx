@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { GraphSearch } from "./GraphSearch";
@@ -27,7 +33,9 @@ beforeEach(() => {
 describe("GraphSearch", () => {
   it("debounces typing into a single backend search", async () => {
     render(<GraphSearch />);
-    fireEvent.change(screen.getByLabelText("Search commits"), { target: { value: "fix" } });
+    fireEvent.change(screen.getByLabelText("Search commits"), {
+      target: { value: "fix" },
+    });
     await waitFor(() => expect(runSearch).toHaveBeenCalledWith("fix"));
   });
 
@@ -46,7 +54,11 @@ describe("GraphSearch", () => {
   });
 
   it("says 'No matches' for a query with no results", () => {
-    useGraphStore.setState({ searchQuery: "zzz", searchHits: [], searchIndex: -1 });
+    useGraphStore.setState({
+      searchQuery: "zzz",
+      searchHits: [],
+      searchIndex: -1,
+    });
     render(<GraphSearch />);
     expect(screen.getByText("No matches")).toBeInTheDocument();
   });
@@ -55,7 +67,12 @@ describe("GraphSearch", () => {
     const { rerender } = render(<GraphSearch />);
     expect(screen.getByRole("button", { name: "Next match" })).toBeDisabled();
 
-    useGraphStore.setState({ searchHits: [{ row: 1, oid: "a" }], searchIndex: 0 });
+    act(() => {
+      useGraphStore.setState({
+        searchHits: [{ row: 1, oid: "a" }],
+        searchIndex: 0,
+      });
+    });
     rerender(<GraphSearch />);
     fireEvent.click(screen.getByRole("button", { name: "Next match" }));
     expect(nextMatch).toHaveBeenCalled();
@@ -64,7 +81,12 @@ describe("GraphSearch", () => {
   });
 
   it("Enter goes to the next match, Shift+Enter the previous, Esc closes", () => {
-    useGraphStore.setState({ searchHits: [{ row: 1, oid: "a" }], searchIndex: 0 });
+    act(() => {
+      useGraphStore.setState({
+        searchHits: [{ row: 1, oid: "a" }],
+        searchIndex: 0,
+      });
+    });
     render(<GraphSearch />);
     const input = screen.getByLabelText("Search commits");
 

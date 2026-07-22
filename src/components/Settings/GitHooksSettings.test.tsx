@@ -81,11 +81,15 @@ describe("GitHooksSettings", () => {
   it("discards a stale load after the current repository changes", async () => {
     const first = deferred<{ preCommit: boolean; prePush: boolean }>();
     const second = deferred<{ preCommit: boolean; prePush: boolean }>();
-    mockInvoke.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    mockInvoke
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
     render(<GitHooksSettings />);
 
-    useRepoStore.setState({
-      currentRepo: { name: "other", path: "/other", headBranch: "main" },
+    act(() => {
+      useRepoStore.setState({
+        currentRepo: { name: "other", path: "/other", headBranch: "main" },
+      });
     });
     second.resolve({ preCommit: false, prePush: true });
     expect(await screen.findByLabelText("Run pre-commit")).not.toBeChecked();
@@ -99,7 +103,9 @@ describe("GitHooksSettings", () => {
   it("disables both toggles while loading and saving", async () => {
     const load = deferred<{ preCommit: boolean; prePush: boolean }>();
     const save = deferred<{ preCommit: boolean; prePush: boolean }>();
-    mockInvoke.mockReturnValueOnce(load.promise).mockReturnValueOnce(save.promise);
+    mockInvoke
+      .mockReturnValueOnce(load.promise)
+      .mockReturnValueOnce(save.promise);
     render(<GitHooksSettings />);
 
     expect(screen.getByLabelText("Run pre-commit")).toBeDisabled();

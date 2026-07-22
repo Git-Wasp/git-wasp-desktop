@@ -5,9 +5,7 @@ use tauri::State;
 // Not `async`: this command body is 100% synchronous git2/fs work with no
 // `.await` points — see commands/graph.rs for the full rationale.
 #[tauri::command]
-pub fn get_working_tree_status(
-    state: State<'_, AppState>,
-) -> Result<WorkingTreeStatus, String> {
+pub fn get_working_tree_status(state: State<'_, AppState>) -> Result<WorkingTreeStatus, String> {
     state
         .with_repo(|repo| wt_status(repo))
         .map_err(|e| e.to_string())?

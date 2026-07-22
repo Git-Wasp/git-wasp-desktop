@@ -18,6 +18,8 @@ import { PruneBranchesDialog } from "./PruneBranchesDialog";
 import { PromptDialog } from "../common/PromptDialog";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { VirtualList } from "../ui/VirtualList";
+import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
+import { WorktreePanel } from "./WorktreePanel";
 import type { BranchInfo } from "../../types/repo";
 
 // Fixed row height for the virtualised branch lists — sized to fit the ⋮ menu
@@ -98,7 +100,9 @@ function LocalBranchRow({
           flex: 1,
           fontSize: "var(--font-size-sm)",
           fontFamily: "var(--font-family-mono)",
-          color: b.isHead ? "var(--color-accent-primary)" : "var(--color-text-secondary)",
+          color: b.isHead
+            ? "var(--color-accent-primary)"
+            : "var(--color-text-secondary)",
           cursor: "pointer",
           overflow: "hidden",
           textOverflow: "ellipsis",
@@ -128,7 +132,14 @@ function LocalBranchRow({
       <RowMenu
         label={`${b.name} actions`}
         items={[
-          ...(b.isHead ? [] : [{ label: "Checkout branch", onSelect: () => onCheckout(b.name) }]),
+          ...(b.isHead
+            ? []
+            : [
+                {
+                  label: "Checkout branch",
+                  onSelect: () => onCheckout(b.name),
+                },
+              ]),
           // A clean fast-forward is available: behind the upstream with no local
           // commits ahead. Advances the branch pointer without checking it out.
           ...(ab && ab.behind > 0 && ab.ahead === 0
@@ -143,7 +154,12 @@ function LocalBranchRow({
           { label: "Create tag…", onSelect: () => onCreateTag(b.name, b.oid) },
           ...(b.isHead || !canMerge
             ? []
-            : [{ label: "Merge into current branch", onSelect: () => onMerge(b.name) }]),
+            : [
+                {
+                  label: "Merge into current branch",
+                  onSelect: () => onMerge(b.name),
+                },
+              ]),
           ...(b.isHead
             ? []
             : [
@@ -160,8 +176,31 @@ function LocalBranchRow({
 }
 
 export function Sidebar({ width = 220 }: { width?: number }) {
-  const { currentRepo, recentRepos, branches, openRepo, loadRecentRepos, removeRecent, checkoutBranch, createBranch, deleteBranch, createTag } =
-    useRepoStore();
+  const {
+    currentRepo,
+    recentRepos,
+    branches,
+    worktrees,
+    openRepos,
+    activeRepoPath,
+    openRepo,
+    activateRepo,
+    openParentRepo,
+    listWorktrees,
+    createWorktree,
+    lockWorktree,
+    unlockWorktree,
+    removeWorktree,
+    showCreateWorktreeDialog,
+    openCreateWorktreeDialog,
+    closeCreateWorktreeDialog,
+    loadRecentRepos,
+    removeRecent,
+    checkoutBranch,
+    createBranch,
+    deleteBranch,
+    createTag,
+  } = useRepoStore();
   const { revealCommit, refresh } = useGraphStore();
   const { remoteInfo } = useGithubStore();
   const { push, fastForwardToUpstream } = useRemoteStore();
@@ -172,11 +211,21 @@ export function Sidebar({ width = 220 }: { width?: number }) {
   const [showNewBranch, setShowNewBranch] = useState(false);
   const [showCloneDialog, setShowCloneDialog] = useState(false);
   const [showPruneDialog, setShowPruneDialog] = useState(false);
-  const [selectedRecentPath, setSelectedRecentPath] = useState<string | null>(null);
+  const [selectedRecentPath, setSelectedRecentPath] = useState<string | null>(
+    null,
+  );
   // The branch being tagged via "Create tag…" (its tip oid), while the name is entered.
-  const [tagBranch, setTagBranch] = useState<{ name: string; oid: string } | null>(null);
+  const [tagBranch, setTagBranch] = useState<{
+    name: string;
+    oid: string;
+  } | null>(null);
   // The branch awaiting delete confirmation.
-  const [pendingDeleteBranch, setPendingDeleteBranch] = useState<string | null>(null);
+  const [pendingDeleteBranch, setPendingDeleteBranch] = useState<string | null>(
+    null,
+  );
+  const [pendingRemoveWorktree, setPendingRemoveWorktree] = useState<
+    string | null
+  >(null);
 
   // GitHub connection is managed in Settings now; the host is still needed for
   // the "Clone from GitHub…" dialog.
@@ -185,6 +234,11 @@ export function Sidebar({ width = 220 }: { width?: number }) {
   useEffect(() => {
     void loadRecentRepos();
   }, [loadRecentRepos]);
+
+  useEffect(() => {
+    if (!currentRepo?.path) return;
+    void listWorktrees();
+  }, [currentRepo?.path, listWorktrees]);
 
   // Branch list, ahead/behind, and remote detection are loaded at the app root
   // (App) on repo change, so they stay correct even when this sidebar is
@@ -198,6 +252,20 @@ export function Sidebar({ width = 220 }: { width?: number }) {
     }
   };
 
+  const handleOpenOrActivateWorktree = async (path: string) => {
+    try {
+      if (path === activeRepoPath) return;
+      const isOpen = openRepos.some((repo) => repo.path === path);
+      if (isOpen) {
+        await activateRepo(path);
+      } else {
+        await openRepo(path);
+      }
+    } catch (e) {
+      toastError(String(e), { title: "Couldn't open worktree" });
+    }
+  };
+
   const handleCreateBranch = async () => {
     if (!newBranchName.trim()) return;
     try {
@@ -206,6 +274,30 @@ export function Sidebar({ width = 220 }: { width?: number }) {
       setShowNewBranch(false);
     } catch (e) {
       toastError(String(e), { title: "Couldn't create branch" });
+    }
+  };
+
+  const handleLockWorktree = async (path: string) => {
+    try {
+      await lockWorktree(path);
+    } catch (e) {
+      toastError(String(e), { title: "Couldn't lock worktree" });
+    }
+  };
+
+  const handleUnlockWorktree = async (path: string) => {
+    try {
+      await unlockWorktree(path);
+    } catch (e) {
+      toastError(String(e), { title: "Couldn't unlock worktree" });
+    }
+  };
+
+  const handleRemoveWorktree = async (path: string) => {
+    try {
+      await removeWorktree(path);
+    } catch (e) {
+      toastError(String(e), { title: "Couldn't remove worktree" });
     }
   };
 
@@ -268,7 +360,10 @@ export function Sidebar({ width = 220 }: { width?: number }) {
   const locals = branches.filter((b) => !b.isRemote);
   // Always float the checked-out branch to the top of the local list; keep the
   // rest in their existing order.
-  const localBranches = [...locals.filter((b) => b.isHead), ...locals.filter((b) => !b.isHead)];
+  const localBranches = [
+    ...locals.filter((b) => b.isHead),
+    ...locals.filter((b) => !b.isHead),
+  ];
   const remoteBranches = branches.filter((b) => b.isRemote);
 
   // Row renderers for the virtualised branch lists (see VirtualList). One row per
@@ -347,184 +442,303 @@ export function Sidebar({ width = 220 }: { width?: number }) {
           {currentRepo?.name ?? "No repo open"}
         </div>
         {currentRepo && (
-          <div
-            style={{
-              fontSize: "var(--font-size-xs)",
-              color: "var(--color-text-muted)",
-              fontFamily: "var(--font-family-mono)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {currentRepo.headBranch ?? "detached"}
-          </div>
+          <>
+            <div
+              style={{
+                fontSize: "var(--font-size-xs)",
+                color: "var(--color-text-muted)",
+                fontFamily: "var(--font-family-mono)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {currentRepo.worktreeBranch ??
+                currentRepo.headBranch ??
+                "detached"}
+            </div>
+            {currentRepo.repoKind === "worktree" &&
+              currentRepo.parentRepoPath && (
+                <div
+                  style={{
+                    marginTop: "var(--space-1)",
+                    fontSize: "var(--font-size-xs)",
+                    color: "var(--color-text-muted)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {`Linked to ${currentRepo.parentRepoPath}`}
+                </div>
+              )}
+            {currentRepo.worktreeLocked && (
+              <div style={{ marginTop: "var(--space-1)" }}>
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    padding: "0 var(--space-1)",
+                    minHeight: "18px",
+                    borderRadius: "var(--radius-sm)",
+                    background: "var(--color-bg-elevated)",
+                    border: "1px solid var(--color-border-subtle)",
+                    color: "var(--color-text-muted)",
+                    fontSize: "var(--font-size-xs)",
+                    fontWeight: "var(--font-weight-medium)",
+                  }}
+                >
+                  Locked
+                </span>
+              </div>
+            )}
+          </>
         )}
       </div>
 
       {/* Scrollable middle region */}
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
-      <RemoteActions onOpenClone={() => setShowCloneDialog(true)} />
+        <RemoteActions onOpenClone={() => setShowCloneDialog(true)} />
 
-      {showCloneDialog && (
-        <CloneDialog host={githubHost} onClose={() => setShowCloneDialog(false)} />
-      )}
+        {showCloneDialog && (
+          <CloneDialog
+            host={githubHost}
+            onClose={() => setShowCloneDialog(false)}
+          />
+        )}
 
-      {showPruneDialog && <PruneBranchesDialog onClose={() => setShowPruneDialog(false)} />}
+        {showPruneDialog && (
+          <PruneBranchesDialog onClose={() => setShowPruneDialog(false)} />
+        )}
 
-      {tagBranch && (
-        <PromptDialog
-          title="Create tag"
-          label="Tag name"
-          confirmLabel="Create"
-          onConfirm={(tagName) => void handleCreateTag(tagName)}
-          onCancel={() => setTagBranch(null)}
-        />
-      )}
+        {tagBranch && (
+          <PromptDialog
+            title="Create tag"
+            label="Tag name"
+            confirmLabel="Create"
+            onConfirm={(tagName) => void handleCreateTag(tagName)}
+            onCancel={() => setTagBranch(null)}
+          />
+        )}
 
-      {pendingDeleteBranch && (
-        <ConfirmDialog
-          title="Delete branch"
-          message={`Delete "${pendingDeleteBranch}"? Git Wasp deletes branches unconditionally (unlike "git branch -d"), so if it has commits not merged or pushed anywhere else, they will be permanently lost.`}
-          confirmLabel="Delete"
-          onConfirm={() => {
-            const name = pendingDeleteBranch;
-            setPendingDeleteBranch(null);
-            void handleDeleteBranch(name);
-          }}
-          onCancel={() => setPendingDeleteBranch(null)}
-        />
-      )}
+        {pendingDeleteBranch && (
+          <ConfirmDialog
+            title="Delete branch"
+            message={`Delete "${pendingDeleteBranch}"? Git Wasp deletes branches unconditionally (unlike "git branch -d"), so if it has commits not merged or pushed anywhere else, they will be permanently lost.`}
+            confirmLabel="Delete"
+            onConfirm={() => {
+              const name = pendingDeleteBranch;
+              setPendingDeleteBranch(null);
+              void handleDeleteBranch(name);
+            }}
+            onCancel={() => setPendingDeleteBranch(null)}
+          />
+        )}
 
-      {/* Branch list */}
-      {currentRepo && (
-        <CollapsibleSection
-          id="branches"
-          title="Branches"
-          containsSections
-          action={
-            <div style={{ display: "flex", gap: "var(--space-1)" }}>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => setShowPruneDialog(true)}
-                title="Delete local branches whose remote branch is gone"
-              >
-                Prune
-              </Button>
-              <Button size="sm" onClick={() => setShowNewBranch((v) => !v)}>
-                <BranchIcon size={12} />
-                New
-              </Button>
-            </div>
-          }
-        >
-          {showNewBranch && (
-            <div style={{ padding: "0 var(--space-3)", marginBottom: "var(--space-1)", display: "flex", gap: "var(--space-1)" }}>
-              <Input
-                autoFocus
-                value={newBranchName}
-                onChange={(e) => setNewBranchName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void handleCreateBranch();
-                  if (e.key === "Escape") {
-                    setShowNewBranch(false);
-                    setNewBranchName("");
-                  }
-                }}
-                placeholder="branch-name"
-                style={{ flex: 1, fontFamily: "var(--font-family-mono)" }}
-              />
-              <Button variant="primary" size="sm" onClick={() => void handleCreateBranch()}>
-                Create
-              </Button>
-            </div>
-          )}
+        {pendingRemoveWorktree && (
+          <ConfirmDialog
+            title="Remove worktree"
+            message={`Remove worktree at "${pendingRemoveWorktree}"?`}
+            confirmLabel="Remove"
+            onConfirm={() => {
+              const path = pendingRemoveWorktree;
+              setPendingRemoveWorktree(null);
+              void handleRemoveWorktree(path);
+            }}
+            onCancel={() => setPendingRemoveWorktree(null)}
+          />
+        )}
 
-          <CollapsibleSection id="branches-local" title="Local" resizable defaultHeight={180}>
-            {(maxBodyHeight) =>
-              localBranches.length === 0 ? (
-                <div style={branchEmptyHintStyle}>No local branches</div>
-              ) : (
-                <VirtualList
-                  ariaLabel="Local branches"
-                  items={localBranches}
-                  rowHeight={BRANCH_ROW_HEIGHT}
-                  maxHeight={maxBodyHeight}
-                  render={renderLocalBranch}
-                />
-              )
+        {showCreateWorktreeDialog && (
+          <CreateWorktreeDialog
+            defaultStartPoint={
+              currentRepo?.worktreeBranch ?? currentRepo?.headBranch ?? ""
             }
-          </CollapsibleSection>
+            onCancel={closeCreateWorktreeDialog}
+            onConfirm={(request) => {
+              void createWorktree(request);
+            }}
+          />
+        )}
 
-          <CollapsibleSection id="branches-remote" title="Remote" resizable defaultHeight={140}>
-            {(maxBodyHeight) =>
-              remoteBranches.length === 0 ? (
-                <div style={branchEmptyHintStyle}>No remote branches</div>
-              ) : (
-                <VirtualList
-                  ariaLabel="Remote branches"
-                  items={remoteBranches}
-                  rowHeight={BRANCH_ROW_HEIGHT}
-                  maxHeight={maxBodyHeight}
-                  render={renderRemoteBranch}
-                />
-              )
+        {/* Branch list */}
+        {currentRepo && (
+          <WorktreePanel
+            currentRepoPath={currentRepo.path}
+            worktrees={worktrees}
+            onOpenOrActivate={(path) => void handleOpenOrActivateWorktree(path)}
+            onRefresh={() => void listWorktrees()}
+            onCreate={openCreateWorktreeDialog}
+            onOpenParent={(path) => void openParentRepo(path)}
+            onLock={(path) => void handleLockWorktree(path)}
+            onUnlock={(path) => void handleUnlockWorktree(path)}
+            onRemove={setPendingRemoveWorktree}
+          />
+        )}
+
+        {currentRepo && (
+          <CollapsibleSection
+            id="branches"
+            title="Branches"
+            containsSections
+            action={
+              <div style={{ display: "flex", gap: "var(--space-1)" }}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setShowPruneDialog(true)}
+                  title="Delete local branches whose remote branch is gone"
+                >
+                  Prune
+                </Button>
+                <Button size="sm" onClick={() => setShowNewBranch((v) => !v)}>
+                  <BranchIcon size={12} />
+                  New
+                </Button>
+              </div>
             }
-          </CollapsibleSection>
-        </CollapsibleSection>
-      )}
-
-      {/* Recent repos */}
-      {recentRepos.length > 0 && (
-        <CollapsibleSection id="recent" title="Recent" resizable defaultHeight={160}>
-          {recentRepos.map((r) => (
-            <div
-              key={r.path}
-              className="sidebar-row"
-              data-active={selectedRecentPath === r.path}
-              onClick={() => setSelectedRecentPath((current) => (current === r.path ? null : r.path))}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--space-1)",
-                padding: "var(--space-1) var(--space-3)",
-                cursor: "pointer",
-              }}
-              title={r.path}
-            >
-              <span
+          >
+            {showNewBranch && (
+              <div
                 style={{
-                  flex: 1,
-                  fontSize: "var(--font-size-sm)",
-                  color: "var(--color-text-secondary)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
+                  padding: "0 var(--space-3)",
+                  marginBottom: "var(--space-1)",
+                  display: "flex",
+                  gap: "var(--space-1)",
                 }}
               >
-                {r.name}
-              </span>
-              <RowMenu
-                label={`${r.name} actions`}
-                items={[
-                  { label: "Open repository", onSelect: () => void handleRecentClick(r.path) },
-                  {
-                    label: "Remove from recent",
-                    destructive: true,
-                    onSelect: () => {
-                      setSelectedRecentPath((current) => (current === r.path ? null : current));
-                      void removeRecent(r.path);
-                    },
-                  },
-                ]}
-              />
-            </div>
-          ))}
-        </CollapsibleSection>
-      )}
+                <Input
+                  autoFocus
+                  value={newBranchName}
+                  onChange={(e) => setNewBranchName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void handleCreateBranch();
+                    if (e.key === "Escape") {
+                      setShowNewBranch(false);
+                      setNewBranchName("");
+                    }
+                  }}
+                  placeholder="branch-name"
+                  style={{ flex: 1, fontFamily: "var(--font-family-mono)" }}
+                />
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => void handleCreateBranch()}
+                >
+                  Create
+                </Button>
+              </div>
+            )}
 
-      <StashPanel />
+            <CollapsibleSection
+              id="branches-local"
+              title="Local"
+              resizable
+              defaultHeight={180}
+            >
+              {(maxBodyHeight) =>
+                localBranches.length === 0 ? (
+                  <div style={branchEmptyHintStyle}>No local branches</div>
+                ) : (
+                  <VirtualList
+                    ariaLabel="Local branches"
+                    items={localBranches}
+                    rowHeight={BRANCH_ROW_HEIGHT}
+                    maxHeight={maxBodyHeight}
+                    render={renderLocalBranch}
+                  />
+                )
+              }
+            </CollapsibleSection>
+
+            <CollapsibleSection
+              id="branches-remote"
+              title="Remote"
+              resizable
+              defaultHeight={140}
+            >
+              {(maxBodyHeight) =>
+                remoteBranches.length === 0 ? (
+                  <div style={branchEmptyHintStyle}>No remote branches</div>
+                ) : (
+                  <VirtualList
+                    ariaLabel="Remote branches"
+                    items={remoteBranches}
+                    rowHeight={BRANCH_ROW_HEIGHT}
+                    maxHeight={maxBodyHeight}
+                    render={renderRemoteBranch}
+                  />
+                )
+              }
+            </CollapsibleSection>
+          </CollapsibleSection>
+        )}
+
+        {/* Recent repos */}
+        {recentRepos.length > 0 && (
+          <CollapsibleSection
+            id="recent"
+            title="Recent"
+            resizable
+            defaultHeight={160}
+          >
+            {recentRepos.map((r) => (
+              <div
+                key={r.path}
+                className="sidebar-row"
+                data-active={selectedRecentPath === r.path}
+                onClick={() =>
+                  setSelectedRecentPath((current) =>
+                    current === r.path ? null : r.path,
+                  )
+                }
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--space-1)",
+                  padding: "var(--space-1) var(--space-3)",
+                  cursor: "pointer",
+                }}
+                title={r.path}
+              >
+                <span
+                  style={{
+                    flex: 1,
+                    fontSize: "var(--font-size-sm)",
+                    color: "var(--color-text-secondary)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {r.name}
+                </span>
+                <RowMenu
+                  label={`${r.name} actions`}
+                  items={[
+                    {
+                      label: "Open repository",
+                      onSelect: () => void handleRecentClick(r.path),
+                    },
+                    {
+                      label: "Remove from recent",
+                      destructive: true,
+                      onSelect: () => {
+                        setSelectedRecentPath((current) =>
+                          current === r.path ? null : current,
+                        );
+                        void removeRecent(r.path);
+                      },
+                    },
+                  ]}
+                />
+              </div>
+            ))}
+          </CollapsibleSection>
+        )}
+
+        <StashPanel />
       </div>
     </div>
   );

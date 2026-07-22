@@ -446,7 +446,9 @@ async fn fetch_approval_count(
     token: &str,
 ) -> u32 {
     let reviews: Vec<GhReview> = match client
-        .get(format!("{base}/repos/{owner}/{repo}/pulls/{pr_number}/reviews"))
+        .get(format!(
+            "{base}/repos/{owner}/{repo}/pulls/{pr_number}/reviews"
+        ))
         .bearer_auth(token)
         .header("Accept", "application/vnd.github+json")
         .send()
@@ -497,7 +499,8 @@ pub async fn list_pull_requests(
         let semaphore = semaphore.clone();
         join_set.spawn(async move {
             let _permit = semaphore.acquire_owned().await.expect("semaphore closed");
-            let ci_status = fetch_ci_status(&client, &base, &owner, &repo, &pr.head.sha, &token).await;
+            let ci_status =
+                fetch_ci_status(&client, &base, &owner, &repo, &pr.head.sha, &token).await;
             let approval_count =
                 fetch_approval_count(&client, &base, &owner, &repo, pr.number, &token).await;
             (index, pr, ci_status, approval_count)

@@ -64,10 +64,7 @@ pub fn revert_commit(
 }
 
 #[tauri::command]
-pub fn amend_commit_message(
-    message: String,
-    state: State<'_, AppState>,
-) -> Result<String, String> {
+pub fn amend_commit_message(message: String, state: State<'_, AppState>) -> Result<String, String> {
     state
         .with_repo(|repo| wt_amend_commit_message(repo, &message))
         .map_err(|e| e.to_string())?
@@ -87,9 +84,7 @@ pub fn squash_commits(
 }
 
 #[tauri::command]
-pub fn get_head_commit_info(
-    state: State<'_, AppState>,
-) -> Result<Option<HeadCommitInfo>, String> {
+pub fn get_head_commit_info(state: State<'_, AppState>) -> Result<Option<HeadCommitInfo>, String> {
     state
         .with_repo(|repo| wt_head_commit_info(repo))
         .map_err(|e| e.to_string())?

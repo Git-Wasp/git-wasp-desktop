@@ -1,7 +1,13 @@
 import type { CSSProperties, ReactNode } from "react";
 import { useRepoStore } from "../../stores/repoStore";
+import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
-import { SidebarIcon, HistoryIcon, PullRequestIcon, SettingsIcon } from "../ui/icons";
+import {
+  SidebarIcon,
+  HistoryIcon,
+  PullRequestIcon,
+  SettingsIcon,
+} from "../ui/icons";
 import { RepoPicker } from "./RepoPicker";
 import { BranchPicker } from "./BranchPicker";
 import type { View } from "../../types/view";
@@ -50,11 +56,25 @@ export function NavBar({
   onToggleSidebar?: () => void;
 }) {
   const currentRepo = useRepoStore((s) => s.currentRepo);
+  const openCreateWorktreeDialog = useRepoStore(
+    (s) => s.openCreateWorktreeDialog,
+  );
 
   return (
-    <div className="elevation-below" style={barStyle} role="tablist" aria-label="Views">
+    <div
+      className="elevation-below"
+      style={barStyle}
+      role="tablist"
+      aria-label="Views"
+    >
       {onToggleSidebar && (
-        <div style={{ display: "flex", alignItems: "center", paddingRight: "var(--space-1)" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            paddingRight: "var(--space-1)",
+          }}
+        >
           <IconButton
             aria-label={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
             title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
@@ -67,9 +87,25 @@ export function NavBar({
       )}
 
       {/* Repo + branch pickers (top-left). */}
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", minWidth: 0 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--space-1)",
+          minWidth: 0,
+        }}
+      >
         <RepoPicker />
         <BranchPicker />
+        {currentRepo && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={openCreateWorktreeDialog}
+          >
+            New worktree
+          </Button>
+        )}
       </div>
 
       {currentRepo && <div style={dividerStyle} />}

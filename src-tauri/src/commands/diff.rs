@@ -8,10 +8,7 @@ use tauri::State;
 // Not `async`: every command body below is 100% synchronous git2/fs work with
 // no `.await` points — see commands/graph.rs for the full rationale.
 #[tauri::command]
-pub fn get_commit_diff(
-    oid: String,
-    state: State<'_, AppState>,
-) -> Result<CommitDetail, String> {
+pub fn get_commit_diff(oid: String, state: State<'_, AppState>) -> Result<CommitDetail, String> {
     state
         .with_repo(|repo| crate::diff_engine::get_commit_detail(repo, &oid))
         .map_err(|e| e.to_string())?
@@ -49,10 +46,7 @@ pub fn get_unstaged_diff(
 }
 
 #[tauri::command]
-pub fn get_staged_diff(
-    path: String,
-    state: State<'_, AppState>,
-) -> Result<FileDiffHunks, String> {
+pub fn get_staged_diff(path: String, state: State<'_, AppState>) -> Result<FileDiffHunks, String> {
     state
         .with_repo(|repo| de_get_staged_diff(repo, &path))
         .map_err(|e| e.to_string())?

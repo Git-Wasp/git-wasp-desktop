@@ -593,7 +593,9 @@ mod tests {
         let result = fetch_cli(&repo, "-o", false);
         let err = result.unwrap_err().to_string().to_lowercase();
         assert!(
-            !err.contains("switch") && !err.contains("requires a value") && !err.contains("unknown option"),
+            !err.contains("switch")
+                && !err.contains("requires a value")
+                && !err.contains("unknown option"),
             "expected a 'remote not found'-style error, got a flag-parsing error: {err}"
         );
     }
