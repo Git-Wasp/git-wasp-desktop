@@ -7,6 +7,7 @@ import { useAutoStashStore } from "../autoStashStore";
 import { useToastStore } from "../toastStore";
 import { useHookStore } from "../hookStore";
 import { AUTO_STASH_SENTINEL } from "../../lib/autoStash";
+import type { RepoInfo } from "../../types/repo";
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -156,7 +157,7 @@ describe("repoStore", () => {
       worktreeBranch: "main",
       worktreeLocked: false,
       worktreePrunable: false,
-    };
+    } satisfies RepoInfo;
     const family = [
       {
         path: "/repos/main",
@@ -192,7 +193,7 @@ describe("repoStore", () => {
       worktreeBranch: "main",
       worktreeLocked: false,
       worktreePrunable: false,
-    };
+    } satisfies RepoInfo;
     const otherRepo = {
       name: "other",
       path: "/repos/other",
@@ -203,7 +204,7 @@ describe("repoStore", () => {
       worktreeBranch: "main",
       worktreeLocked: false,
       worktreePrunable: false,
-    };
+    } satisfies RepoInfo;
     const lateResponse = deferred<
       Array<{
         path: string;
@@ -262,7 +263,7 @@ describe("repoStore", () => {
       worktreeBranch: "main",
       worktreeLocked: false,
       worktreePrunable: false,
-    };
+    } satisfies RepoInfo;
     mockByCommand({ open_parent_repo: parent, list_branches: [] });
 
     await useRepoStore.getState().openParentRepo("/repos/main-feature");
@@ -284,7 +285,7 @@ describe("repoStore", () => {
       worktreeBranch: "feature/worktree",
       worktreeLocked: false,
       worktreePrunable: false,
-    };
+    } satisfies RepoInfo;
     mockByCommand({
       get_current_repo: repo,
       list_worktrees: [
