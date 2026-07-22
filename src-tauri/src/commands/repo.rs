@@ -1,12 +1,25 @@
 use crate::repo_manager::{AppState, RepoEntry};
 use tauri::{AppHandle, State};
 
-#[derive(serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RepoKind {
+    Main,
+    Worktree,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoInfo {
     pub name: String,
     pub path: String,
     pub head_branch: Option<String>,
+    pub repo_kind: RepoKind,
+    pub parent_repo_path: Option<String>,
+    pub common_dir_path: String,
+    pub worktree_branch: Option<String>,
+    pub worktree_locked: bool,
+    pub worktree_prunable: bool,
 }
 
 // Not `async`: every command body below is 100% synchronous git2/fs work with

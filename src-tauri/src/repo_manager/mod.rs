@@ -121,24 +121,12 @@ fn now_millis() -> u64 {
 /// key — git2 normalises it, so the same repo opened via different path strings
 /// resolves to one tab.
 fn repo_info(repo: &Repository) -> RepoInfo {
-    let path = repo
-        .workdir()
-        .and_then(|p| p.to_str())
-        .unwrap_or("")
-        .to_string();
-    let name = Path::new(&path)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(&path)
-        .to_string();
-    let head_branch = repo
-        .head()
-        .ok()
-        .and_then(|h| h.shorthand().map(|s| s.to_string()));
-    RepoInfo {
-        name,
-        path,
-        head_branch,
+    match crate::worktree_ops::resolve_repo_info(repo) {
+        Ok(info) => info,
+        Err(error) => {
+            log::warn!(target: "git", "failed to resolve worktree metadata: {error}");
+            crate::worktree_ops::degraded_repo_info(repo)
+        }
     }
 }
 
@@ -151,23 +139,24 @@ fn repo_info(repo: &Repository) -> RepoInfo {
 /// blocking — so listing/activating/closing tabs never waits on an unrelated
 /// tab's slow operation.
 fn open_repo_info(entry: &OpenRepo) -> RepoInfo {
-    let name = Path::new(&entry.key)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(&entry.key)
-        .to_string();
-    let head_branch = entry.state.try_lock().ok().and_then(|guard| {
-        guard
-            .repo
-            .head()
-            .ok()
-            .and_then(|h| h.shorthand().map(|s| s.to_string()))
-    });
-    RepoInfo {
-        name,
-        path: entry.key.clone(),
-        head_branch,
-    }
+    entry.state.try_lock().ok().map_or_else(
+        || RepoInfo {
+            name: Path::new(&entry.key)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&entry.key)
+                .to_string(),
+            path: entry.key.clone(),
+            head_branch: None,
+            repo_kind: crate::commands::repo::RepoKind::Main,
+            parent_repo_path: None,
+            common_dir_path: entry.key.clone(),
+            worktree_branch: None,
+            worktree_locked: false,
+            worktree_prunable: false,
+        },
+        |guard| repo_info(&guard.repo),
+    )
 }
 
 impl RepoManager {
@@ -1012,11 +1001,7 @@ pub fn restore_session(app: &tauri::App) -> anyhow::Result<()> {
         open_paths = config.last_repo_path.clone().into_iter().collect();
     }
 
-    for path in &open_paths {
-        if path.exists() {
-            let _ = state.manager.open(path.to_str().unwrap_or(""));
-        }
-    }
+    restore_open_paths(&state.manager, open_paths.clone(), active.clone())?;
     // `open` left the last-opened repo active; restore the saved active tab.
     if let Some(active) = active {
         if active.exists() {
@@ -1027,6 +1012,26 @@ pub fn restore_session(app: &tauri::App) -> anyhow::Result<()> {
     if let Ok(Some(info)) = state.manager.get_current() {
         let handle = app.app_handle().clone();
         state.restart_watcher(handle, Some(Path::new(&info.path)));
+    }
+    Ok(())
+}
+
+fn restore_open_paths(
+    manager: &RepoManager,
+    open_paths: Vec<PathBuf>,
+    _active: Option<PathBuf>,
+) -> anyhow::Result<()> {
+    for path in open_paths {
+        if !path.exists() {
+            continue;
+        }
+        if let Err(error) = manager.open(path.to_str().unwrap_or("")) {
+            log::warn!(
+                target: "config",
+                "skipping restored repository {}: {error}",
+                path.display()
+            );
+        }
     }
     Ok(())
 }
@@ -1493,6 +1498,67 @@ mod tests {
             std::fs::canonicalize(worktree_dir.path()).unwrap(),
             "repo_info's path must be the worktree's actual working directory, \
              not .git/worktrees/<name> (repo.path()'s parent for a linked worktree)"
+        );
+    }
+
+    #[test]
+    fn open_repo_returns_worktree_metadata_for_a_linked_worktree() {
+        let (main_dir, repo) = make_git_repo_with_commit();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("feature/worktree", &head, false).unwrap();
+
+        let worktree_dir = tempfile::tempdir().unwrap();
+        let output = std::process::Command::new("git")
+            .args([
+                "worktree",
+                "add",
+                worktree_dir.path().to_str().unwrap(),
+                "feature/worktree",
+            ])
+            .current_dir(main_dir.path())
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git worktree add failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let manager = RepoManager::new();
+        let info = manager.open(worktree_dir.path().to_str().unwrap()).unwrap();
+
+        assert_eq!(info.repo_kind, crate::commands::repo::RepoKind::Worktree);
+        assert_eq!(
+            info.parent_repo_path
+                .as_deref()
+                .map(|path| std::fs::canonicalize(path).unwrap()),
+            Some(std::fs::canonicalize(repo.workdir().unwrap()).unwrap())
+        );
+        assert_eq!(info.worktree_branch.as_deref(), Some("feature/worktree"));
+    }
+
+    #[test]
+    fn restore_open_paths_skips_an_existing_but_invalid_path() {
+        let (dir, repo) = make_git_repo_with_commit();
+        let manager = RepoManager::new();
+        let invalid_dir = tempfile::tempdir().unwrap();
+        std::fs::write(invalid_dir.path().join("not-a-repo.txt"), "x\n").unwrap();
+
+        restore_open_paths(
+            &manager,
+            vec![
+                repo.workdir().unwrap().to_path_buf(),
+                invalid_dir.path().to_path_buf(),
+            ],
+            Some(repo.workdir().unwrap().to_path_buf()),
+        )
+        .unwrap();
+
+        let open = manager.list_open().unwrap();
+        assert_eq!(open.len(), 1);
+        assert_eq!(
+            std::fs::canonicalize(&open[0].path).unwrap(),
+            std::fs::canonicalize(dir.path()).unwrap()
         );
     }
 

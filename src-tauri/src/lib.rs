@@ -16,6 +16,7 @@ mod repo_manager;
 mod stash;
 mod themes;
 mod working_tree;
+mod worktree_ops;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
