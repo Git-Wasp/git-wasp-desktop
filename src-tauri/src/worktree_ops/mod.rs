@@ -29,6 +29,7 @@ pub struct WorktreeEntry {
     pub is_current: bool,
     pub is_open: bool,
     pub is_locked: bool,
+    pub is_prunable: bool,
     pub has_uncommitted_changes: bool,
     pub parent_repo_path: Option<String>,
 }
@@ -211,6 +212,7 @@ pub(crate) fn list_worktrees(
             is_current: path == current_path,
             is_open: open_paths.contains(&path_str),
             is_locked: entry.locked,
+            is_prunable: entry.prunable,
             has_uncommitted_changes,
             parent_repo_path,
         });

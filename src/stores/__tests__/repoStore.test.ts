@@ -17,6 +17,9 @@ beforeEach(() => {
     recentRepos: [],
     branches: [],
     openRepos: [],
+    worktrees: [],
+    worktreesLoadedFor: null,
+    showCreateWorktreeDialog: false,
     activeRepoPath: null,
     activationEpoch: 0,
   });
@@ -48,6 +51,16 @@ function mockByCommand(map: Record<string, unknown>) {
   mockInvoke.mockImplementation((cmd: string) =>
     Promise.resolve(cmd in withDefaults ? withDefaults[cmd] : undefined),
   );
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
 }
 
 describe("repoStore", () => {
@@ -166,6 +179,76 @@ describe("repoStore", () => {
       repoPath: "/repos/main",
     });
     expect(useRepoStore.getState().worktrees).toEqual(family);
+  });
+
+  it("listWorktrees ignores a late response after the active repo changes", async () => {
+    const mainRepo = {
+      name: "main",
+      path: "/repos/main",
+      headBranch: "main",
+      repoKind: "main",
+      parentRepoPath: null,
+      commonDirPath: "/repos/main/.git",
+      worktreeBranch: "main",
+      worktreeLocked: false,
+      worktreePrunable: false,
+    };
+    const otherRepo = {
+      name: "other",
+      path: "/repos/other",
+      headBranch: "main",
+      repoKind: "main",
+      parentRepoPath: null,
+      commonDirPath: "/repos/other/.git",
+      worktreeBranch: "main",
+      worktreeLocked: false,
+      worktreePrunable: false,
+    };
+    const lateResponse = deferred<
+      Array<{
+        path: string;
+        name: string;
+        repoKind: "main";
+        branch: string;
+        isCurrent: boolean;
+        isOpen: boolean;
+        isLocked: boolean;
+        isPrunable: boolean;
+        hasUncommittedChanges: boolean;
+        parentRepoPath: null;
+      }>
+    >();
+
+    useRepoStore.setState({ currentRepo: mainRepo });
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "list_worktrees") return lateResponse.promise;
+      if (cmd === "get_graph_viewport")
+        return Promise.resolve(emptyGraphViewport);
+      return Promise.resolve(undefined);
+    });
+
+    const pending = useRepoStore.getState().listWorktrees();
+    useRepoStore.setState({ currentRepo: otherRepo });
+    lateResponse.resolve([
+      {
+        path: "/repos/main",
+        name: "main",
+        repoKind: "main",
+        branch: "main",
+        isCurrent: true,
+        isOpen: true,
+        isLocked: false,
+        isPrunable: false,
+        hasUncommittedChanges: false,
+        parentRepoPath: null,
+      },
+    ]);
+
+    await pending;
+
+    expect(useRepoStore.getState().currentRepo?.path).toBe("/repos/other");
+    expect(useRepoStore.getState().worktrees).toEqual([]);
+    expect(useRepoStore.getState().worktreesLoadedFor).toBeNull();
   });
 
   it("openParentRepo activates the returned parent tab for the selected row path", async () => {

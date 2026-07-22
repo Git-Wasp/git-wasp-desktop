@@ -29,6 +29,7 @@ export interface WorktreeEntry {
   isCurrent: boolean;
   isOpen: boolean;
   isLocked: boolean;
+  isPrunable?: boolean;
   hasUncommittedChanges: boolean;
   parentRepoPath: string | null;
 }

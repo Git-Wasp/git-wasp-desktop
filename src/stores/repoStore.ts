@@ -337,6 +337,9 @@ export const useRepoStore = create<RepoStore>((set, get) => {
       const worktrees = await invoke<WorktreeEntry[]>("list_worktrees", {
         repoPath,
       });
+      if (get().currentRepo?.path !== repoPath) {
+        return [];
+      }
       set({ worktrees, worktreesLoadedFor: repoPath });
       return worktrees;
     },

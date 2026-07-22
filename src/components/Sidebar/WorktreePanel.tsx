@@ -64,17 +64,23 @@ export function WorktreePanel({
     >
       {worktrees.map((entry) => {
         const isCurrent = entry.isCurrent || entry.path === currentRepoPath;
+        const isPrunable = entry.isPrunable === true;
 
         return (
           <div
             key={entry.path}
             className="sidebar-row"
-            onClick={() => onOpenOrActivate(entry.path)}
+            onClick={() => {
+              if (isPrunable) return;
+              onOpenOrActivate(entry.path);
+            }}
             style={{
               ...rowStyle,
               background: isCurrent
                 ? "var(--color-bg-elevated)"
                 : "transparent",
+              cursor: isPrunable ? "default" : rowStyle.cursor,
+              opacity: isPrunable ? 0.72 : 1,
             }}
             title={entry.path}
           >
@@ -133,6 +139,7 @@ export function WorktreePanel({
               }}
             >
               {entry.isLocked && <span style={badgeStyle}>Locked</span>}
+              {isPrunable && <span style={badgeStyle}>Prunable</span>}
               {entry.hasUncommittedChanges && (
                 <span style={badgeStyle}>Dirty</span>
               )}
@@ -140,10 +147,16 @@ export function WorktreePanel({
               <RowMenu
                 label={`${entry.name} actions`}
                 items={[
-                  {
-                    label: entry.isOpen ? "Activate tab" : "Open worktree",
-                    onSelect: () => onOpenOrActivate(entry.path),
-                  },
+                  ...(!isPrunable
+                    ? [
+                        {
+                          label: entry.isOpen
+                            ? "Activate tab"
+                            : "Open worktree",
+                          onSelect: () => onOpenOrActivate(entry.path),
+                        },
+                      ]
+                    : []),
                   ...(entry.repoKind === "worktree"
                     ? [
                         {
@@ -152,7 +165,9 @@ export function WorktreePanel({
                         },
                       ]
                     : []),
-                  ...(entry.repoKind === "worktree" && !entry.isLocked
+                  ...(entry.repoKind === "worktree" &&
+                  !entry.isLocked &&
+                  !isPrunable
                     ? [
                         {
                           label: "Lock worktree",
@@ -160,7 +175,9 @@ export function WorktreePanel({
                         },
                       ]
                     : []),
-                  ...(entry.repoKind === "worktree" && entry.isLocked
+                  ...(entry.repoKind === "worktree" &&
+                  entry.isLocked &&
+                  !isPrunable
                     ? [
                         {
                           label: "Unlock worktree",
@@ -170,6 +187,7 @@ export function WorktreePanel({
                     : []),
                   ...(entry.repoKind === "worktree" &&
                   !entry.isLocked &&
+                  !isPrunable &&
                   !entry.hasUncommittedChanges
                     ? [
                         {
