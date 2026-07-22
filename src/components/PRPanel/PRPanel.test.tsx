@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import "@testing-library/jest-dom";
@@ -35,7 +41,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   useGithubStore.setState({
     connections: {},
-    remoteInfo: { host: "github.com", owner: "mike", repo: "gitclient", protocol: "https" },
+    remoteInfo: {
+      host: "github.com",
+      owner: "mike",
+      repo: "gitclient",
+      protocol: "https",
+    },
     pullRequests: [],
     githubRepos: [],
     deviceFlowInit: null,
@@ -51,7 +62,9 @@ describe("PRPanel", () => {
     render(<PRPanel />);
 
     await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith("list_pull_requests", { host: "github.com" });
+      expect(mockInvoke).toHaveBeenCalledWith("list_pull_requests", {
+        host: "github.com",
+      });
     });
     expect(await screen.findByText("Add feature")).toBeTruthy();
     expect(screen.getByText("Fix bug")).toBeTruthy();
@@ -116,15 +129,19 @@ describe("PRPanel", () => {
     // Switch to a different repo on the same host — a fresh load should clear
     // the stale error banner from the previous repo, even on success.
     mockInvoke.mockResolvedValueOnce([]);
-    useRepoStore.setState({
-      currentRepo: { name: "repoB", path: "/repoB", headBranch: "main" },
-      activeRepoPath: "/repoB",
-      recentRepos: [],
-      branches: [],
+    act(() => {
+      useRepoStore.setState({
+        currentRepo: { name: "repoB", path: "/repoB", headBranch: "main" },
+        activeRepoPath: "/repoB",
+        recentRepos: [],
+        branches: [],
+      });
     });
     rerender(<PRPanel />);
 
-    await waitFor(() => expect(screen.queryByText(/rate limited/i)).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByText(/rate limited/i)).not.toBeInTheDocument(),
+    );
   });
 
   it("reloads pull requests when the active repo path changes, even with the same remote host", async () => {
@@ -136,21 +153,29 @@ describe("PRPanel", () => {
     });
     mockInvoke.mockResolvedValueOnce(fakePrs);
     const { rerender } = render(<PRPanel />);
-    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("list_pull_requests", { host: "github.com" }));
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith("list_pull_requests", {
+        host: "github.com",
+      }),
+    );
     expect(mockInvoke).toHaveBeenCalledTimes(1);
 
     // Switch to a different repo whose remote is on the same host — the
     // effect must re-key on activeRepoPath, not just remoteInfo.host.
     mockInvoke.mockResolvedValueOnce([]);
-    useRepoStore.setState({
-      currentRepo: { name: "repoB", path: "/repoB", headBranch: "main" },
-      activeRepoPath: "/repoB",
-      recentRepos: [],
-      branches: [],
+    act(() => {
+      useRepoStore.setState({
+        currentRepo: { name: "repoB", path: "/repoB", headBranch: "main" },
+        activeRepoPath: "/repoB",
+        recentRepos: [],
+        branches: [],
+      });
     });
     rerender(<PRPanel />);
 
     await waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(2));
-    expect(mockInvoke).toHaveBeenNthCalledWith(2, "list_pull_requests", { host: "github.com" });
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "list_pull_requests", {
+      host: "github.com",
+    });
   });
 });

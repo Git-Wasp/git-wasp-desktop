@@ -108,7 +108,9 @@ describe("avatarStore", () => {
   });
 
   it("caps the avatar map so it doesn't grow unbounded across a long session", () => {
-    mockInvoke.mockResolvedValue(Array(5000).fill(null));
+    mockInvoke.mockImplementation(
+      () => new Promise<(string | null)[]>(() => {}),
+    );
     useAvatarStore
       .getState()
       .request(
