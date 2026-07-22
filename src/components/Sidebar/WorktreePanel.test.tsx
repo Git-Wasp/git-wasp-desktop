@@ -36,12 +36,16 @@ describe("WorktreePanel", () => {
         ]}
         onOpenOrActivate={activate}
         onRefresh={vi.fn()}
+        onCreate={vi.fn()}
         onOpenParent={vi.fn()}
       />,
     );
 
     expect(
       screen.getByRole("button", { name: "Worktrees" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "New worktree" }),
     ).toBeInTheDocument();
     expect(screen.getByTitle("/repos/main")).toBeInTheDocument();
     expect(screen.getByTitle("/repos/main-feature")).toBeInTheDocument();

@@ -18,6 +18,7 @@ import { PruneBranchesDialog } from "./PruneBranchesDialog";
 import { PromptDialog } from "../common/PromptDialog";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { VirtualList } from "../ui/VirtualList";
+import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { WorktreePanel } from "./WorktreePanel";
 import type { BranchInfo } from "../../types/repo";
 
@@ -186,6 +187,10 @@ export function Sidebar({ width = 220 }: { width?: number }) {
     activateRepo,
     openParentRepo,
     listWorktrees,
+    createWorktree,
+    showCreateWorktreeDialog,
+    openCreateWorktreeDialog,
+    closeCreateWorktreeDialog,
     loadRecentRepos,
     removeRecent,
     checkoutBranch,
@@ -500,6 +505,18 @@ export function Sidebar({ width = 220 }: { width?: number }) {
           />
         )}
 
+        {showCreateWorktreeDialog && (
+          <CreateWorktreeDialog
+            defaultStartPoint={
+              currentRepo?.worktreeBranch ?? currentRepo?.headBranch ?? ""
+            }
+            onCancel={closeCreateWorktreeDialog}
+            onConfirm={(request) => {
+              void createWorktree(request);
+            }}
+          />
+        )}
+
         {/* Branch list */}
         {currentRepo && (
           <WorktreePanel
@@ -507,6 +524,7 @@ export function Sidebar({ width = 220 }: { width?: number }) {
             worktrees={worktrees}
             onOpenOrActivate={(path) => void handleOpenOrActivateWorktree(path)}
             onRefresh={() => void listWorktrees()}
+            onCreate={openCreateWorktreeDialog}
             onOpenParent={(path) => void openParentRepo(path)}
           />
         )}

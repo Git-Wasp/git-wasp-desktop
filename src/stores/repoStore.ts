@@ -41,6 +41,7 @@ interface RepoStore {
   openRepos: RepoInfo[];
   worktrees: WorktreeEntry[];
   worktreesLoadedFor: string | null;
+  showCreateWorktreeDialog: boolean;
   activeRepoPath: string | null;
   /** Monotonic counter bumped once per repo-switch (reloadActiveRepo,
    *  closeRepo's no-repos-left branch, newTab). Repo-scoped stores capture
@@ -88,6 +89,8 @@ interface RepoStore {
   listWorktrees: () => Promise<WorktreeEntry[]>;
   createWorktree: (request: CreateWorktreeRequest) => Promise<void>;
   openParentRepo: (repoPath: string) => Promise<void>;
+  openCreateWorktreeDialog: () => void;
+  closeCreateWorktreeDialog: () => void;
 }
 
 export const useRepoStore = create<RepoStore>((set, get) => {
@@ -121,6 +124,7 @@ export const useRepoStore = create<RepoStore>((set, get) => {
     openRepos: [],
     worktrees: [],
     worktreesLoadedFor: null,
+    showCreateWorktreeDialog: false,
     activeRepoPath: null,
     activationEpoch: 0,
 
@@ -173,6 +177,7 @@ export const useRepoStore = create<RepoStore>((set, get) => {
           branches: [],
           worktrees: [],
           worktreesLoadedFor: null,
+          showCreateWorktreeDialog: false,
           activationEpoch: get().activationEpoch + 1,
         });
         useGraphStore.getState().reset();
@@ -189,6 +194,7 @@ export const useRepoStore = create<RepoStore>((set, get) => {
         currentRepo: null,
         activeRepoPath: null,
         branches: [],
+        showCreateWorktreeDialog: false,
         activationEpoch: get().activationEpoch + 1,
       });
       useGraphStore.getState().reset();
@@ -342,6 +348,7 @@ export const useRepoStore = create<RepoStore>((set, get) => {
       await get().loadOpenRepos();
       await reloadActiveRepo(repo);
       await get().listWorktrees();
+      set({ showCreateWorktreeDialog: false });
     },
 
     openParentRepo: async (repoPath: string) => {
@@ -351,6 +358,14 @@ export const useRepoStore = create<RepoStore>((set, get) => {
       await get().loadOpenRepos();
       await reloadActiveRepo(repo);
       await get().listWorktrees();
+    },
+
+    openCreateWorktreeDialog: () => {
+      set({ showCreateWorktreeDialog: true });
+    },
+
+    closeCreateWorktreeDialog: () => {
+      set({ showCreateWorktreeDialog: false });
     },
   };
 });

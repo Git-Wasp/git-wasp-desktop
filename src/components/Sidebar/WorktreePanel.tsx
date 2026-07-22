@@ -30,12 +30,14 @@ export function WorktreePanel({
   worktrees,
   onOpenOrActivate,
   onRefresh,
+  onCreate,
   onOpenParent,
 }: {
   currentRepoPath: string;
   worktrees: WorktreeEntry[];
   onOpenOrActivate: (path: string) => void;
   onRefresh: () => void;
+  onCreate: () => void;
   onOpenParent: (path: string) => void;
 }) {
   void onOpenParent;
@@ -45,9 +47,14 @@ export function WorktreePanel({
       id="worktrees"
       title="Worktrees"
       action={
-        <Button size="sm" variant="secondary" onClick={onRefresh}>
-          Refresh
-        </Button>
+        <div style={{ display: "flex", gap: "var(--space-1)" }}>
+          <Button size="sm" variant="secondary" onClick={onCreate}>
+            New worktree
+          </Button>
+          <Button size="sm" variant="secondary" onClick={onRefresh}>
+            Refresh
+          </Button>
+        </div>
       }
     >
       {worktrees.map((entry) => {
