@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom";
 import { HistoryToolbar } from "./HistoryToolbar";
@@ -28,13 +34,19 @@ beforeEach(() => {
     checkoutBranch: vi.fn().mockResolvedValue(undefined),
   });
   useGithubStore.setState({
-    remoteInfo: { host: "github.com", owner: "mike", repo: "gitclient", protocol: "https" },
+    remoteInfo: {
+      host: "github.com",
+      owner: "mike",
+      repo: "gitclient",
+      protocol: "https",
+    },
   });
   useMergeStore.setState({ loadStatus: vi.fn().mockResolvedValue(undefined) });
   useHookStore.setState({ runs: {} });
 });
 
-const openPullMenu = () => fireEvent.click(screen.getByRole("button", { name: /^pull/i }));
+const openPullMenu = () =>
+  fireEvent.click(screen.getByRole("button", { name: /^pull/i }));
 
 describe("HistoryToolbar", () => {
   it("locks only the repository whose pre-push hook is running", () => {
@@ -46,10 +58,14 @@ describe("HistoryToolbar", () => {
     });
     const { rerender } = render(<HistoryToolbar />);
 
-    expect(screen.getByRole("button", { name: "Running pre-push…" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Running pre-push…" }),
+    ).toBeDisabled();
 
-    useRepoStore.setState({
-      currentRepo: { name: "other", path: "/other", headBranch: "main" },
+    act(() => {
+      useRepoStore.setState({
+        currentRepo: { name: "other", path: "/other", headBranch: "main" },
+      });
     });
     rerender(<HistoryToolbar />);
     expect(screen.getByRole("button", { name: /^push$/i })).toBeEnabled();
@@ -58,7 +74,9 @@ describe("HistoryToolbar", () => {
   it("pushes and refreshes the graph", async () => {
     render(<HistoryToolbar />);
     fireEvent.click(screen.getByRole("button", { name: /^push$/i }));
-    await waitFor(() => expect(useRemoteStore.getState().push).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(useRemoteStore.getState().push).toHaveBeenCalled(),
+    );
     expect(useGraphStore.getState().refresh).toHaveBeenCalled();
   });
 
@@ -74,7 +92,9 @@ describe("HistoryToolbar", () => {
     render(<HistoryToolbar />);
     openPullMenu();
     fireEvent.click(screen.getByText("Fetch"));
-    await waitFor(() => expect(useRemoteStore.getState().fetch).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(useRemoteStore.getState().fetch).toHaveBeenCalled(),
+    );
   });
 
   it("runs ff-only and ff-if-possible pulls with the right mode", async () => {
@@ -82,45 +102,67 @@ describe("HistoryToolbar", () => {
 
     openPullMenu();
     fireEvent.click(screen.getByText(/fast-forward only/i));
-    await waitFor(() => expect(useRemoteStore.getState().pull).toHaveBeenCalledWith("ffOnly"));
+    await waitFor(() =>
+      expect(useRemoteStore.getState().pull).toHaveBeenCalledWith("ffOnly"),
+    );
 
     openPullMenu();
     fireEvent.click(screen.getByText(/fast-forward if possible/i));
-    await waitFor(() => expect(useRemoteStore.getState().pull).toHaveBeenCalledWith("ffOrMerge"));
+    await waitFor(() =>
+      expect(useRemoteStore.getState().pull).toHaveBeenCalledWith("ffOrMerge"),
+    );
   });
 
   it("opens the merge editor when a pull conflicts", async () => {
-    useRemoteStore.setState({ pull: vi.fn().mockResolvedValue({ status: "conflicts" }) });
+    useRemoteStore.setState({
+      pull: vi.fn().mockResolvedValue({ status: "conflicts" }),
+    });
     render(<HistoryToolbar />);
 
     openPullMenu();
     fireEvent.click(screen.getByText(/fast-forward if possible/i));
 
-    await waitFor(() => expect(useMergeStore.getState().loadStatus).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(useMergeStore.getState().loadStatus).toHaveBeenCalled(),
+    );
   });
 
   it("creates and checks out a new branch", async () => {
     render(<HistoryToolbar />);
     fireEvent.click(screen.getByRole("button", { name: /new branch/i }));
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "feat/x" } });
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "feat/x" },
+    });
     fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
 
-    await waitFor(() => expect(useRepoStore.getState().createBranch).toHaveBeenCalledWith("feat/x"));
-    expect(useRepoStore.getState().checkoutBranch).toHaveBeenCalledWith("feat/x");
+    await waitFor(() =>
+      expect(useRepoStore.getState().createBranch).toHaveBeenCalledWith(
+        "feat/x",
+      ),
+    );
+    expect(useRepoStore.getState().checkoutBranch).toHaveBeenCalledWith(
+      "feat/x",
+    );
   });
 
   it("shows a toast instead of throwing when creating a branch fails", async () => {
-    useRepoStore.setState({ createBranch: vi.fn().mockRejectedValue(new Error("already exists")) });
+    useRepoStore.setState({
+      createBranch: vi.fn().mockRejectedValue(new Error("already exists")),
+    });
     const error = vi.fn();
     useToastStore.setState({ error });
 
     render(<HistoryToolbar />);
     fireEvent.click(screen.getByRole("button", { name: /new branch/i }));
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "feat/x" } });
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "feat/x" },
+    });
     fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
 
     await waitFor(() =>
-      expect(error).toHaveBeenCalledWith("Error: already exists", { title: "Couldn't create branch" }),
+      expect(error).toHaveBeenCalledWith("Error: already exists", {
+        title: "Couldn't create branch",
+      }),
     );
   });
 
@@ -130,7 +172,9 @@ describe("HistoryToolbar", () => {
     const onJumpToHead = vi.fn();
 
     render(<HistoryToolbar onJumpToHead={onJumpToHead} />);
-    fireEvent.click(screen.getByRole("button", { name: /scroll to current head/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /scroll to current head/i }),
+    );
 
     expect(onJumpToHead).toHaveBeenCalled();
     expect(revealHead).toHaveBeenCalled();
